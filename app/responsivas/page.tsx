@@ -1,0 +1,135 @@
+import Link from "next/link";
+import { db } from "../../lib/db";
+import type { ResponsivaLista } from "../../lib/types";
+import { fechaCorta } from "../../lib/helpers";
+import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "../../components/ui";
+
+export const dynamic = "force-dynamic";
+
+export default async function PaginaResponsivas({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
+  const tipo = typeof sp.tipo === "string" ? sp.tipo : "";
+  const estado = typeof sp.estado === "string" ? sp.estado : "";
+  const q = typeof sp.q === "string" ? sp.q.trim() : "";
+  const nueva = typeof sp.nueva === "string" ? sp.nueva : "";
+
+  const condiciones: string[] = [];
+  const valores: string[] = [];
+  if (tipo) {
+    condiciones.push("r.tipo = ?");
+    valores.push(tipo);
+  }
+  if (estado) {
+    condiciones.push("r.estado = ?");
+    valores.push(estado);
+  }
+  if (q) {
+    condiciones.push("(r.folio LIKE ? OR em.nombre LIKE ?)");
+    valores.push(`%${q}%`, `%${q}%`);
+  }
+  const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
+
+  const responsivas = db
+    .prepare(
+      `SELECT r.*, em.nombre AS empleado_nombre,
+        (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
+       FROM responsivas r
+       JOIN empleados em ON em.id = r.empleado_id
+       ${where}
+       ORDER BY r.id DESC`
+    )
+    .all(...valores) as ResponsivaLista[];
+
+  return (
+    <>
+      <PageHeader eyebrow="Repositorio" title="Cartas responsivas">
+        <Link href="/responsivas/nueva" className={btnPrimary}>
+          + Nueva responsiva
+        </Link>
+      </PageHeader>
+
+      {nueva ? (
+        <div className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          Se generó el documento <span className="mono font-semibold">{nueva}</span> y quedó guardado en el repositorio.
+        </div>
+      ) : null}
+
+      <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
+        <input name="q" defaultValue={q} placeholder="Buscar por folio o empleado…" className={`${inputCls} max-w-xs`} />
+        <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[170px]`}>
+          <option value="">Todos los tipos</option>
+          <option value="ASIGNACION">Asignación</option>
+          <option value="DEVOLUCION">Devolución</option>
+        </select>
+        <select name="estado" defaultValue={estado} className={`${inputCls} max-w-[160px]`}>
+          <option value="">Todos los estados</option>
+          <option value="VIGENTE">Vigente</option>
+          <option value="CERRADA">Cerrada</option>
+        </select>
+        <button type="submit" className={btnGhost}>
+          Filtrar
+        </button>
+      </form>
+
+      {responsivas.length === 0 ? (
+        <Empty>Todavía no hay responsivas. Genera la primera con “Nueva responsiva”.</Empty>
+      ) : (
+        <Card className="overflow-x-auto p-0">
+          <table className="w-full min-w-[840px] border-collapse">
+            <thead className="border-b border-line bg-paper/70">
+              <tr>
+                <th className={thCls}>Folio</th>
+                <th className={thCls}>Tipo</th>
+                <th className={thCls}>Empleado</th>
+                <th className={thCls}>Equipos</th>
+                <th className={thCls}>Fecha</th>
+                <th className={thCls}>Estado</th>
+                <th className={thCls}>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {responsivas.map((r) => (
+                <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
+                  <td className={`${tdCls} mono text-xs font-semibold`}>{r.folio}</td>
+                  <td className={tdCls}>
+                    {r.tipo === "ASIGNACION" ? <Badge tono="petrol">Asignación</Badge> : <Badge tono="kraft">Devolución</Badge>}
+                  </td>
+                  <td className={`${tdCls} font-medium`}>{r.empleado_nombre}</td>
+                  <td className={`${tdCls} mono text-xs`}>{r.equipos ?? "—"}</td>
+                  <td className={tdCls}>{fechaCorta(r.fecha)}</td>
+                  <td className={tdCls}>
+                    {r.tipo === "DEVOLUCION" ? (
+                      <span className="text-soft">—</span>
+                    ) : r.estado === "VIGENTE" ? (
+                      <Badge tono="verde">Vigente</Badge>
+                    ) : (
+                      <Badge tono="gris">Cerrada</Badge>
+                    )}
+                  </td>
+                  <td className={tdCls}>
+                    <div className="flex flex-wrap gap-1.5">
+                      {r.pdf_path ? (
+                        <a href={`/api/pdf/${r.id}`} target="_blank" className={btnGhost}>
+                          Ver PDF
+                        </a>
+                      ) : null}
+                      {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" ? (
+                        <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
+                          Registrar devolución
+                        </Link>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+    </>
+  );
+}

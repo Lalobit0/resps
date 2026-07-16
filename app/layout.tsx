@@ -1,0 +1,32 @@
+import type { Metadata } from "next";
+import "./globals.css";
+import Nav from "../components/Nav";
+
+export const metadata: Metadata = {
+  title: "Control TI · Sultana Packaging",
+  description: "Responsivas, inventario y mantenimiento de equipo de cómputo",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="es">
+      <body className="min-h-screen bg-paper text-ink antialiased">
+        <div className="flex min-h-screen flex-col md:flex-row">
+          <aside className="flutes shrink-0 bg-ink text-white md:sticky md:top-0 md:h-screen md:w-60">
+            <div className="px-4 py-5 md:px-5 md:py-7">
+              <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-white/50">Sultana Packaging</p>
+              <p className="mt-1 text-lg font-bold leading-tight text-white">Control TI</p>
+            </div>
+            <Nav />
+            <div className="mt-auto hidden px-5 pb-6 pt-8 text-[11px] text-white/40 md:block">
+              Uso interno · v1.0
+            </div>
+          </aside>
+          <main className="min-w-0 flex-1 px-4 py-6 md:px-10 md:py-10">
+            <div className="mx-auto w-full max-w-6xl">{children}</div>
+          </main>
+        </div>
+      </body>
+    </html>
+  );
+}

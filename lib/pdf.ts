@@ -94,7 +94,7 @@ export async function generarCarta(datos: DatosCarta): Promise<Uint8Array> {
     y = H - M;
   };
   const asegurar = (alto: number) => {
-    if (y - alto < 64) nuevaPagina();
+    if (y - alto < 58) nuevaPagina();
   };
 
   // ---------- Encabezado (primera página) ----------
@@ -138,44 +138,44 @@ export async function generarCarta(datos: DatosCarta): Promise<Uint8Array> {
   };
 
   for (const f of datos.filasUsuario) filaTabla(f.etiqueta, f.valor);
-  y -= 12;
+  y -= 10;
 
   // ---------- Intro ----------
   if (datos.intro.trim()) {
     for (const l of envolver(datos.intro, font, 9, ANCHO)) {
-      asegurar(12.5);
-      page.drawText(l, { x: M, y: y - 11, size: 9, font, color: INK });
-      y -= 12.5;
+      asegurar(12);
+      page.drawText(l, { x: M, y: y - 10.5, size: 9, font, color: INK });
+      y -= 12;
     }
-    y -= 6;
+    y -= 4;
   }
 
   // ---------- Tabla de equipo ----------
   if (datos.filasEquipo.length) {
     for (const f of datos.filasEquipo) filaTabla(f.etiqueta, f.valor);
-    y -= 12;
+    y -= 8;
   }
 
   // ---------- Cuerpo (normas / condiciones) ----------
-  const numSize = 7.8;
+  const numSize = 7.6;
   for (const cruda of datos.cuerpo.split("\n")) {
     const linea = cruda.trim();
     if (!linea) {
-      y -= 5;
+      y -= 4;
       continue;
     }
     const numerada = /^\d+[.)]/.test(linea);
     const f = numerada ? font : bold;
     for (const l of envolver(linea, f, numSize, ANCHO)) {
-      asegurar(9.8);
-      page.drawText(l, { x: M, y: y - 9, size: numSize, font: f, color: INK });
-      y -= 9.8;
+      asegurar(9.4);
+      page.drawText(l, { x: M, y: y - 8.6, size: numSize, font: f, color: INK });
+      y -= 9.4;
     }
-    y -= 2;
+    y -= 1.5;
   }
 
   // ---------- Firmas ----------
-  y -= 14;
+  y -= 10;
   if (y < 150) nuevaPagina();
   const anchoBloque = 224;
   const xIzq = M + 4;

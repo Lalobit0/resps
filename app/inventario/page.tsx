@@ -1,6 +1,6 @@
 import { db } from "../../lib/db";
 import type { EquipoConAsignado } from "../../lib/types";
-import { CATEGORIAS, ETIQUETA_ESTADO } from "../../lib/constants";
+import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constants";
 import InventarioClient from "../../components/InventarioClient";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
 
@@ -13,7 +13,7 @@ export default async function PaginaInventario({
 }) {
   const sp = await searchParams;
   const estado = typeof sp.estado === "string" ? sp.estado : "";
-  const categoria = typeof sp.categoria === "string" ? sp.categoria : "";
+  const tipo = typeof sp.tipo === "string" ? sp.tipo : "";
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
 
   const condiciones: string[] = [];
@@ -22,9 +22,9 @@ export default async function PaginaInventario({
     condiciones.push("e.estado = ?");
     valores.push(estado);
   }
-  if (categoria) {
-    condiciones.push("e.categoria = ?");
-    valores.push(categoria);
+  if (tipo) {
+    condiciones.push("e.tipo = ?");
+    valores.push(tipo);
   }
   if (q) {
     condiciones.push("(e.codigo LIKE ? OR e.marca LIKE ? OR e.modelo LIKE ? OR e.numero_serie LIKE ? OR em.nombre LIKE ?)");
@@ -55,11 +55,11 @@ export default async function PaginaInventario({
 
       <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
         <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, asignado…" className={`${inputCls} max-w-xs`} />
-        <select name="categoria" defaultValue={categoria} className={`${inputCls} max-w-[180px]`}>
-          <option value="">Todas las categorías</option>
-          {CATEGORIAS.map((c) => (
-            <option key={c} value={c}>
-              {c}
+        <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[190px]`}>
+          <option value="">Todos los tipos</option>
+          {TIPOS_EQUIPO.map((t) => (
+            <option key={t} value={t}>
+              {ETIQUETA_TIPO[t]}
             </option>
           ))}
         </select>

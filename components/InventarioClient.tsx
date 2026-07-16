@@ -1,51 +1,72 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import type { EquipoConAsignado } from "../lib/types";
-import { CATEGORIAS, ETIQUETA_ESTADO } from "../lib/constants";
+import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
-import { eliminarEquipo, guardarEquipo } from "../app/inventario/actions";
+import { eliminarEquipo, guardarEquipo, importarInventario } from "../app/inventario/actions";
 import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls, tonoEstadoEquipo } from "./ui";
 
 type Formulario = {
   id?: number;
+  tipo: TipoEquipo;
   codigo: string;
-  categoria: string;
   marca: string;
   modelo: string;
   numero_serie: string;
-  specs: string;
   fecha_compra: string;
   costo: string;
   estado: string;
   notas: string;
+  detalles: Record<string, string>;
 };
 
 const FORM_VACIO: Formulario = {
+  tipo: "COMPUTO",
   codigo: "",
-  categoria: "Laptop",
   marca: "",
   modelo: "",
   numero_serie: "",
-  specs: "",
   fecha_compra: "",
   costo: "",
   estado: "DISPONIBLE",
   notas: "",
+  detalles: {},
 };
+
+function parseDetalles(d: string | null): Record<string, string> {
+  try {
+    return d ? (JSON.parse(d) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+const IMPORTABLES: { tipo: TipoEquipo; etiqueta: string }[] = [
+  { tipo: "COMPUTO", etiqueta: "Cómputo" },
+  { tipo: "CELULAR", etiqueta: "Teléfonos" },
+  { tipo: "RADIO", etiqueta: "Radios" },
+];
 
 export default function InventarioClient({ equipos }: { equipos: EquipoConAsignado[] }) {
   const [form, setForm] = useState<Formulario | null>(null);
   const [error, setError] = useState("");
+  const [mensaje, setMensaje] = useState("");
   const [pendiente, iniciar] = useTransition();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const tipoImport = useRef<TipoEquipo>("COMPUTO");
 
-  const set = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+  const setC = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
+
+  const setDetalle = (clave: string) => (ev: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => (f ? { ...f, detalles: { ...f.detalles, [clave]: ev.target.value } } : f));
 
   const enviar = () => {
     if (!form) return;
     setError("");
+    setMensaje("");
     iniciar(async () => {
       const res = await guardarEquipo(form);
       if (res.ok) setForm(null);
@@ -53,22 +74,56 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
     });
   };
 
+  const abrirImport = (tipo: TipoEquipo) => {
+    tipoImport.current = tipo;
+    fileRef.current?.click();
+  };
+
+  const importar = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const archivo = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!archivo) return;
+    setError("");
+    setMensaje("");
+    const fd = new FormData();
+    fd.append("archivo", archivo);
+    const tipo = tipoImport.current;
+    iniciar(async () => {
+      const res = await importarInventario(tipo, fd);
+      if (res.ok) setMensaje(res.mensaje ?? "Inventario importado.");
+      else setError(res.error ?? "No se pudo importar.");
+    });
+  };
+
+  const camposDetalle = form ? CAMPOS_DETALLE[form.tipo] : [];
+
   return (
     <div className="space-y-5">
+      {mensaje ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{mensaje}</div>
+      ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
       ) : null}
 
-      <div>
+      <div className="flex flex-wrap items-center gap-2">
         <button
           className={btnPrimary}
           onClick={() => {
-            setForm(FORM_VACIO);
+            setForm({ ...FORM_VACIO, detalles: {} });
             setError("");
+            setMensaje("");
           }}
         >
           + Registrar equipo
         </button>
+        <span className="mx-1 text-xs text-soft">Importar Excel:</span>
+        {IMPORTABLES.map((imp) => (
+          <button key={imp.tipo} className={btnGhost} disabled={pendiente} onClick={() => abrirImport(imp.tipo)}>
+            ↥ {imp.etiqueta}
+          </button>
+        ))}
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importar} />
       </div>
 
       {form ? (
@@ -76,55 +131,59 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
           <h2 className="mb-4 text-base font-bold text-ink">{form.id ? "Editar equipo" : "Nuevo equipo"}</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <Label>Categoría *</Label>
-              <select className={inputCls} value={form.categoria} onChange={set("categoria")}>
-                {CATEGORIAS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+              <Label>Tipo de equipo *</Label>
+              <select className={inputCls} value={form.tipo} onChange={setC("tipo")}>
+                {TIPOS_EQUIPO.map((t) => (
+                  <option key={t} value={t}>
+                    {ETIQUETA_TIPO[t]}
                   </option>
                 ))}
               </select>
             </div>
             <div>
               <Label>Código interno</Label>
-              <input className={`${inputCls} mono`} value={form.codigo} onChange={set("codigo")} placeholder="Vacío = se genera solo" />
+              <input className={`${inputCls} mono`} value={form.codigo} onChange={setC("codigo")} placeholder="Vacío = se genera solo" />
             </div>
             <div>
               <Label>Estado</Label>
-              <select className={inputCls} value={form.estado} onChange={set("estado")} disabled={form.estado === "ASIGNADO"}>
+              <select className={inputCls} value={form.estado} onChange={setC("estado")}>
                 <option value="DISPONIBLE">Disponible</option>
                 <option value="MANTENIMIENTO">En mantenimiento</option>
                 <option value="BAJA">Baja</option>
-                {form.estado === "ASIGNADO" ? <option value="ASIGNADO">Asignado (vía responsiva)</option> : null}
+                {form.estado === "ASIGNADO" ? <option value="ASIGNADO">Asignado (cámbialo a Disponible para liberar)</option> : null}
               </select>
             </div>
             <div>
-              <Label>Marca *</Label>
-              <input className={inputCls} value={form.marca} onChange={set("marca")} placeholder="Dell, HP, Samsung…" />
+              <Label>Marca</Label>
+              <input className={inputCls} value={form.marca} onChange={setC("marca")} placeholder="Dell, HP, TXPRO…" />
             </div>
             <div>
-              <Label>Modelo *</Label>
-              <input className={inputCls} value={form.modelo} onChange={set("modelo")} />
+              <Label>Modelo</Label>
+              <input className={inputCls} value={form.modelo} onChange={setC("modelo")} />
             </div>
             <div>
               <Label>Número de serie</Label>
-              <input className={`${inputCls} mono`} value={form.numero_serie} onChange={set("numero_serie")} />
+              <input className={`${inputCls} mono`} value={form.numero_serie} onChange={setC("numero_serie")} />
             </div>
+
+            {camposDetalle.map((c) => (
+              <div key={c.clave}>
+                <Label>{c.etiqueta}</Label>
+                <input className={inputCls} value={form.detalles[c.clave] ?? ""} onChange={setDetalle(c.clave)} />
+              </div>
+            ))}
+
             <div>
               <Label>Fecha de compra</Label>
-              <input className={inputCls} type="date" value={form.fecha_compra} onChange={set("fecha_compra")} />
+              <input className={inputCls} type="date" value={form.fecha_compra} onChange={setC("fecha_compra")} />
             </div>
             <div>
               <Label>Costo (MXN)</Label>
-              <input className={inputCls} type="number" step="0.01" value={form.costo} onChange={set("costo")} />
-            </div>
-            <div className="sm:col-span-2 lg:col-span-1">
-              <Label>Especificaciones</Label>
-              <input className={inputCls} value={form.specs} onChange={set("specs")} placeholder="i5 · 16 GB RAM · 512 GB SSD" />
+              <input className={inputCls} type="number" step="0.01" value={form.costo} onChange={setC("costo")} />
             </div>
             <div className="sm:col-span-2 lg:col-span-3">
               <Label>Notas</Label>
-              <textarea className={inputCls} rows={2} value={form.notas} onChange={set("notas")} />
+              <textarea className={inputCls} rows={2} value={form.notas} onChange={setC("notas")} />
             </div>
           </div>
           <div className="mt-4 flex gap-2">
@@ -139,14 +198,14 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
       ) : null}
 
       {equipos.length === 0 ? (
-        <Empty>No hay equipos con estos filtros. Registra uno nuevo o ajusta la búsqueda.</Empty>
+        <Empty>No hay equipos con estos filtros. Registra uno nuevo o importa tu Excel.</Empty>
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[860px] border-collapse">
+          <table className="w-full min-w-[900px] border-collapse">
             <thead className="border-b border-line bg-paper/70">
               <tr>
                 <th className={thCls}>Código</th>
-                <th className={thCls}>Categoría</th>
+                <th className={thCls}>Tipo</th>
                 <th className={thCls}>Equipo</th>
                 <th className={thCls}>Serie</th>
                 <th className={thCls}>Estado</th>
@@ -159,7 +218,7 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
               {equipos.map((e) => (
                 <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
                   <td className={`${tdCls} mono text-xs font-semibold`}>{e.codigo}</td>
-                  <td className={tdCls}>{e.categoria}</td>
+                  <td className={`${tdCls} text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
                   <td className={tdCls}>
                     <div className="font-medium">
                       {e.marca} {e.modelo}
@@ -182,16 +241,16 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
                         onClick={() =>
                           setForm({
                             id: e.id,
+                            tipo: ((TIPOS_EQUIPO as readonly string[]).includes(e.tipo) ? e.tipo : "OTRO") as TipoEquipo,
                             codigo: e.codigo,
-                            categoria: e.categoria,
                             marca: e.marca,
                             modelo: e.modelo,
                             numero_serie: e.numero_serie ?? "",
-                            specs: e.specs ?? "",
                             fecha_compra: e.fecha_compra ?? "",
                             costo: e.costo !== null ? String(e.costo) : "",
                             estado: e.estado,
                             notas: e.notas ?? "",
+                            detalles: parseDetalles(e.detalles),
                           })
                         }
                       >

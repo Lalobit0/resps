@@ -3,6 +3,7 @@ import { db } from "../../lib/db";
 import type { ResponsivaLista } from "../../lib/types";
 import { fechaCorta } from "../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "../../components/ui";
+import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +98,7 @@ export default async function PaginaResponsivas({
                   <td className={`${tdCls} mono text-xs font-semibold`}>{r.folio}</td>
                   <td className={tdCls}>
                     {r.tipo === "ASIGNACION" ? <Badge tono="petrol">Asignación</Badge> : <Badge tono="kraft">Devolución</Badge>}
+                    <div className="mt-1 text-[11px] text-soft">{ETIQUETA_CLASE[r.clase] ?? r.clase}</div>
                   </td>
                   <td className={`${tdCls} font-medium`}>{r.empleado_nombre}</td>
                   <td className={`${tdCls} mono text-xs`}>{r.equipos ?? "—"}</td>
@@ -117,7 +119,7 @@ export default async function PaginaResponsivas({
                           Ver PDF
                         </a>
                       ) : null}
-                      {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" ? (
+                      {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" ? (
                         <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                           Registrar devolución
                         </Link>

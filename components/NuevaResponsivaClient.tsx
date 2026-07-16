@@ -3,53 +3,58 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado, Equipo } from "../lib/types";
+import { CARTAS, CLASES_CARTA, ETIQUETA_TIPO, type ClaseCarta } from "../lib/constants";
 import { crearResponsiva } from "../app/responsivas/actions";
 import SignatureCanvas from "./SignatureCanvas";
-import { Card, Empty, Label, btnPrimary, inputCls } from "./ui";
+import { Badge, Card, Empty, Label, btnPrimary, inputCls } from "./ui";
 
 export default function NuevaResponsivaClient({
   empleados,
   equipos,
-  entregaDefault,
 }: {
   empleados: Empleado[];
   equipos: Equipo[];
-  entregaDefault: string;
 }) {
   const router = useRouter();
+  const [clase, setClase] = useState<ClaseCarta>("COMPUTO");
   const [empleadoId, setEmpleadoId] = useState("");
-  const [seleccion, setSeleccion] = useState<number[]>([]);
+  const [equipoId, setEquipoId] = useState<number | null>(null);
   const [filtro, setFiltro] = useState("");
-  const [entregadoPor, setEntregadoPor] = useState(entregaDefault);
   const [observaciones, setObservaciones] = useState("");
   const [firma, setFirma] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
 
+  const config = CARTAS[clase];
+  const requiereEquipo = config.tiposEquipo.length > 0;
   const empleado = empleados.find((e) => String(e.id) === empleadoId);
 
-  const equiposFiltrados = useMemo(() => {
+  const equiposDelTipo = useMemo(() => {
     const q = filtro.trim().toLowerCase();
-    if (!q) return equipos;
-    return equipos.filter((e) =>
-      [e.codigo, e.categoria, e.marca, e.modelo, e.numero_serie ?? ""].join(" ").toLowerCase().includes(q)
-    );
-  }, [equipos, filtro]);
+    return equipos
+      .filter((e) => config.tiposEquipo.includes(e.tipo as (typeof config.tiposEquipo)[number]))
+      .filter((e) =>
+        !q ? true : [e.codigo, e.categoria, e.marca, e.modelo, e.numero_serie ?? ""].join(" ").toLowerCase().includes(q)
+      );
+  }, [equipos, config, filtro]);
 
-  const alternar = (id: number) =>
-    setSeleccion((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const cambiarClase = (c: ClaseCarta) => {
+    setClase(c);
+    setEquipoId(null);
+    setError("");
+  };
 
   const enviar = () => {
     setError("");
-    if (!empleado) return setError("Selecciona al empleado que recibe el equipo.");
-    if (seleccion.length === 0) return setError("Selecciona al menos un equipo disponible.");
+    if (!empleado) return setError("Selecciona al empleado que recibe.");
+    if (requiereEquipo && !equipoId) return setError("Selecciona el equipo a asignar.");
     if (!firma) return setError("Falta la firma del empleado en pantalla.");
 
     iniciar(async () => {
       const res = await crearResponsiva({
+        clase,
         empleadoId: empleado.id,
-        equipoIds: seleccion,
-        entregadoPor,
+        equipoId: requiereEquipo ? equipoId : null,
         observaciones,
         firma,
       });
@@ -67,7 +72,27 @@ export default function NuevaResponsivaClient({
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="space-y-5">
         <Card>
-          <h2 className="mb-3 text-base font-bold text-ink">1. Empleado que recibe</h2>
+          <h2 className="mb-3 text-base font-bold text-ink">1. Tipo de carta</h2>
+          <div className="grid grid-cols-2 gap-2">
+            {CLASES_CARTA.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => cambiarClase(c)}
+                className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                  clase === c
+                    ? "border-kraft bg-orange-50/60 font-semibold text-kraft-dark"
+                    : "border-line bg-white hover:bg-paper/60"
+                }`}
+              >
+                {CARTAS[c].etiqueta}
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="mb-3 text-base font-bold text-ink">2. Empleado que recibe</h2>
           <select className={inputCls} value={empleadoId} onChange={(e) => setEmpleadoId(e.target.value)}>
             <option value="">— Selecciona un empleado —</option>
             {empleados.map((e) => (
@@ -78,78 +103,82 @@ export default function NuevaResponsivaClient({
           </select>
           {empleado ? (
             <p className="mt-2 text-sm text-soft">
-              {empleado.puesto} · {empleado.departamento}
+              {empleado.puesto} · {empleado.area || empleado.departamento}
+              {empleado.supervisor ? ` · Jefe: ${empleado.supervisor}` : ""}
             </p>
           ) : null}
         </Card>
 
-        <Card>
-          <h2 className="mb-3 text-base font-bold text-ink">2. Equipos a entregar</h2>
-          <input
-            className={`${inputCls} mb-3`}
-            placeholder="Filtrar equipos disponibles…"
-            value={filtro}
-            onChange={(e) => setFiltro(e.target.value)}
-          />
-          {equipos.length === 0 ? (
-            <Empty>No hay equipos disponibles. Registra equipo en el inventario primero.</Empty>
-          ) : (
-            <div className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
-              {equiposFiltrados.map((e) => (
-                <label
-                  key={e.id}
-                  className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${
-                    seleccion.includes(e.id) ? "border-kraft bg-orange-50/60" : "border-line bg-white hover:bg-paper/60"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 accent-kraft"
-                    checked={seleccion.includes(e.id)}
-                    onChange={() => alternar(e.id)}
-                  />
-                  <span>
-                    <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
-                    <span className="font-medium">
-                      {e.marca} {e.modelo}
+        {requiereEquipo ? (
+          <Card>
+            <h2 className="mb-3 text-base font-bold text-ink">3. Equipo a entregar</h2>
+            <input
+              className={`${inputCls} mb-3`}
+              placeholder="Filtrar equipos disponibles…"
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+            />
+            {equiposDelTipo.length === 0 ? (
+              <Empty>No hay equipos disponibles de este tipo. Regístralos en el inventario primero.</Empty>
+            ) : (
+              <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                {equiposDelTipo.map((e) => (
+                  <label
+                    key={e.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${
+                      equipoId === e.id ? "border-kraft bg-orange-50/60" : "border-line bg-white hover:bg-paper/60"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="equipo"
+                      className="mt-0.5 accent-kraft"
+                      checked={equipoId === e.id}
+                      onChange={() => setEquipoId(e.id)}
+                    />
+                    <span>
+                      <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
+                      <span className="font-medium">
+                        {e.marca} {e.modelo}
+                      </span>
+                      <span className="block text-xs text-soft">
+                        {ETIQUETA_TIPO[e.tipo] ?? e.tipo}
+                        {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
+                        {e.specs ? ` · ${e.specs}` : ""}
+                      </span>
                     </span>
-                    <span className="block text-xs text-soft">
-                      {e.categoria}
-                      {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
-                      {e.specs ? ` · ${e.specs}` : ""}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-          <p className="mt-3 text-xs text-soft">{seleccion.length} equipo(s) seleccionado(s)</p>
-        </Card>
+                  </label>
+                ))}
+              </div>
+            )}
+          </Card>
+        ) : (
+          <Card>
+            <h2 className="mb-1 text-base font-bold text-ink">3. Sin equipo</h2>
+            <p className="text-sm text-soft">
+              Esta carta es para el <Badge tono="petrol">acceso a la red Wi-Fi</Badge>; no se asigna ningún equipo físico.
+            </p>
+          </Card>
+        )}
       </div>
 
       <div className="space-y-5">
         <Card>
-          <h2 className="mb-3 text-base font-bold text-ink">3. Detalles de la entrega</h2>
-          <div className="space-y-4">
-            <div>
-              <Label>Entrega (departamento o persona)</Label>
-              <input className={inputCls} value={entregadoPor} onChange={(e) => setEntregadoPor(e.target.value)} />
-            </div>
-            <div>
-              <Label>Observaciones (opcional)</Label>
-              <textarea
-                className={inputCls}
-                rows={3}
-                value={observaciones}
-                onChange={(e) => setObservaciones(e.target.value)}
-                placeholder="Ej. Incluye cargador y funda. Equipo con detalle estético en la tapa."
-              />
-            </div>
+          <h2 className="mb-3 text-base font-bold text-ink">4. Observaciones (opcional)</h2>
+          <div>
+            <Label>Observaciones</Label>
+            <textarea
+              className={inputCls}
+              rows={3}
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Ej. Incluye cargador y funda."
+            />
           </div>
         </Card>
 
         <Card>
-          <h2 className="mb-3 text-base font-bold text-ink">4. Firma del empleado</h2>
+          <h2 className="mb-3 text-base font-bold text-ink">5. Firma del empleado</h2>
           <SignatureCanvas onChange={setFirma} />
         </Card>
 
@@ -161,7 +190,7 @@ export default function NuevaResponsivaClient({
           {pendiente ? "Generando PDF…" : "Generar responsiva y guardar"}
         </button>
         <p className="text-center text-xs text-soft">
-          Al generar, los equipos quedan marcados como asignados y el PDF se guarda en el repositorio.
+          El PDF se guarda en el repositorio con el formato oficial de Sultana Packaging.
         </p>
       </div>
     </div>

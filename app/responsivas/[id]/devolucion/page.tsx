@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db, getConfig } from "../../../../lib/db";
+import { db } from "../../../../lib/db";
 import type { ItemConEquipo, Responsiva } from "../../../../lib/types";
 import DevolucionClient from "../../../../components/DevolucionClient";
 import { Empty, PageHeader, btnGhost } from "../../../../components/ui";
@@ -40,12 +40,7 @@ export default async function PaginaDevolucion({ params }: { params: Promise<{ i
   return (
     <>
       <PageHeader eyebrow="Devolución de equipo" title={`Devolución de ${responsiva.folio}`} />
-      <DevolucionClient
-        responsiva={responsiva}
-        empleadoNombre={empleado.nombre}
-        items={items}
-        recibeDefault={getConfig("entrega_default", "Departamento de TI")}
-      />
+      <DevolucionClient responsiva={responsiva} empleadoNombre={empleado.nombre} items={items} />
     </>
   );
 }

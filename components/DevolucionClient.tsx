@@ -12,18 +12,15 @@ export default function DevolucionClient({
   responsiva,
   empleadoNombre,
   items,
-  recibeDefault,
 }: {
   responsiva: Responsiva;
   empleadoNombre: string;
   items: ItemConEquipo[];
-  recibeDefault: string;
 }) {
   const router = useRouter();
   const [condiciones, setCondiciones] = useState<Record<number, string>>(
     Object.fromEntries(items.map((i) => [i.equipo_id, "Buen estado"]))
   );
-  const [recibidoPor, setRecibidoPor] = useState(recibeDefault);
   const [observaciones, setObservaciones] = useState("");
   const [firma, setFirma] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -36,7 +33,6 @@ export default function DevolucionClient({
       const res = await registrarDevolucion({
         responsivaId: responsiva.id,
         condiciones,
-        recibidoPor,
         observaciones,
         firma,
       });
@@ -89,21 +85,15 @@ export default function DevolucionClient({
       <div className="space-y-5">
         <Card>
           <h2 className="mb-3 text-base font-bold text-ink">Detalles de la recepción</h2>
-          <div className="space-y-4">
-            <div>
-              <Label>Recibe (departamento o persona)</Label>
-              <input className={inputCls} value={recibidoPor} onChange={(e) => setRecibidoPor(e.target.value)} />
-            </div>
-            <div>
-              <Label>Observaciones (opcional)</Label>
-              <textarea
-                className={inputCls}
-                rows={3}
-                value={observaciones}
-                onChange={(e) => setObservaciones(e.target.value)}
-                placeholder="Ej. Se devuelve con cargador. Pantalla con rayón leve."
-              />
-            </div>
+          <div>
+            <Label>Observaciones (opcional)</Label>
+            <textarea
+              className={inputCls}
+              rows={3}
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Ej. Se devuelve con cargador. Pantalla con rayón leve."
+            />
           </div>
         </Card>
 

@@ -11,7 +11,7 @@ export default function PlantillasClient({
   config,
 }: {
   plantillas: Plantilla[];
-  config: { empresa: string; ciudad: string; entrega_default: string };
+  config: { empresa: string; ciudad: string; entrega_default: string; direccion: string };
 }) {
   const [conf, setConf] = useState(config);
   const [textos, setTextos] = useState<Record<string, string>>(
@@ -59,6 +59,14 @@ export default function PlantillasClient({
               className={inputCls}
               value={conf.entrega_default}
               onChange={(e) => setConf((c) => ({ ...c, entrega_default: e.target.value }))}
+            />
+          </div>
+          <div className="sm:col-span-3">
+            <Label>Dirección (pie de las cartas)</Label>
+            <input
+              className={inputCls}
+              value={conf.direccion}
+              onChange={(e) => setConf((c) => ({ ...c, direccion: e.target.value }))}
             />
           </div>
         </div>

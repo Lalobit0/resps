@@ -7,9 +7,7 @@ import type { ResultadoAccion } from "../../lib/types";
 export async function guardarPlantilla(clave: string, contenido: string): Promise<ResultadoAccion> {
   try {
     if (!contenido.trim()) return { ok: false, error: "La plantilla no puede quedar vacía." };
-    if (!contenido.includes("{{tabla_equipos}}")) {
-      return { ok: false, error: "La plantilla debe incluir el marcador {{tabla_equipos}} para saber dónde va la tabla." };
-    }
+    // El marcador {{tabla_equipo}} es opcional (la carta de Wi-Fi no lleva tabla de equipo).
     db.prepare("UPDATE plantillas SET contenido = ? WHERE clave = ?").run(contenido, clave);
     revalidatePath("/plantillas");
     return { ok: true };
@@ -23,6 +21,7 @@ export async function guardarConfig(datos: {
   empresa: string;
   ciudad: string;
   entrega_default: string;
+  direccion: string;
 }): Promise<ResultadoAccion> {
   try {
     const upsert = db.prepare(
@@ -31,6 +30,7 @@ export async function guardarConfig(datos: {
     upsert.run("empresa", datos.empresa.trim() || "Sultana Packaging");
     upsert.run("ciudad", datos.ciudad.trim() || "Tijuana, Baja California");
     upsert.run("entrega_default", datos.entrega_default.trim() || "Departamento de TI");
+    upsert.run("direccion", datos.direccion.trim());
     revalidatePath("/plantillas");
     revalidatePath("/responsivas/nueva");
     return { ok: true };

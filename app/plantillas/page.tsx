@@ -17,6 +17,7 @@ export default async function PaginaPlantillas() {
           empresa: getConfig("empresa"),
           ciudad: getConfig("ciudad"),
           entrega_default: getConfig("entrega_default"),
+          direccion: getConfig("direccion"),
         }}
       />
     </>

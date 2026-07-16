@@ -4,6 +4,10 @@ export interface Empleado {
   nombre: string;
   puesto: string;
   departamento: string;
+  area: string | null;
+  clase: string | null;
+  supervisor: string | null;
+  fecha_alta: string | null;
   correo: string | null;
   telefono: string | null;
   activo: number;
@@ -17,11 +21,13 @@ export interface EmpleadoConEquipos extends Empleado {
 export interface Equipo {
   id: number;
   codigo: string;
+  tipo: string; // COMPUTO | CELULAR | RADIO | OTRO
   categoria: string;
   marca: string;
   modelo: string;
   numero_serie: string | null;
   specs: string | null;
+  detalles: string | null; // JSON con campos por tipo
   fecha_compra: string | null;
   costo: number | null;
   estado: string;
@@ -38,6 +44,7 @@ export interface Responsiva {
   id: number;
   folio: string;
   tipo: string; // ASIGNACION | DEVOLUCION
+  clase: string; // COMPUTO | CELULAR | OTROS | WIFI
   empleado_id: number;
   fecha: string;
   estado: string; // VIGENTE | CERRADA
@@ -98,6 +105,7 @@ export interface Plantilla {
 export type ResultadoAccion = {
   ok: boolean;
   error?: string;
+  mensaje?: string;
   id?: number;
   folio?: string;
 };

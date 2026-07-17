@@ -10,7 +10,7 @@ export default async function PaginaEmpleados() {
     .prepare(
       `SELECT e.*, (SELECT COUNT(*) FROM equipos q WHERE q.asignado_a = e.id) AS equipos_asignados
        FROM empleados e
-       ORDER BY e.activo DESC, e.nombre ASC`
+       ORDER BY CAST(e.numero_empleado AS INTEGER) ASC, e.numero_empleado ASC`
     )
     .all() as EmpleadoConEquipos[];
 

@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import type { EmpleadoConEquipos } from "../lib/types";
 import { cambiarActivoEmpleado, eliminarEmpleado, guardarEmpleado, importarEmpleados } from "../app/empleados/actions";
-import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
+import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, thCls } from "./ui";
 
 type Formulario = {
   id?: number;
@@ -32,24 +33,42 @@ const FORM_VACIO: Formulario = {
   telefono: "",
 };
 
+const celda = "px-3 py-1 text-sm text-ink align-middle whitespace-nowrap";
+const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
+const miniDanger = "rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50";
+
 export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConEquipos[] }) {
   const [form, setForm] = useState<Formulario | null>(null);
   const [busqueda, setBusqueda] = useState("");
+  const [filtroDepto, setFiltroDepto] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [pendiente, iniciar] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const departamentos = useMemo(
+    () => Array.from(new Set(empleados.map((e) => e.departamento).filter(Boolean))).sort(),
+    [empleados]
+  );
+
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    if (!q) return empleados;
-    return empleados.filter((e) =>
-      [e.nombre, e.numero_empleado, e.puesto, e.departamento, e.area ?? "", e.supervisor ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [empleados, busqueda]);
+    return empleados.filter((e) => {
+      if (filtroEstado === "activos" && !e.activo) return false;
+      if (filtroEstado === "inactivos" && e.activo) return false;
+      if (filtroDepto && e.departamento !== filtroDepto) return false;
+      if (
+        q &&
+        ![e.nombre, e.numero_empleado, e.puesto, e.departamento, e.area ?? "", e.supervisor ?? ""]
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      )
+        return false;
+      return true;
+    });
+  }, [empleados, busqueda, filtroDepto, filtroEstado]);
 
   const set = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
@@ -90,7 +109,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {mensaje ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{mensaje}</div>
       ) : null}
@@ -102,9 +121,22 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <input
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar por nombre, número, puesto, área…"
-          className={`${inputCls} max-w-md`}
+          placeholder="Buscar por nombre, número, puesto…"
+          className={`${inputCls} max-w-xs`}
         />
+        <select className={`${inputCls} max-w-[200px]`} value={filtroDepto} onChange={(e) => setFiltroDepto(e.target.value)}>
+          <option value="">Todos los departamentos</option>
+          {departamentos.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        <select className={`${inputCls} max-w-[150px]`} value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}>
+          <option value="">Todos</option>
+          <option value="activos">Activos</option>
+          <option value="inactivos">Inactivos</option>
+        </select>
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importar} />
         <button className={btnGhost} disabled={pendiente} onClick={() => fileRef.current?.click()}>
           {pendiente ? "Procesando…" : "↥ Importar Excel"}
@@ -122,8 +154,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       </div>
 
       <p className="text-xs text-soft">
-        Para importar usa la pestaña <b>EMPLEADOS</b> de tu Excel (columnas: Num de Empleado, Nombre del Empleado, Fecha de
-        Alta, Clase de Empleado, Puesto, Departamento, Área, Nombre del Supervisor). Se actualizan por número de empleado.
+        {filtrados.length} de {empleados.length} empleados · haz clic en un nombre para ver su histórico.
       </p>
 
       {form ? (
@@ -183,16 +214,16 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       ) : null}
 
       {filtrados.length === 0 ? (
-        <Empty>No hay empleados que coincidan. Regístralos o importa tu Excel.</Empty>
+        <Empty>No hay empleados que coincidan. Ajusta el filtro, registra uno o importa tu Excel.</Empty>
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[820px] border-collapse">
+          <table className="w-full min-w-[880px] border-collapse">
             <thead className="border-b border-line bg-paper/70">
               <tr>
                 <th className={thCls}>No.</th>
                 <th className={thCls}>Nombre</th>
                 <th className={thCls}>Puesto</th>
-                <th className={thCls}>Departamento / Área</th>
+                <th className={thCls}>Depto / Área</th>
                 <th className={thCls}>Jefe directo</th>
                 <th className={thCls}>Equipos</th>
                 <th className={thCls}>Estado</th>
@@ -201,27 +232,46 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
             </thead>
             <tbody>
               {filtrados.map((e) => (
-                <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
-                  <td className={`${tdCls} mono text-xs`}>{e.numero_empleado}</td>
-                  <td className={`${tdCls} font-medium`}>{e.nombre}</td>
-                  <td className={tdCls}>{e.puesto}</td>
-                  <td className={tdCls}>
-                    {e.departamento}
-                    {e.area ? <div className="text-xs text-soft">{e.area}</div> : null}
+                <tr key={e.id} className="border-b border-line/60 last:border-0 hover:bg-paper/40">
+                  <td className={`${celda} mono text-xs`}>{e.numero_empleado}</td>
+                  <td className={celda}>
+                    <Link
+                      href={`/empleados/${e.id}`}
+                      className="font-medium text-ink hover:text-kraft hover:underline"
+                      title="Ver histórico"
+                    >
+                      {e.nombre}
+                    </Link>
                   </td>
-                  <td className={`${tdCls} text-xs`}>{e.supervisor ?? <span className="text-soft">—</span>}</td>
-                  <td className={tdCls}>
+                  <td className={`${celda} max-w-[190px] truncate text-xs`} title={e.puesto}>
+                    {e.puesto}
+                  </td>
+                  <td className={`${celda} text-xs`}>
+                    {e.departamento}
+                    {e.area && e.area !== e.departamento ? <span className="text-soft"> · {e.area}</span> : null}
+                  </td>
+                  <td className={`${celda} max-w-[160px] truncate text-xs text-soft`} title={e.supervisor ?? ""}>
+                    {e.supervisor ?? "—"}
+                  </td>
+                  <td className={celda}>
                     {e.equipos_asignados > 0 ? (
-                      <Badge tono="petrol">{e.equipos_asignados} asignado(s)</Badge>
+                      <Link href={`/empleados/${e.id}`}>
+                        <Badge tono="petrol">{e.equipos_asignados}</Badge>
+                      </Link>
                     ) : (
                       <span className="text-soft">—</span>
                     )}
                   </td>
-                  <td className={tdCls}>{e.activo ? <Badge tono="verde">Activo</Badge> : <Badge tono="gris">Inactivo</Badge>}</td>
-                  <td className={tdCls}>
-                    <div className="flex flex-wrap gap-1.5">
+                  <td className={celda}>
+                    {e.activo ? <Badge tono="verde">Activo</Badge> : <Badge tono="gris">Inactivo</Badge>}
+                  </td>
+                  <td className={celda}>
+                    <div className="flex flex-nowrap items-center gap-1">
+                      <Link className={mini} href={`/empleados/${e.id}`}>
+                        Histórico
+                      </Link>
                       <button
-                        className={btnGhost}
+                        className={mini}
                         onClick={() =>
                           setForm({
                             id: e.id,
@@ -240,15 +290,11 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                       >
                         Editar
                       </button>
-                      <button
-                        className={btnGhost}
-                        disabled={pendiente}
-                        onClick={() => ejecutar(() => cambiarActivoEmpleado(e.id, !e.activo))}
-                      >
+                      <button className={mini} disabled={pendiente} onClick={() => ejecutar(() => cambiarActivoEmpleado(e.id, !e.activo))}>
                         {e.activo ? "Desactivar" : "Activar"}
                       </button>
                       <button
-                        className={btnDanger}
+                        className={miniDanger}
                         disabled={pendiente}
                         onClick={() => {
                           if (confirm(`¿Eliminar a ${e.nombre}? Esta acción no se puede deshacer.`)) {

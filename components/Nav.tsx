@@ -22,7 +22,7 @@ export default function Nav() {
     <nav className="flex flex-row gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-visible md:px-4">
       <Link
         href="/responsivas/nueva"
-        className="mb-0 mr-2 inline-flex shrink-0 items-center justify-center rounded-md bg-kraft px-3 py-2 text-sm font-semibold text-white hover:bg-kraft-dark md:mb-4 md:mr-0"
+        className="mb-0 mr-2 inline-flex shrink-0 items-center justify-center rounded-md bg-brand-red px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-red-dark md:mb-4 md:mr-0"
       >
         + Nueva responsiva
       </Link>
@@ -30,10 +30,10 @@ export default function Nav() {
         <Link
           key={l.href}
           href={l.href}
-          className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+          className={`shrink-0 rounded-md border-l-[3px] px-3 py-2 text-sm font-medium transition-colors ${
             activo(l.href)
-              ? "bg-white/10 text-white"
-              : "text-white/65 hover:bg-white/5 hover:text-white"
+              ? "border-brand-red bg-white/10 text-white"
+              : "border-transparent text-white/65 hover:bg-white/5 hover:text-white"
           }`}
         >
           {l.etiqueta}

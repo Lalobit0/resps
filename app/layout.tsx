@@ -13,9 +13,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen bg-paper text-ink antialiased">
         <div className="flex min-h-screen flex-col md:flex-row">
           <aside className="flutes shrink-0 bg-ink text-white md:sticky md:top-0 md:h-screen md:w-60">
-            <div className="px-4 py-5 md:px-5 md:py-7">
-              <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-white/50">Sultana Packaging</p>
-              <p className="mt-1 text-lg font-bold leading-tight text-white">Control TI</p>
+            <div className="px-4 py-5 md:px-5 md:py-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/sultana-logo-sidebar.png" alt="Sultana Packaging" className="w-40" />
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.24em] text-white/70">Control TI</p>
             </div>
             <Nav />
             <div className="mt-auto hidden px-5 pb-6 pt-8 text-[11px] text-white/40 md:block">

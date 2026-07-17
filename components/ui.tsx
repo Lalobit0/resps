@@ -32,7 +32,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-kraft">{eyebrow}</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand-red">{eyebrow}</p>
         <h1 className="mt-1 text-2xl font-bold text-ink">{title}</h1>
       </div>
       {children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null}
@@ -45,8 +45,8 @@ const TONOS: Record<string, string> = {
   ambar: "bg-amber-100 text-amber-800 border-amber-200",
   rojo: "bg-red-100 text-red-800 border-red-200",
   gris: "bg-stone-100 text-stone-600 border-stone-200",
-  petrol: "bg-teal-50 text-petrol border-teal-200",
-  kraft: "bg-orange-50 text-kraft-dark border-orange-200",
+  petrol: "bg-sky-50 text-sky-700 border-sky-200",
+  kraft: "bg-slate-100 text-slate-700 border-slate-300",
 };
 
 export function Badge({ tono, children }: { tono: keyof typeof TONOS; children: ReactNode }) {

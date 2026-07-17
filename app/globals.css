@@ -1,18 +1,23 @@
 @import "tailwindcss";
 
+/* Paleta de marca Sultana Packaging: azul marino #003764 y rojo #ea0029.
+   Se conservan los nombres de tokens (kraft, petrol…) para no tocar cada componente:
+   ahora "kraft" es el azul marino de la marca. */
 @theme {
-  --color-ink: #221f19;
-  --color-ink-2: #2e2a22;
-  --color-paper: #f2f1ec;
+  --color-ink: #13273f; /* azul marino muy oscuro: barra lateral y texto */
+  --color-ink-2: #1c3a5c;
+  --color-paper: #eef1f6; /* fondo gris azulado claro */
   --color-card: #ffffff;
-  --color-line: #e0ddd2;
-  --color-kraft: #a06018;
-  --color-kraft-dark: #7f4c11;
-  --color-petrol: #14555a;
-  --color-soft: #6d6a5f;
+  --color-line: #d6dce6;
+  --color-kraft: #003764; /* acento primario = azul Sultana (botones, títulos) */
+  --color-kraft-dark: #002845;
+  --color-petrol: #0b6bb3; /* azul de apoyo (equipo asignado) */
+  --color-soft: #5e6b7d;
+  --color-brand-red: #ea0029; /* rojo Sultana (CTA, acentos) */
+  --color-brand-red-dark: #c8001f;
 }
 
-/* Motivo de flauta de cartón corrugado (firma visual de la barra lateral) */
+/* Motivo de líneas finas (firma visual de la barra lateral) */
 .flutes {
   background-image: repeating-linear-gradient(
     90deg,

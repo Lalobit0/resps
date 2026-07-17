@@ -22,4 +22,6 @@ export const MARCADORES_DISPONIBLES = [
   "{{observaciones}}",
   "{{folio}}",
   "{{folio_origen}}",
+  "{{concepto}}",
+  "{{monto}}",
 ];

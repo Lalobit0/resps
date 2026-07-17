@@ -8,7 +8,7 @@ import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
 import { CARTAS, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
-import { fechaCorta, fechaLarga, hoyISO } from "../../lib/helpers";
+import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -48,6 +48,8 @@ export async function crearResponsiva(datos: {
   equipoId: number | null;
   observaciones: string;
   firma: string;
+  concepto?: string;
+  monto?: string;
 }): Promise<ResultadoAccion> {
   try {
     const config = CARTAS[datos.clase];
@@ -56,6 +58,14 @@ export async function crearResponsiva(datos: {
     const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(datos.empleadoId) as Empleado | undefined;
     if (!empleado) return { ok: false, error: "Selecciona un empleado." };
     if (!datos.firma) return { ok: false, error: "Falta la firma del empleado." };
+
+    let montoTxt = "";
+    if (config.esVale) {
+      if (!datos.concepto?.trim()) return { ok: false, error: "Indica el concepto del descuento." };
+      const m = Number(datos.monto);
+      if (!datos.monto || Number.isNaN(m) || m <= 0) return { ok: false, error: "Indica un valor de reposición válido." };
+      montoTxt = montoEnLetra(m);
+    }
 
     const requiereEquipo = config.tiposEquipo.length > 0;
     let equipo: Equipo | undefined;
@@ -70,7 +80,7 @@ export async function crearResponsiva(datos: {
       }
     }
 
-    const folio = siguienteFolio("RESP");
+    const folio = siguienteFolio(config.esVale ? "VALE" : "RESP");
     const fecha = hoyISO();
     const entregadoPor = getConfig("entrega_default", "Departamento de TI");
 
@@ -104,23 +114,26 @@ export async function crearResponsiva(datos: {
         departamento: empleado.departamento,
         observaciones: datos.observaciones.trim() ? `Observaciones: ${datos.observaciones.trim()}` : "",
         folio,
+        concepto: datos.concepto?.trim() || "",
+        monto: montoTxt,
       });
       const { intro, cuerpo } = partirPlantilla(plantilla);
 
       const bytes = await generarCarta({
+        encabezado: config.encabezado,
         titulo: config.titulo,
         fecha: fechaCorta(fecha),
         folio,
         empresa: getConfig("empresa"),
         direccion: getConfig("direccion"),
-        filasUsuario: filasUsuario(empleado),
+        filasUsuario: config.esVale ? [] : filasUsuario(empleado),
         intro,
         filasEquipo: equipo ? filasEquipo(datos.clase, equipo) : [],
         cuerpo,
         firma: datos.firma,
-        etiquetaIzq: ETIQ_EMPLEADO,
-        etiquetaDer: ETIQ_COORDINADOR,
-        sustituye: true,
+        etiquetaIzq: config.esVale ? "EMPLEADO — Firma de conformidad" : ETIQ_EMPLEADO,
+        etiquetaDer: config.esVale ? "RECURSOS HUMANOS" : ETIQ_COORDINADOR,
+        sustituye: !config.esVale && datos.clase !== "WIFI",
       });
 
       const ruta = guardarPdf(folio, bytes);

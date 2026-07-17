@@ -119,7 +119,7 @@ export default async function PaginaResponsivas({
                           Ver PDF
                         </a>
                       ) : null}
-                      {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" ? (
+                      {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE" ? (
                         <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                           Registrar devolución
                         </Link>

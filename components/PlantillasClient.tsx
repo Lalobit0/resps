@@ -3,8 +3,15 @@
 import { useState, useTransition } from "react";
 import type { Plantilla } from "../lib/types";
 import { MARCADORES_DISPONIBLES } from "../lib/plantilla";
-import { guardarConfig, guardarPlantilla } from "../app/plantillas/actions";
-import { Card, Label, btnPrimary, inputCls } from "./ui";
+import { guardarConfig, guardarPlantilla, previsualizarPlantilla } from "../app/plantillas/actions";
+import { Card, Label, btnGhost, btnPrimary, inputCls } from "./ui";
+
+function base64AUrl(b64: string): string {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+}
 
 export default function PlantillasClient({
   plantillas,
@@ -17,6 +24,8 @@ export default function PlantillasClient({
   const [textos, setTextos] = useState<Record<string, string>>(
     Object.fromEntries(plantillas.map((p) => [p.clave, p.contenido]))
   );
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [cargando, setCargando] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
@@ -28,6 +37,24 @@ export default function PlantillasClient({
       const res = await fn();
       if (res.ok) setMensaje(exito);
       else setError(res.error ?? "Error desconocido.");
+    });
+  };
+
+  const previsualizar = (clave: string) => {
+    setError("");
+    setMensaje("");
+    setCargando(clave);
+    iniciar(async () => {
+      const res = await previsualizarPlantilla(clave, textos[clave] ?? "");
+      setCargando(null);
+      if (res.ok && res.pdf) {
+        setPreviews((p) => {
+          if (p[clave]) URL.revokeObjectURL(p[clave]);
+          return { ...p, [clave]: base64AUrl(res.pdf as string) };
+        });
+      } else {
+        setError(res.error ?? "No se pudo generar la vista previa.");
+      }
     });
   };
 
@@ -96,19 +123,47 @@ export default function PlantillasClient({
       {plantillas.map((p) => (
         <Card key={p.clave}>
           <h2 className="mb-3 text-base font-bold text-ink">{p.nombre}</h2>
-          <textarea
-            className={`${inputCls} mono text-xs leading-relaxed`}
-            rows={16}
-            value={textos[p.clave] ?? ""}
-            onChange={(e) => setTextos((t) => ({ ...t, [p.clave]: e.target.value }))}
-          />
-          <button
-            className={`${btnPrimary} mt-3`}
-            disabled={pendiente}
-            onClick={() => ejecutar(() => guardarPlantilla(p.clave, textos[p.clave] ?? ""), `Plantilla “${p.nombre}” guardada.`)}
-          >
-            Guardar plantilla
-          </button>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <textarea
+                className={`${inputCls} mono text-xs leading-relaxed`}
+                rows={16}
+                value={textos[p.clave] ?? ""}
+                onChange={(e) => setTextos((t) => ({ ...t, [p.clave]: e.target.value }))}
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className={btnPrimary}
+                  disabled={pendiente}
+                  onClick={() => ejecutar(() => guardarPlantilla(p.clave, textos[p.clave] ?? ""), `Plantilla “${p.nombre}” guardada.`)}
+                >
+                  Guardar plantilla
+                </button>
+                <button className={btnGhost} disabled={pendiente} onClick={() => previsualizar(p.clave)}>
+                  {cargando === p.clave ? "Generando…" : "👁 Vista previa"}
+                </button>
+              </div>
+            </div>
+            <div>
+              <Label>Vista previa</Label>
+              {previews[p.clave] ? (
+                <div className="space-y-2">
+                  <iframe
+                    title={`Vista previa ${p.nombre}`}
+                    src={previews[p.clave]}
+                    className="h-[520px] w-full rounded-md border border-line bg-white"
+                  />
+                  <a href={previews[p.clave]} target="_blank" rel="noreferrer" className={btnGhost}>
+                    Abrir en pestaña nueva
+                  </a>
+                </div>
+              ) : (
+                <div className="flex h-[520px] items-center justify-center rounded-md border border-dashed border-line bg-paper/50 px-6 text-center text-sm text-soft">
+                  Pulsa “Vista previa” para ver cómo queda esta carta con datos de ejemplo.
+                </div>
+              )}
+            </div>
+          </div>
         </Card>
       ))}
     </div>

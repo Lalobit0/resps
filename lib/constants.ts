@@ -113,14 +113,16 @@ export const CAMPOS_DETALLE: Record<TipoEquipo, CampoDetalle[]> = {
 };
 
 // ---------- Clases de carta responsiva ----------
-export const CLASES_CARTA = ["COMPUTO", "CELULAR", "OTROS", "WIFI"] as const;
+export const CLASES_CARTA = ["COMPUTO", "CELULAR", "OTROS", "WIFI", "VALE"] as const;
 export type ClaseCarta = (typeof CLASES_CARTA)[number];
 
 export type ConfigCarta = {
   etiqueta: string; // para menús
   titulo: string; // subtítulo del PDF
+  encabezado?: string; // encabezado principal (por defecto "CARTA RESPONSIVA")
   plantilla: string; // clave en tabla plantillas
   tiposEquipo: TipoEquipo[]; // qué equipos se pueden asignar (vacío = sin equipo)
+  esVale?: boolean; // usa campos concepto/monto en vez de equipo
 };
 
 export const ETIQUETA_CLASE: Record<string, string> = {
@@ -128,6 +130,7 @@ export const ETIQUETA_CLASE: Record<string, string> = {
   CELULAR: "Celular",
   OTROS: "Otros equipos",
   WIFI: "Red Wi-Fi",
+  VALE: "Vale de descuento",
 };
 
 export const CARTAS: Record<ClaseCarta, ConfigCarta> = {
@@ -154,5 +157,13 @@ export const CARTAS: Record<ClaseCarta, ConfigCarta> = {
     titulo: "PARA EL USO DE RED WI-FI EMPRESARIAL",
     plantilla: "carta_wifi",
     tiposEquipo: [],
+  },
+  VALE: {
+    etiqueta: "Vale de descuento de nómina",
+    titulo: "",
+    encabezado: "VALE DE DESCUENTO DE NÓMINA",
+    plantilla: "vale_descuento",
+    tiposEquipo: [],
+    esVale: true,
   },
 };

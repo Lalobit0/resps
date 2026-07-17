@@ -142,6 +142,12 @@ const PLANTILLA_WIFI = `Recibí de: SULTANA PACKAGING el acceso a la red Wi-Fi. 
 5. Supervisión y control: La empresa se reserva el derecho de monitorear el uso de la red Wi-Fi para asegurar que se cumpla con las políticas establecidas. Cualquier actividad sospechosa o no autorizada será investigada.
 6. Consecuencias por incumplimiento: El incumplimiento de las políticas de uso de la red Wi-Fi podrá resultar en la suspensión temporal o permanente del acceso a la red. Además, se aplicarán las medidas disciplinarias de acuerdo con la Ley Federal de Trabajo y/o el reglamento interno según aplique.`;
 
+const PLANTILLA_VALE = `En {{ciudad}}, a {{fecha}}. Yo {{nombre_empleado}}, con número de empleado {{numero_empleado}}, por medio del presente estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}}, con un valor de reposición de {{monto}}.
+
+CLÁUSULA:
+Cantidad que me será descontada vía nómina en caso de robo o extravío. Estoy de acuerdo que, en caso de terminación de la relación laboral, dicho monto será descontado de mi finiquito.
+Por sanidad no se recibe en devolución y su costo debe ser descontado de su último recibo de nómina, a excepción de que ya haya cumplido sus 6 meses de vida.`;
+
 const PLANTILLA_DEVOLUCION = `En {{ciudad}}, a {{fecha}}, el (la) que suscribe {{nombre_empleado}}, con número de empleado {{numero_empleado}}, quien desempeña el puesto de {{puesto}} en el área de {{departamento}} de {{empresa}}, hace constar que realiza la devolución al departamento de TI del equipo que se describe a continuación, mismo que le fue entregado bajo la carta responsiva con folio {{folio_origen}}:
 
 {{tabla_equipo}}
@@ -155,6 +161,7 @@ const PLANTILLAS_SEED: [string, string, string][] = [
   ["carta_celular", "Carta responsiva — Equipo celular", PLANTILLA_CELULAR],
   ["carta_otros", "Carta responsiva — Otros equipos", PLANTILLA_OTROS],
   ["carta_wifi", "Carta responsiva — Uso de red Wi-Fi", PLANTILLA_WIFI],
+  ["vale_descuento", "Vale de descuento de nómina", PLANTILLA_VALE],
   ["responsiva_devolucion", "Carta de devolución de equipo", PLANTILLA_DEVOLUCION],
 ];
 

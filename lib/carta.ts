@@ -16,7 +16,7 @@ export function parseDetalles(equipo: Pick<Equipo, "detalles">): Record<string, 
 export function filasUsuario(emp: Empleado): FilaCarta[] {
   return [
     { etiqueta: "Nombre del Usuario", valor: emp.nombre },
-    { etiqueta: "Número de empleado", valor: emp.numero_empleado },
+    { etiqueta: "Numero de empleado", valor: emp.numero_empleado },
     { etiqueta: "Área", valor: emp.area || emp.departamento || "" },
     { etiqueta: "Nombre de jefe directo", valor: emp.supervisor || "" },
   ];

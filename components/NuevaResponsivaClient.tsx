@@ -21,12 +21,15 @@ export default function NuevaResponsivaClient({
   const [equipoId, setEquipoId] = useState<number | null>(null);
   const [filtro, setFiltro] = useState("");
   const [observaciones, setObservaciones] = useState("");
+  const [concepto, setConcepto] = useState("");
+  const [monto, setMonto] = useState("");
   const [firma, setFirma] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
 
   const config = CARTAS[clase];
   const requiereEquipo = config.tiposEquipo.length > 0;
+  const esVale = !!config.esVale;
   const empleado = empleados.find((e) => String(e.id) === empleadoId);
 
   const equiposDelTipo = useMemo(() => {
@@ -48,6 +51,8 @@ export default function NuevaResponsivaClient({
     setError("");
     if (!empleado) return setError("Selecciona al empleado que recibe.");
     if (requiereEquipo && !equipoId) return setError("Selecciona el equipo a asignar.");
+    if (esVale && !concepto.trim()) return setError("Indica el concepto del descuento.");
+    if (esVale && !(Number(monto) > 0)) return setError("Indica el valor de reposición.");
     if (!firma) return setError("Falta la firma del empleado en pantalla.");
 
     iniciar(async () => {
@@ -57,6 +62,8 @@ export default function NuevaResponsivaClient({
         equipoId: requiereEquipo ? equipoId : null,
         observaciones,
         firma,
+        concepto: esVale ? concepto : undefined,
+        monto: esVale ? monto : undefined,
       });
       if (res.ok && res.id) {
         window.open(`/api/pdf/${res.id}`, "_blank");
@@ -151,6 +158,35 @@ export default function NuevaResponsivaClient({
                 ))}
               </div>
             )}
+          </Card>
+        ) : esVale ? (
+          <Card>
+            <h2 className="mb-3 text-base font-bold text-ink">3. Descuento</h2>
+            <div className="space-y-4">
+              <div>
+                <Label>Concepto del descuento</Label>
+                <input
+                  className={inputCls}
+                  value={concepto}
+                  onChange={(e) => setConcepto(e.target.value)}
+                  placeholder="Ej. RADIO PORTÁTIL TXPRO"
+                />
+              </div>
+              <div>
+                <Label>Valor de reposición (MXN)</Label>
+                <input
+                  className={inputCls}
+                  type="number"
+                  step="0.01"
+                  value={monto}
+                  onChange={(e) => setMonto(e.target.value)}
+                  placeholder="450"
+                />
+                {Number(monto) > 0 ? (
+                  <p className="mt-1 text-xs text-soft">Se escribirá con importe en letra automáticamente.</p>
+                ) : null}
+              </div>
+            </div>
           </Card>
         ) : (
           <Card>

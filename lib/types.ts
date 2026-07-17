@@ -44,7 +44,8 @@ export interface Responsiva {
   id: number;
   folio: string;
   tipo: string; // ASIGNACION | DEVOLUCION
-  clase: string; // COMPUTO | CELULAR | OTROS | WIFI
+  clase: string; // COMPUTO | CELULAR | OTROS | WIFI | VALE
+  origen: string; // SISTEMA | CARGADA
   empleado_id: number;
   fecha: string;
   estado: string; // VIGENTE | CERRADA

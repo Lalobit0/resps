@@ -271,3 +271,76 @@ export async function registrarDevolucion(datos: {
     return { ok: false, error: "No se pudo registrar la devolución. Revisa la consola del servidor." };
   }
 }
+
+const EXT_PERMITIDAS = ["pdf", "jpg", "jpeg", "png"];
+
+export async function cargarResponsivaFirmada(formData: FormData): Promise<ResultadoAccion> {
+  try {
+    const archivo = formData.get("archivo") as File | null;
+    if (!archivo || typeof archivo.arrayBuffer !== "function") {
+      return { ok: false, error: "Sube el archivo escaneado de la responsiva (PDF o foto)." };
+    }
+    const empleadoId = Number(formData.get("empleadoId"));
+    const clase = String(formData.get("clase") || "COMPUTO");
+    const folioManual = String(formData.get("folio") || "").trim();
+    const fechaManual = String(formData.get("fecha") || "").trim();
+    const observaciones = String(formData.get("observaciones") || "").trim();
+    let equipoIds: number[] = [];
+    try {
+      const raw = JSON.parse(String(formData.get("equipoIds") || "[]"));
+      if (Array.isArray(raw)) equipoIds = raw.map(Number).filter((n) => Number.isFinite(n));
+    } catch {
+      equipoIds = [];
+    }
+
+    const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(empleadoId) as Empleado | undefined;
+    if (!empleado) return { ok: false, error: "Selecciona un empleado." };
+
+    const nombreArchivo = archivo.name || "responsiva.pdf";
+    const ext = (nombreArchivo.split(".").pop() || "pdf").toLowerCase();
+    if (!EXT_PERMITIDAS.includes(ext)) return { ok: false, error: "El archivo debe ser PDF, JPG o PNG." };
+
+    let equipos: Equipo[] = [];
+    if (equipoIds.length) {
+      const marcas = equipoIds.map(() => "?").join(",");
+      equipos = db.prepare(`SELECT * FROM equipos WHERE id IN (${marcas})`).all(...equipoIds) as Equipo[];
+      if (equipos.length !== equipoIds.length || equipos.some((e) => e.estado !== "DISPONIBLE")) {
+        return { ok: false, error: "Alguno de los equipos seleccionados ya no está disponible." };
+      }
+    }
+
+    const folio = folioManual || siguienteFolio("RESP");
+    if (db.prepare("SELECT 1 FROM responsivas WHERE folio = ?").get(folio)) {
+      return { ok: false, error: `Ya existe una responsiva con el folio ${folio}.` };
+    }
+    const fecha = fechaManual || hoyISO();
+
+    const buf = Buffer.from(await archivo.arrayBuffer());
+    const relativa = path.join("storage", "responsivas", `${folio}.${ext}`);
+    fs.mkdirSync(path.join(process.cwd(), "storage", "responsivas"), { recursive: true });
+    fs.writeFileSync(path.join(process.cwd(), relativa), buf);
+
+    const crear = db.transaction(() => {
+      const info = db
+        .prepare(
+          "INSERT INTO responsivas (folio, tipo, clase, origen, empleado_id, fecha, estado, observaciones, pdf_path) VALUES (?,?,?,?,?,?,?,?,?)"
+        )
+        .run(folio, "ASIGNACION", clase, "CARGADA", empleado.id, fecha, "VIGENTE", observaciones || null, relativa);
+      const rid = Number(info.lastInsertRowid);
+      const insItem = db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion) VALUES (?,?,?)");
+      const updEq = db.prepare("UPDATE equipos SET estado='ASIGNADO', asignado_a=? WHERE id=?");
+      for (const e of equipos) {
+        insItem.run(rid, e.id, descripcionEquipo(e));
+        updEq.run(empleado.id, e.id);
+      }
+      return rid;
+    });
+    const id = crear();
+
+    revalidar();
+    return { ok: true, id, folio };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo cargar la responsiva. Revisa la consola del servidor." };
+  }
+}

@@ -48,6 +48,9 @@ export default async function PaginaResponsivas({
   return (
     <>
       <PageHeader eyebrow="Repositorio" title="Cartas responsivas">
+        <Link href="/responsivas/cargar" className={btnGhost}>
+          ↥ Cargar firmada
+        </Link>
         <Link href="/responsivas/nueva" className={btnPrimary}>
           + Nueva responsiva
         </Link>
@@ -97,7 +100,10 @@ export default async function PaginaResponsivas({
                 <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
                   <td className={`${tdCls} mono text-xs font-semibold`}>{r.folio}</td>
                   <td className={tdCls}>
-                    {r.tipo === "ASIGNACION" ? <Badge tono="petrol">Asignación</Badge> : <Badge tono="kraft">Devolución</Badge>}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {r.tipo === "ASIGNACION" ? <Badge tono="petrol">Asignación</Badge> : <Badge tono="kraft">Devolución</Badge>}
+                      {r.origen === "CARGADA" ? <Badge tono="ambar">Cargada</Badge> : null}
+                    </div>
                     <div className="mt-1 text-[11px] text-soft">{ETIQUETA_CLASE[r.clase] ?? r.clase}</div>
                   </td>
                   <td className={`${tdCls} font-medium`}>{r.empleado_nombre}</td>

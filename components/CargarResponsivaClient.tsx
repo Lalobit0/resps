@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import type { Empleado, Equipo } from "../lib/types";
 import { CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, type ClaseCarta } from "../lib/constants";
 import { cargarResponsivaFirmada } from "../app/responsivas/actions";
-import { Card, Empty, Label, btnPrimary, inputCls } from "./ui";
+import { leerResponsiva } from "../lib/ocr";
+import { Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
 
 export default function CargarResponsivaClient({
   empleados,
@@ -25,7 +26,60 @@ export default function CargarResponsivaClient({
   const [nombreArchivo, setNombreArchivo] = useState("");
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
+  const [ocrCargando, setOcrCargando] = useState(false);
+  const [ocrMsg, setOcrMsg] = useState("");
+  const [ocrInfo, setOcrInfo] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const soloNum = (s: string) => s.replace(/^0+/, "");
+
+  const leerConOcr = async () => {
+    const archivo = fileRef.current?.files?.[0];
+    if (!archivo) {
+      setError("Primero selecciona el archivo escaneado.");
+      return;
+    }
+    setError("");
+    setOcrInfo(null);
+    setOcrCargando(true);
+    setOcrMsg("Preparando…");
+    try {
+      const res = await leerResponsiva(archivo, setOcrMsg);
+      let empMatch: Empleado | undefined;
+      if (res.numeroEmpleado) {
+        const objetivo = soloNum(res.numeroEmpleado);
+        empMatch = empleados.find((e) => soloNum(e.numero_empleado) === objetivo);
+        if (empMatch) setEmpleadoId(String(empMatch.id));
+      }
+      const nuevos: number[] = [];
+      for (const s of res.series) {
+        const eq = equipos.find((e) => (e.numero_serie ?? "").toUpperCase().trim() === s);
+        if (eq && !nuevos.includes(eq.id)) nuevos.push(eq.id);
+      }
+      if (nuevos.length) setSeleccion((prev) => Array.from(new Set([...prev, ...nuevos])));
+
+      const partes: string[] = [];
+      partes.push(
+        res.numeroEmpleado
+          ? empMatch
+            ? `Empleado ${res.numeroEmpleado} → ${empMatch.nombre} ✓`
+            : `Leí el empleado ${res.numeroEmpleado}, pero no está en la lista`
+          : "No detecté número de empleado"
+      );
+      partes.push(
+        res.series.length
+          ? `Series: ${res.series.join(", ")} (${nuevos.length} equipo(s) enlazado(s))`
+          : "No detecté número de serie"
+      );
+      setOcrInfo(`${partes.join(" · ")} — revisa y corrige lo que haga falta.`);
+    } catch {
+      setOcrInfo(null);
+      setError("No pude leer el documento automáticamente. Captura los datos a mano; todo lo demás funciona igual.");
+    } finally {
+      setOcrCargando(false);
+      setOcrMsg("");
+    }
+  };
 
   const empleado = empleados.find((e) => String(e.id) === empleadoId);
 
@@ -77,12 +131,31 @@ export default function CargarResponsivaClient({
             type="file"
             accept=".pdf,.jpg,.jpeg,.png"
             className="hidden"
-            onChange={(e) => setNombreArchivo(e.target.files?.[0]?.name ?? "")}
+            onChange={(e) => {
+              setNombreArchivo(e.target.files?.[0]?.name ?? "");
+              setOcrInfo(null);
+            }}
           />
           <button className={`${inputCls} text-left`} onClick={() => fileRef.current?.click()} type="button">
             {nombreArchivo || "Selecciona el PDF o foto de la responsiva firmada…"}
           </button>
           <p className="mt-2 text-xs text-soft">Acepta PDF, JPG o PNG. Es el documento ya firmado en papel, escaneado o fotografiado.</p>
+
+          {nombreArchivo ? (
+            <div className="mt-3 border-t border-line pt-3">
+              <button className={btnGhost} type="button" onClick={leerConOcr} disabled={ocrCargando || pendiente}>
+                {ocrCargando ? "Leyendo…" : "🔍 Leer datos del documento (OCR)"}
+              </button>
+              <p className="mt-2 text-xs text-soft">
+                El sistema lee el escaneo y sugiere el empleado y el equipo por su número de serie. Tú confirmas. (La
+                primera vez descarga el idioma; requiere internet.)
+              </p>
+              {ocrCargando ? <p className="mt-2 text-xs text-kraft-dark">{ocrMsg}</p> : null}
+              {ocrInfo ? (
+                <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">{ocrInfo}</div>
+              ) : null}
+            </div>
+          ) : null}
         </Card>
 
         <Card>

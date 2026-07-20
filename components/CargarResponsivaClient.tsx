@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import type { Empleado, Equipo } from "../lib/types";
 import { CAMPOS_DETALLE, CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../lib/constants";
 import { cargarResponsivaFirmada } from "../app/responsivas/actions";
-import { leerResponsiva } from "../lib/ocr";
+import { leerResponsiva, type LecturaSeleccionable } from "../lib/ocr";
 import BuscadorEmpleado from "./BuscadorEmpleado";
+import VisorTextoSeleccionable from "./VisorTextoSeleccionable";
 import { Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
 
 type NuevoEq = { tipo: TipoEquipo; marca: string; modelo: string; numero_serie: string; detalles: Record<string, string> };
@@ -37,6 +38,7 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
   const [ocrTexto, setOcrTexto] = useState("");
   const [archivoPreview, setArchivoPreview] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [lecturaSel, setLecturaSel] = useState<LecturaSeleccionable | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const sinEquipo = clase === "WIFI" || clase === "VALE";
@@ -84,6 +86,7 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
     try {
       const res = await leerResponsiva(archivo, setOcrMsg);
       setOcrTexto(res.texto);
+      setLecturaSel(res.seleccion);
 
       if (res.clase && (CLASES_CARTA as readonly string[]).includes(res.clase)) {
         setClase(res.clase as ClaseCarta);
@@ -178,6 +181,7 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
             setArchivoPreview(e.target.files?.[0] ?? null);
             setOcrInfo(null);
             setOcrTexto("");
+            setLecturaSel(null);
           }}
         />
         <button className={`${inputCls} text-left`} onClick={() => fileRef.current?.click()} type="button">
@@ -191,8 +195,9 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
               {ocrCargando ? "Leyendo…" : "🔍 Leer datos del documento (OCR)"}
             </button>
             <p className="mt-2 text-xs text-soft">
-              Lee el escaneo y llena el tipo, el empleado y los datos del equipo. Compáralo con el documento de la
-              izquierda y corrige lo que falle. (La primera vez descarga el idioma; requiere internet.)
+              Lee el escaneo y llena el tipo, el empleado y los datos del equipo. Si es un PDF escaneado (imagen),
+              además podrás <b>seleccionar y copiar el texto sobre la imagen</b> de la izquierda para pegarlo en los
+              campos. Corrige lo que falle. (La primera vez descarga el idioma; requiere internet.)
             </p>
             {ocrCargando ? <p className="mt-2 text-xs text-kraft-dark">{ocrMsg}</p> : null}
             {ocrInfo ? (
@@ -222,7 +227,9 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
                 </a>
               ) : null}
             </div>
-            {previewUrl ? (
+            {lecturaSel ? (
+              <VisorTextoSeleccionable data={lecturaSel} />
+            ) : previewUrl ? (
               esPdfPreview ? (
                 <iframe
                   title="Responsiva subida"

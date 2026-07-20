@@ -7,6 +7,20 @@ export type ResultadoOcr = {
   clase: string | null; // COMPUTO | CELULAR | OTROS | WIFI
   numeroEmpleado: string | null;
   equipo: Record<string, string>; // marca, modelo, serie, imei, numero, plan, condicion, ...
+  seleccion: LecturaSeleccionable | null; // solo en escaneos: imagen + palabras para seleccionar/copiar
+};
+
+// Una palabra reconocida con su posición (en píxeles de la imagen).
+export type PalabraOcr = { texto: string; x: number; y: number; w: number; h: number };
+
+// Imagen del escaneo + palabras posicionadas, para pintar una capa de texto
+// seleccionable encima (como el "texto en vivo" del iPhone).
+export type LecturaSeleccionable = {
+  imagen: string; // dataURL de la página
+  ancho: number; // px de la imagen
+  alto: number;
+  palabras: PalabraOcr[];
+  texto: string; // texto plano completo
 };
 
 async function pdfACanvas(file: File): Promise<HTMLCanvasElement> {
@@ -68,24 +82,49 @@ async function textoDePdf(file: File): Promise<string> {
     .join("\n");
 }
 
-/** Recorta la parte superior (donde están los datos) y pasa a escala de grises con contraste. */
-function preprocesar(src: HTMLCanvasElement, fraccionAlto: number): HTMLCanvasElement {
-  const alto = Math.max(1, Math.floor(src.height * fraccionAlto));
+/** Escala de grises con contraste suave, del MISMO tamaño (no recorta): así las
+ *  posiciones de las palabras que devuelve el OCR siguen coincidiendo con la imagen. */
+function aGrises(src: HTMLCanvasElement): HTMLCanvasElement {
   const out = document.createElement("canvas");
   out.width = src.width;
-  out.height = alto;
+  out.height = src.height;
   const ctx = out.getContext("2d");
   if (!ctx) return src;
-  ctx.drawImage(src, 0, 0, src.width, alto, 0, 0, src.width, alto);
-  const img = ctx.getImageData(0, 0, out.width, alto);
+  ctx.drawImage(src, 0, 0);
+  const img = ctx.getImageData(0, 0, out.width, out.height);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    const v = g < 140 ? Math.max(0, g - 45) : Math.min(255, g + 30);
+    const v = Math.max(0, Math.min(255, (g - 128) * 1.35 + 128));
     d[i] = d[i + 1] = d[i + 2] = v;
   }
   ctx.putImageData(img, 0, 0);
   return out;
+}
+
+/** Corre Tesseract sobre un lienzo y devuelve el texto y cada palabra con su caja. */
+async function ocrConCajas(lienzo: HTMLCanvasElement): Promise<{ texto: string; palabras: PalabraOcr[] }> {
+  const { createWorker } = await import("tesseract.js");
+  const worker = await createWorker("spa");
+  try {
+    const { data } = await worker.recognize(lienzo, {}, { text: true, blocks: true });
+    const palabras: PalabraOcr[] = [];
+    for (const b of data.blocks ?? []) {
+      for (const p of b.paragraphs ?? []) {
+        for (const l of p.lines ?? []) {
+          for (const w of l.words ?? []) {
+            const t = (w.text ?? "").trim();
+            if (!t) continue;
+            const { x0, y0, x1, y1 } = w.bbox;
+            palabras.push({ texto: t, x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+          }
+        }
+      }
+    }
+    return { texto: data.text ?? "", palabras };
+  } finally {
+    await worker.terminate();
+  }
 }
 
 async function imagenACanvas(file: File): Promise<HTMLCanvasElement> {
@@ -243,26 +282,34 @@ export async function leerResponsiva(file: File, onProgreso?: (msg: string) => v
   const esPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
 
   // 1) Si el PDF trae texto real (generado digitalmente), se lee exacto: sin OCR.
+  //    Ahí el visor nativo del PDF ya permite seleccionar y copiar (seleccion = null).
   if (esPdf) {
     onProgreso?.("Leyendo el texto del PDF…");
     try {
       const texto = await textoDePdf(file);
       if (texto.replace(/\s/g, "").length >= 40) {
         const { clase, numeroEmpleado, equipo } = extraerCarta(texto);
-        return { texto, clase, numeroEmpleado, equipo };
+        return { texto, clase, numeroEmpleado, equipo, seleccion: null };
       }
     } catch {
       // Sin capa de texto o error: seguimos con el OCR de imagen.
     }
   }
 
-  // 2) Escaneo/foto (imagen sin texto): se reconoce con OCR (menos exacto).
+  // 2) Escaneo/foto (imagen sin texto): OCR con posiciones para poder
+  //    seleccionar el texto directamente sobre la imagen (como el iPhone).
   onProgreso?.("Preparando la imagen…");
   const base = esPdf ? await pdfACanvas(file) : await imagenACanvas(file);
-  const lienzo = preprocesar(base, esPdf ? 0.6 : 1);
+  const lienzo = aGrises(base);
   onProgreso?.("Leyendo el texto (la primera vez descarga el idioma, puede tardar)…");
-  const Tesseract = await import("tesseract.js");
-  const { data } = await Tesseract.recognize(lienzo, "spa");
-  const { clase, numeroEmpleado, equipo } = extraerCarta(data.text || "");
-  return { texto: data.text || "", clase, numeroEmpleado, equipo };
+  const { texto, palabras } = await ocrConCajas(lienzo);
+  const { clase, numeroEmpleado, equipo } = extraerCarta(texto);
+  const seleccion: LecturaSeleccionable = {
+    imagen: base.toDataURL("image/jpeg", 0.82),
+    ancho: base.width,
+    alto: base.height,
+    palabras,
+    texto,
+  };
+  return { texto, clase, numeroEmpleado, equipo, seleccion };
 }

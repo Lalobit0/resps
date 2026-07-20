@@ -29,6 +29,7 @@ export default function CargarResponsivaClient({
   const [ocrCargando, setOcrCargando] = useState(false);
   const [ocrMsg, setOcrMsg] = useState("");
   const [ocrInfo, setOcrInfo] = useState<string | null>(null);
+  const [ocrTexto, setOcrTexto] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const soloNum = (s: string) => s.replace(/^0+/, "");
@@ -41,10 +42,12 @@ export default function CargarResponsivaClient({
     }
     setError("");
     setOcrInfo(null);
+    setOcrTexto("");
     setOcrCargando(true);
     setOcrMsg("Preparando…");
     try {
       const res = await leerResponsiva(archivo, setOcrMsg);
+      setOcrTexto(res.texto);
       let empMatch: Empleado | undefined;
       if (res.numeroEmpleado) {
         const objetivo = soloNum(res.numeroEmpleado);
@@ -134,6 +137,7 @@ export default function CargarResponsivaClient({
             onChange={(e) => {
               setNombreArchivo(e.target.files?.[0]?.name ?? "");
               setOcrInfo(null);
+              setOcrTexto("");
             }}
           />
           <button className={`${inputCls} text-left`} onClick={() => fileRef.current?.click()} type="button">
@@ -153,6 +157,14 @@ export default function CargarResponsivaClient({
               {ocrCargando ? <p className="mt-2 text-xs text-kraft-dark">{ocrMsg}</p> : null}
               {ocrInfo ? (
                 <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">{ocrInfo}</div>
+              ) : null}
+              {ocrTexto ? (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-soft">Ver texto leído por el OCR</summary>
+                  <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-paper/60 p-2 text-[11px] text-ink">
+                    {ocrTexto}
+                  </pre>
+                </details>
               ) : null}
             </div>
           ) : null}

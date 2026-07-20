@@ -46,22 +46,57 @@ async function imagenACanvas(file: File): Promise<HTMLCanvasElement> {
   }
 }
 
-/** Busca número de empleado y números de serie dentro del texto reconocido */
-export function extraerDatos(texto: string): { numeroEmpleado: string | null; series: string[] } {
-  const norm = texto.toLowerCase().replace(/\s+/g, " ");
-  let numeroEmpleado: string | null = null;
-  const m =
-    norm.match(/n[uú]?mero de empleado\D{0,12}(\d{2,6})/) ||
-    norm.match(/no\.?\s*de empleado\D{0,12}(\d{2,6})/) ||
-    norm.match(/empleado\D{0,8}(\d{2,6})/);
-  if (m) numeroEmpleado = m[1];
+function sinAcentos(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
 
+/**
+ * Busca el número de empleado y los números de serie leyendo por líneas.
+ * El valor puede estar en la misma línea que la etiqueta (tabla) o en la siguiente.
+ */
+export function extraerDatos(texto: string): { numeroEmpleado: string | null; series: string[] } {
+  const lineas = texto
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  let numeroEmpleado: string | null = null;
   const series: string[] = [];
-  const re = /serie\W{0,8}([a-z0-9][a-z0-9-]{3,})/gi;
-  let x: RegExpExecArray | null;
-  while ((x = re.exec(texto)) !== null) {
-    const s = x[1].toUpperCase().replace(/[.,;:]+$/, "");
-    if (!series.includes(s)) series.push(s);
+
+  const numeroCerca = (i: number): string | null => {
+    const aqui = lineas[i].match(/(\d{2,6})(?!\d)/);
+    if (aqui) return aqui[1];
+    const sig = lineas[i + 1]?.match(/^\D{0,6}(\d{2,6})(?!\d)/);
+    return sig ? sig[1] : null;
+  };
+
+  const serieCerca = (i: number): string | null => {
+    const n = sinAcentos(lineas[i]);
+    const pos = n.indexOf("serie");
+    const resto = pos >= 0 ? lineas[i].slice(pos + 5) : "";
+    let m = resto.match(/[A-Za-z0-9][A-Za-z0-9-]{3,}/);
+    if (!m && lineas[i + 1]) m = lineas[i + 1].match(/[A-Za-z0-9][A-Za-z0-9-]{3,}/);
+    return m ? m[0].toUpperCase().replace(/[.,;:]+$/, "") : null;
+  };
+
+  for (let i = 0; i < lineas.length; i++) {
+    const n = sinAcentos(lineas[i]);
+    if (
+      numeroEmpleado === null &&
+      n.includes("empleado") &&
+      (n.includes("numero") || n.includes("num ") || n.includes("no ") || n.includes("no.")) &&
+      !n.includes("quien recibe") &&
+      !n.includes("firma")
+    ) {
+      const num = numeroCerca(i);
+      if (num) numeroEmpleado = num;
+    }
+    if (n.includes("serie")) {
+      const s = serieCerca(i);
+      if (s && !series.includes(s)) series.push(s);
+    }
   }
   return { numeroEmpleado, series };
 }

@@ -96,6 +96,50 @@ function campo(texto: string, etiqueta: string): string {
   return m ? limpiarValor(m[1]) : "";
 }
 
+/** Índice de la línea del "modelo" (donde empieza el cuadro de características). */
+function lineaModelo(lineas: string[]): number {
+  return lineas.findIndex((l) => /model[o0]/i.test(l));
+}
+
+/** Primer token con pinta de número de serie en una línea (deja fuera la etiqueta mal leída). */
+function tokenSerie(linea: string): string {
+  const limpia = linea.replace(/[|>_<\][¡!=.,;:—–]+/g, " ");
+  for (const raw of limpia.split(/\s+/)) {
+    const t = raw.replace(/[^A-Za-z0-9-]/g, "");
+    if (t.length < 5 || t.length > 24) continue;
+    if (/[A-Za-z]/.test(t) && /\d/.test(t)) return t.toUpperCase(); // letras + dígitos = serie típica
+    if (/^\d{6,13}$/.test(t)) return t; // serie de solo dígitos (no llega a IMEI)
+  }
+  return "";
+}
+
+/**
+ * La serie es la línea que sigue al modelo dentro del cuadro. El OCR suele
+ * destrozar la etiqueta ("Serie" → "See"), así que la ubicamos por posición.
+ */
+function serieProbable(texto: string, equipo: Record<string, string>): string {
+  const lineas = texto.split(/\n/);
+  const idx = lineaModelo(lineas);
+  if (idx < 0) return "";
+  const imei = (equipo.imei ?? "").replace(/\D/g, "");
+  const numero = (equipo.numero ?? "").replace(/\s/g, "");
+  for (let i = idx + 1; i < Math.min(lineas.length, idx + 4); i++) {
+    const t = tokenSerie(lineas[i]);
+    if (!t) continue;
+    if (/^\d{14,}$/.test(t)) continue; // es el IMEI
+    if (imei && t.replace(/\D/g, "") === imei) continue;
+    if (numero && t === numero) continue;
+    return t;
+  }
+  return "";
+}
+
+/** El IMEI es una corrida de 14-16 dígitos (tolera O→0, l/I→1 del OCR). */
+function imeiProbable(texto: string): string {
+  const m = texto.replace(/[Oo]/g, "0").replace(/[lI]/g, "1").match(/\d{14,16}/);
+  return m ? m[0] : "";
+}
+
 /** Extrae clase (tipo de carta), número de empleado y datos del equipo del texto reconocido. */
 export function extraerCarta(texto: string): {
   clase: string | null;
@@ -117,12 +161,13 @@ export function extraerCarta(texto: string): {
 
   const equipo: Record<string, string> = {};
   const set = (f: string, patron: string) => {
+    if (equipo[f]) return;
     const v = campo(texto, patron);
     if (v) equipo[f] = v;
   };
   set("marca", "marca");
   set("modelo", "modelo");
-  set("serie", "serie");
+  set("serie", "(?:no\\.?\\s*de\\s*serie|numero de serie|serie|s\\s*/\\s*n)");
   set("imei", "imei");
   set("numero", "numero(?!\\s*de\\s*empleado)");
   set("plan", "plan");
@@ -137,6 +182,19 @@ export function extraerCarta(texto: string): {
   set("nombre_computadora", "nombre de la computadora");
   set("nombre_equipo", "nombre del equipo");
   set("monitor", "monitor");
+
+  // Respaldos por forma cuando el OCR destroza la etiqueta:
+  // el IMEI (solo en celulares) es una corrida larga de dígitos…
+  if (!equipo.imei && clase === "CELULAR") {
+    const imei = imeiProbable(texto);
+    if (imei) equipo.imei = imei;
+  }
+  // …y en el celular la serie es la línea que sigue al modelo dentro del cuadro
+  // (en cómputo esa línea suele ser el procesador, así que ahí no adivinamos).
+  if (!equipo.serie && clase === "CELULAR") {
+    const serie = serieProbable(texto, equipo);
+    if (serie) equipo.serie = serie;
+  }
   return { clase, numeroEmpleado, equipo };
 }
 

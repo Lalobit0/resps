@@ -15,7 +15,8 @@ async function pdfACanvas(file: File): Promise<HTMLCanvasElement> {
   const data = await file.arrayBuffer();
   const doc = await pdfjsLib.getDocument({ data }).promise;
   const page = await doc.getPage(1);
-  const viewport = page.getViewport({ scale: 2.2 });
+  // Alta resolución para que el OCR distinga bien los valores de la tabla.
+  const viewport = page.getViewport({ scale: 3.3 });
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No se pudo preparar la imagen.");
@@ -23,6 +24,27 @@ async function pdfACanvas(file: File): Promise<HTMLCanvasElement> {
   canvas.height = Math.ceil(viewport.height);
   await page.render({ canvasContext: ctx, viewport }).promise;
   return canvas;
+}
+
+/** Recorta la parte superior (donde están los datos) y pasa a escala de grises con contraste. */
+function preprocesar(src: HTMLCanvasElement, fraccionAlto: number): HTMLCanvasElement {
+  const alto = Math.max(1, Math.floor(src.height * fraccionAlto));
+  const out = document.createElement("canvas");
+  out.width = src.width;
+  out.height = alto;
+  const ctx = out.getContext("2d");
+  if (!ctx) return src;
+  ctx.drawImage(src, 0, 0, src.width, alto, 0, 0, src.width, alto);
+  const img = ctx.getImageData(0, 0, out.width, alto);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    // Realza el contraste alrededor del punto medio (texto más negro, fondo más claro).
+    const v = g < 140 ? Math.max(0, g - 45) : Math.min(255, g + 30);
+    d[i] = d[i + 1] = d[i + 2] = v;
+  }
+  ctx.putImageData(img, 0, 0);
+  return out;
 }
 
 async function imagenACanvas(file: File): Promise<HTMLCanvasElement> {
@@ -104,10 +126,12 @@ export function extraerDatos(texto: string): { numeroEmpleado: string | null; se
 export async function leerResponsiva(file: File, onProgreso?: (msg: string) => void): Promise<ResultadoOcr> {
   const esPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
   onProgreso?.("Preparando la imagen…");
-  const canvas = esPdf ? await pdfACanvas(file) : await imagenACanvas(file);
+  const base = esPdf ? await pdfACanvas(file) : await imagenACanvas(file);
+  // En un PDF de página completa, los datos están arriba: recortamos para ganar nitidez.
+  const lienzo = preprocesar(base, esPdf ? 0.6 : 1);
   onProgreso?.("Leyendo el texto (la primera vez descarga el idioma, puede tardar)…");
   const Tesseract = await import("tesseract.js");
-  const { data } = await Tesseract.recognize(canvas, "spa");
+  const { data } = await Tesseract.recognize(lienzo, "spa");
   const { numeroEmpleado, series } = extraerDatos(data.text || "");
   return { texto: data.text || "", numeroEmpleado, series };
 }

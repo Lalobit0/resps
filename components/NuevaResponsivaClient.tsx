@@ -6,6 +6,7 @@ import type { Empleado, Equipo } from "../lib/types";
 import { CARTAS, CLASES_CARTA, ETIQUETA_TIPO, type ClaseCarta } from "../lib/constants";
 import { crearResponsiva } from "../app/responsivas/actions";
 import SignatureCanvas from "./SignatureCanvas";
+import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnPrimary, inputCls } from "./ui";
 
 export default function NuevaResponsivaClient({
@@ -17,7 +18,7 @@ export default function NuevaResponsivaClient({
 }) {
   const router = useRouter();
   const [clase, setClase] = useState<ClaseCarta>("COMPUTO");
-  const [empleadoId, setEmpleadoId] = useState("");
+  const [empleadoId, setEmpleadoId] = useState<number | null>(null);
   const [equipoId, setEquipoId] = useState<number | null>(null);
   const [filtro, setFiltro] = useState("");
   const [observaciones, setObservaciones] = useState("");
@@ -30,7 +31,7 @@ export default function NuevaResponsivaClient({
   const config = CARTAS[clase];
   const requiereEquipo = config.tiposEquipo.length > 0;
   const esVale = !!config.esVale;
-  const empleado = empleados.find((e) => String(e.id) === empleadoId);
+  const empleado = empleados.find((e) => e.id === empleadoId);
 
   const equiposDelTipo = useMemo(() => {
     const q = filtro.trim().toLowerCase();
@@ -100,14 +101,7 @@ export default function NuevaResponsivaClient({
 
         <Card>
           <h2 className="mb-3 text-base font-bold text-ink">2. Empleado que recibe</h2>
-          <select className={inputCls} value={empleadoId} onChange={(e) => setEmpleadoId(e.target.value)}>
-            <option value="">— Selecciona un empleado —</option>
-            {empleados.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.numero_empleado} · {e.nombre}
-              </option>
-            ))}
-          </select>
+          <BuscadorEmpleado empleados={empleados} value={empleadoId} onChange={setEmpleadoId} />
           {empleado ? (
             <p className="mt-2 text-sm text-soft">
               {empleado.puesto} · {empleado.area || empleado.departamento}

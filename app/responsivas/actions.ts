@@ -7,7 +7,7 @@ import { db, getConfig } from "../../lib/db";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
-import { CARTAS, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
+import { CAMPOS_DETALLE, CARTAS, TIPO_DEFAULTS, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
 
@@ -274,6 +274,18 @@ export async function registrarDevolucion(datos: {
 
 const EXT_PERMITIDAS = ["pdf", "jpg", "jpeg", "png"];
 
+function codigoEquipo(prefijo: string): string {
+  let n = (db.prepare("SELECT COUNT(*) AS c FROM equipos WHERE codigo LIKE ?").get(`SP-${prefijo}-%`) as { c: number }).c + 1;
+  let codigo = `SP-${prefijo}-${String(n).padStart(3, "0")}`;
+  while (db.prepare("SELECT 1 FROM equipos WHERE codigo = ?").get(codigo)) {
+    n += 1;
+    codigo = `SP-${prefijo}-${String(n).padStart(3, "0")}`;
+  }
+  return codigo;
+}
+
+type NuevoEquipo = { tipo?: string; marca?: string; modelo?: string; numero_serie?: string; detalles?: Record<string, string> };
+
 export async function cargarResponsivaFirmada(formData: FormData): Promise<ResultadoAccion> {
   try {
     const archivo = formData.get("archivo") as File | null;
@@ -282,15 +294,23 @@ export async function cargarResponsivaFirmada(formData: FormData): Promise<Resul
     }
     const empleadoId = Number(formData.get("empleadoId"));
     const clase = String(formData.get("clase") || "COMPUTO");
+    const modo = String(formData.get("modo") || "existente");
     const folioManual = String(formData.get("folio") || "").trim();
     const fechaManual = String(formData.get("fecha") || "").trim();
     const observaciones = String(formData.get("observaciones") || "").trim();
+
     let equipoIds: number[] = [];
     try {
       const raw = JSON.parse(String(formData.get("equipoIds") || "[]"));
       if (Array.isArray(raw)) equipoIds = raw.map(Number).filter((n) => Number.isFinite(n));
     } catch {
       equipoIds = [];
+    }
+    let nuevoEquipo: NuevoEquipo | null = null;
+    try {
+      nuevoEquipo = JSON.parse(String(formData.get("nuevoEquipo") || "null")) as NuevoEquipo | null;
+    } catch {
+      nuevoEquipo = null;
     }
 
     const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(empleadoId) as Empleado | undefined;
@@ -300,12 +320,40 @@ export async function cargarResponsivaFirmada(formData: FormData): Promise<Resul
     const ext = (nombreArchivo.split(".").pop() || "pdf").toLowerCase();
     if (!EXT_PERMITIDAS.includes(ext)) return { ok: false, error: "El archivo debe ser PDF, JPG o PNG." };
 
+    // Modo "existente": valida equipos disponibles
     let equipos: Equipo[] = [];
-    if (equipoIds.length) {
+    if (modo === "existente" && equipoIds.length) {
       const marcas = equipoIds.map(() => "?").join(",");
       equipos = db.prepare(`SELECT * FROM equipos WHERE id IN (${marcas})`).all(...equipoIds) as Equipo[];
       if (equipos.length !== equipoIds.length || equipos.some((e) => e.estado !== "DISPONIBLE")) {
         return { ok: false, error: "Alguno de los equipos seleccionados ya no está disponible." };
+      }
+    }
+
+    // Modo "nuevo": prepara el equipo a crear
+    let crearEquipo: { tipo: TipoEquipo; codigo: string; marca: string; modelo: string; serie: string; detalles: string | null; desc: string } | null = null;
+    if (modo === "nuevo" && nuevoEquipo) {
+      const marca = (nuevoEquipo.marca || "").trim();
+      const modelo = (nuevoEquipo.modelo || "").trim();
+      const serie = (nuevoEquipo.numero_serie || "").trim();
+      if (marca || modelo || serie) {
+        const tipo = (TIPOS_EQUIPO as readonly string[]).includes(nuevoEquipo.tipo || "")
+          ? (nuevoEquipo.tipo as TipoEquipo)
+          : "OTRO";
+        const claves = new Set(CAMPOS_DETALLE[tipo].map((c) => c.clave));
+        const det: Record<string, string> = {};
+        for (const [k, v] of Object.entries(nuevoEquipo.detalles || {})) {
+          if (claves.has(k) && v && String(v).trim()) det[k] = String(v).trim();
+        }
+        crearEquipo = {
+          tipo,
+          codigo: codigoEquipo(TIPO_DEFAULTS[tipo].prefijo),
+          marca,
+          modelo,
+          serie,
+          detalles: Object.keys(det).length ? JSON.stringify(det) : null,
+          desc: `${marca} ${modelo}`.trim() || serie || "Equipo",
+        };
       }
     }
 
@@ -329,9 +377,29 @@ export async function cargarResponsivaFirmada(formData: FormData): Promise<Resul
       const rid = Number(info.lastInsertRowid);
       const insItem = db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion) VALUES (?,?,?)");
       const updEq = db.prepare("UPDATE equipos SET estado='ASIGNADO', asignado_a=? WHERE id=?");
-      for (const e of equipos) {
-        insItem.run(rid, e.id, descripcionEquipo(e));
-        updEq.run(empleado.id, e.id);
+
+      if (crearEquipo) {
+        const infoEq = db
+          .prepare(
+            "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, detalles, estado, asignado_a) VALUES (?,?,?,?,?,?,?,?,?)"
+          )
+          .run(
+            crearEquipo.codigo,
+            crearEquipo.tipo,
+            TIPO_DEFAULTS[crearEquipo.tipo].categoria,
+            crearEquipo.marca,
+            crearEquipo.modelo,
+            crearEquipo.serie || null,
+            crearEquipo.detalles,
+            "ASIGNADO",
+            empleado.id
+          );
+        insItem.run(rid, Number(infoEq.lastInsertRowid), crearEquipo.desc);
+      } else {
+        for (const e of equipos) {
+          insItem.run(rid, e.id, descripcionEquipo(e));
+          updEq.run(empleado.id, e.id);
+        }
       }
       return rid;
     });

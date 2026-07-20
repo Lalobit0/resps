@@ -3,21 +3,26 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado, Equipo } from "../lib/types";
-import { CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, type ClaseCarta } from "../lib/constants";
+import { CAMPOS_DETALLE, CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../lib/constants";
 import { cargarResponsivaFirmada } from "../app/responsivas/actions";
 import { leerResponsiva } from "../lib/ocr";
+import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
 
-export default function CargarResponsivaClient({
-  empleados,
-  equipos,
-}: {
-  empleados: Empleado[];
-  equipos: Equipo[];
-}) {
+type NuevoEq = { tipo: TipoEquipo; marca: string; modelo: string; numero_serie: string; detalles: Record<string, string> };
+
+function claseATipo(clase: string | null): TipoEquipo {
+  if (clase === "CELULAR") return "CELULAR";
+  if (clase === "OTROS") return "OTRO";
+  return "COMPUTO";
+}
+
+export default function CargarResponsivaClient({ empleados, equipos }: { empleados: Empleado[]; equipos: Equipo[] }) {
   const router = useRouter();
   const [clase, setClase] = useState<ClaseCarta>("COMPUTO");
-  const [empleadoId, setEmpleadoId] = useState("");
+  const [empleadoId, setEmpleadoId] = useState<number | null>(null);
+  const [modoEquipo, setModoEquipo] = useState<"nuevo" | "existente">("nuevo");
+  const [nuevoEq, setNuevoEq] = useState<NuevoEq>({ tipo: "COMPUTO", marca: "", modelo: "", numero_serie: "", detalles: {} });
   const [seleccion, setSeleccion] = useState<number[]>([]);
   const [filtro, setFiltro] = useState("");
   const [folio, setFolio] = useState("");
@@ -32,7 +37,24 @@ export default function CargarResponsivaClient({
   const [ocrTexto, setOcrTexto] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const sinEquipo = clase === "WIFI" || clase === "VALE";
   const soloNum = (s: string) => s.replace(/^0+/, "");
+
+  const equiposFiltrados = useMemo(() => {
+    const q = filtro.trim().toLowerCase();
+    if (!q) return equipos;
+    return equipos.filter((e) =>
+      [e.codigo, ETIQUETA_TIPO[e.tipo] ?? e.tipo, e.marca, e.modelo, e.numero_serie ?? ""].join(" ").toLowerCase().includes(q)
+    );
+  }, [equipos, filtro]);
+
+  const setDet = (clave: string, valor: string) =>
+    setNuevoEq((p) => ({ ...p, detalles: { ...p.detalles, [clave]: valor } }));
+
+  const cambiarClase = (c: ClaseCarta) => {
+    setClase(c);
+    setNuevoEq((p) => ({ ...p, tipo: claseATipo(c) }));
+  };
 
   const leerConOcr = async () => {
     const archivo = fileRef.current?.files?.[0];
@@ -48,32 +70,40 @@ export default function CargarResponsivaClient({
     try {
       const res = await leerResponsiva(archivo, setOcrMsg);
       setOcrTexto(res.texto);
+
+      if (res.clase && (CLASES_CARTA as readonly string[]).includes(res.clase)) {
+        setClase(res.clase as ClaseCarta);
+      }
+      const tipo = claseATipo(res.clase);
+
       let empMatch: Empleado | undefined;
       if (res.numeroEmpleado) {
         const objetivo = soloNum(res.numeroEmpleado);
         empMatch = empleados.find((e) => soloNum(e.numero_empleado) === objetivo);
-        if (empMatch) setEmpleadoId(String(empMatch.id));
+        if (empMatch) setEmpleadoId(empMatch.id);
       }
-      const nuevos: number[] = [];
-      for (const s of res.series) {
-        const eq = equipos.find((e) => (e.numero_serie ?? "").toUpperCase().trim() === s);
-        if (eq && !nuevos.includes(eq.id)) nuevos.push(eq.id);
-      }
-      if (nuevos.length) setSeleccion((prev) => Array.from(new Set([...prev, ...nuevos])));
+
+      const eq = res.equipo;
+      setModoEquipo("nuevo");
+      setNuevoEq((p) => ({
+        tipo,
+        marca: eq.marca ?? p.marca,
+        modelo: eq.modelo ?? p.modelo,
+        numero_serie: eq.serie ?? p.numero_serie,
+        detalles: { ...p.detalles, ...eq },
+      }));
 
       const partes: string[] = [];
+      partes.push(res.clase ? `Tipo: ${ETIQUETA_CLASE[res.clase] ?? res.clase}` : "No detecté el tipo");
       partes.push(
         res.numeroEmpleado
           ? empMatch
             ? `Empleado ${res.numeroEmpleado} → ${empMatch.nombre} ✓`
-            : `Leí el empleado ${res.numeroEmpleado}, pero no está en la lista`
-          : "No detecté número de empleado"
+            : `Leí el empleado ${res.numeroEmpleado} (revísalo)`
+          : "No detecté empleado"
       );
-      partes.push(
-        res.series.length
-          ? `Series: ${res.series.join(", ")} (${nuevos.length} equipo(s) enlazado(s))`
-          : "No detecté número de serie"
-      );
+      const campos = Object.keys(eq).length;
+      partes.push(campos ? `${campos} dato(s) del equipo` : "No detecté datos del equipo");
       setOcrInfo(`${partes.join(" · ")} — revisa y corrige lo que haga falta.`);
     } catch {
       setOcrInfo(null);
@@ -84,33 +114,29 @@ export default function CargarResponsivaClient({
     }
   };
 
-  const empleado = empleados.find((e) => String(e.id) === empleadoId);
-
-  const equiposFiltrados = useMemo(() => {
-    const q = filtro.trim().toLowerCase();
-    if (!q) return equipos;
-    return equipos.filter((e) =>
-      [e.codigo, ETIQUETA_TIPO[e.tipo] ?? e.tipo, e.marca, e.modelo, e.numero_serie ?? ""].join(" ").toLowerCase().includes(q)
-    );
-  }, [equipos, filtro]);
-
-  const alternar = (id: number) =>
-    setSeleccion((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
-
   const enviar = () => {
     setError("");
-    if (!empleado) return setError("Selecciona al empleado de la responsiva.");
+    if (!empleadoId) return setError("Selecciona al empleado de la responsiva.");
     const archivo = fileRef.current?.files?.[0];
     if (!archivo) return setError("Sube el archivo escaneado (PDF o foto).");
 
     const fd = new FormData();
     fd.append("archivo", archivo);
-    fd.append("empleadoId", String(empleado.id));
+    fd.append("empleadoId", String(empleadoId));
     fd.append("clase", clase);
     fd.append("folio", folio);
     fd.append("fecha", fecha);
     fd.append("observaciones", observaciones);
-    fd.append("equipoIds", JSON.stringify(seleccion));
+    if (sinEquipo) {
+      fd.append("modo", "existente");
+      fd.append("equipoIds", "[]");
+    } else if (modoEquipo === "nuevo") {
+      fd.append("modo", "nuevo");
+      fd.append("nuevoEquipo", JSON.stringify(nuevoEq));
+    } else {
+      fd.append("modo", "existente");
+      fd.append("equipoIds", JSON.stringify(seleccion));
+    }
 
     iniciar(async () => {
       const res = await cargarResponsivaFirmada(fd);
@@ -151,7 +177,7 @@ export default function CargarResponsivaClient({
                 {ocrCargando ? "Leyendo…" : "🔍 Leer datos del documento (OCR)"}
               </button>
               <p className="mt-2 text-xs text-soft">
-                El sistema lee el escaneo y sugiere el empleado y el equipo por su número de serie. Tú confirmas. (La
+                Lee el escaneo y llena abajo el tipo, el empleado y los datos del equipo. Tú corriges lo que falle. (La
                 primera vez descarga el idioma; requiere internet.)
               </p>
               {ocrCargando ? <p className="mt-2 text-xs text-kraft-dark">{ocrMsg}</p> : null}
@@ -175,7 +201,7 @@ export default function CargarResponsivaClient({
           <div className="space-y-3">
             <div>
               <Label>Tipo de carta</Label>
-              <select className={inputCls} value={clase} onChange={(e) => setClase(e.target.value as ClaseCarta)}>
+              <select className={inputCls} value={clase} onChange={(e) => cambiarClase(e.target.value as ClaseCarta)}>
                 {CLASES_CARTA.map((c) => (
                   <option key={c} value={c}>
                     {ETIQUETA_CLASE[c]}
@@ -185,58 +211,118 @@ export default function CargarResponsivaClient({
             </div>
             <div>
               <Label>Empleado</Label>
-              <select className={inputCls} value={empleadoId} onChange={(e) => setEmpleadoId(e.target.value)}>
-                <option value="">— Selecciona un empleado —</option>
-                {empleados.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.numero_empleado} · {e.nombre}
-                  </option>
-                ))}
-              </select>
+              <BuscadorEmpleado empleados={empleados} value={empleadoId} onChange={setEmpleadoId} />
             </div>
           </div>
-        </Card>
-
-        <Card>
-          <h2 className="mb-1 text-base font-bold text-ink">3. Equipos de esta responsiva</h2>
-          <p className="mb-3 text-xs text-soft">Palomea los equipos que ampara el documento. Quedarán asignados al empleado. (Wi-Fi o vale: puedes dejarlo vacío.)</p>
-          <input
-            className={`${inputCls} mb-3`}
-            placeholder="Filtrar equipos disponibles…"
-            value={filtro}
-            onChange={(e) => setFiltro(e.target.value)}
-          />
-          {equipos.length === 0 ? (
-            <Empty>No hay equipos disponibles. Regístralos o impórtalos en el inventario.</Empty>
-          ) : (
-            <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
-              {equiposFiltrados.map((e) => (
-                <label
-                  key={e.id}
-                  className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${
-                    seleccion.includes(e.id) ? "border-kraft bg-sky-50" : "border-line bg-white hover:bg-paper/60"
-                  }`}
-                >
-                  <input type="checkbox" className="mt-0.5 accent-kraft" checked={seleccion.includes(e.id)} onChange={() => alternar(e.id)} />
-                  <span>
-                    <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
-                    <span className="font-medium">
-                      {e.marca} {e.modelo}
-                    </span>
-                    <span className="block text-xs text-soft">
-                      {ETIQUETA_TIPO[e.tipo] ?? e.tipo}
-                      {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-          <p className="mt-3 text-xs text-soft">{seleccion.length} equipo(s) seleccionado(s)</p>
         </Card>
       </div>
 
       <div className="space-y-5">
+        {sinEquipo ? (
+          <Card>
+            <h2 className="mb-1 text-base font-bold text-ink">3. Sin equipo</h2>
+            <p className="text-sm text-soft">Esta carta (Wi-Fi / vale) no lleva equipo físico asignado.</p>
+          </Card>
+        ) : (
+          <Card>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold text-ink">3. Equipo</h2>
+              <div className="flex gap-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setModoEquipo("nuevo")}
+                  className={`rounded-md border px-2 py-1 ${modoEquipo === "nuevo" ? "border-kraft bg-orange-50 font-semibold text-kraft-dark" : "border-line bg-white"}`}
+                >
+                  Crear nuevo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModoEquipo("existente")}
+                  className={`rounded-md border px-2 py-1 ${modoEquipo === "existente" ? "border-kraft bg-orange-50 font-semibold text-kraft-dark" : "border-line bg-white"}`}
+                >
+                  Ya en inventario
+                </button>
+              </div>
+            </div>
+
+            {modoEquipo === "nuevo" ? (
+              <div className="space-y-3">
+                <p className="text-xs text-soft">Se crea en el inventario y queda asignado al empleado. Los datos vienen del OCR; corrígelos si hace falta.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label>Tipo de equipo</Label>
+                    <select className={inputCls} value={nuevoEq.tipo} onChange={(e) => setNuevoEq((p) => ({ ...p, tipo: e.target.value as TipoEquipo }))}>
+                      {TIPOS_EQUIPO.map((t) => (
+                        <option key={t} value={t}>
+                          {ETIQUETA_TIPO[t]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Serie</Label>
+                    <input className={`${inputCls} mono`} value={nuevoEq.numero_serie} onChange={(e) => setNuevoEq((p) => ({ ...p, numero_serie: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Marca</Label>
+                    <input className={inputCls} value={nuevoEq.marca} onChange={(e) => setNuevoEq((p) => ({ ...p, marca: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Modelo</Label>
+                    <input className={inputCls} value={nuevoEq.modelo} onChange={(e) => setNuevoEq((p) => ({ ...p, modelo: e.target.value }))} />
+                  </div>
+                  {CAMPOS_DETALLE[nuevoEq.tipo].map((c) => (
+                    <div key={c.clave}>
+                      <Label>{c.etiqueta}</Label>
+                      <input className={inputCls} value={nuevoEq.detalles[c.clave] ?? ""} onChange={(e) => setDet(c.clave, e.target.value)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <input
+                  className={`${inputCls} mb-3`}
+                  placeholder="Filtrar equipos disponibles…"
+                  value={filtro}
+                  onChange={(e) => setFiltro(e.target.value)}
+                />
+                {equipos.length === 0 ? (
+                  <Empty>No hay equipos disponibles en el inventario. Usa “Crear nuevo”.</Empty>
+                ) : (
+                  <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+                    {equiposFiltrados.map((e) => (
+                      <label
+                        key={e.id}
+                        className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm ${
+                          seleccion.includes(e.id) ? "border-kraft bg-orange-50/60" : "border-line bg-white hover:bg-paper/60"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 accent-kraft"
+                          checked={seleccion.includes(e.id)}
+                          onChange={() => setSeleccion((s) => (s.includes(e.id) ? s.filter((x) => x !== e.id) : [...s, e.id]))}
+                        />
+                        <span>
+                          <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
+                          <span className="font-medium">
+                            {e.marca} {e.modelo}
+                          </span>
+                          <span className="block text-xs text-soft">
+                            {ETIQUETA_TIPO[e.tipo] ?? e.tipo}
+                            {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
+
         <Card>
           <h2 className="mb-3 text-base font-bold text-ink">4. Datos del documento (opcional)</h2>
           <div className="space-y-4">
@@ -250,13 +336,7 @@ export default function CargarResponsivaClient({
             </div>
             <div>
               <Label>Observaciones</Label>
-              <textarea
-                className={inputCls}
-                rows={3}
-                value={observaciones}
-                onChange={(e) => setObservaciones(e.target.value)}
-                placeholder="Ej. Responsiva histórica cargada desde archivo físico."
-              />
+              <textarea className={inputCls} rows={2} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} placeholder="Ej. Responsiva histórica cargada desde archivo físico." />
             </div>
           </div>
         </Card>
@@ -265,11 +345,11 @@ export default function CargarResponsivaClient({
           <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
         ) : null}
 
-        <button className={`${btnPrimary} w-full py-3 text-base`} onClick={enviar} disabled={pendiente}>
+        <button className={`${btnPrimary} w-full py-3 text-base`} onClick={enviar} disabled={pendiente || ocrCargando}>
           {pendiente ? "Guardando…" : "Guardar responsiva cargada"}
         </button>
         <p className="text-center text-xs text-soft">
-          El documento se guarda en el repositorio y los equipos quedan asignados al empleado. Se marca como “Cargada”.
+          Se guarda el documento firmado y el equipo queda asignado al empleado. Se marca como “Cargada”.
         </p>
       </div>
     </div>

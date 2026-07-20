@@ -1,11 +1,12 @@
 // OCR de responsivas escaneadas. Corre en el navegador (cliente):
 // pdf.js dibuja la primera página en un lienzo y tesseract.js lee el texto.
-// Es una AYUDA: si algo falla, la captura manual sigue funcionando.
+// Es una AYUDA: si algo falla o se equivoca, la captura manual sigue funcionando.
 
 export type ResultadoOcr = {
   texto: string;
+  clase: string | null; // COMPUTO | CELULAR | OTROS | WIFI
   numeroEmpleado: string | null;
-  series: string[];
+  equipo: Record<string, string>; // marca, modelo, serie, imei, numero, plan, condicion, ...
 };
 
 async function pdfACanvas(file: File): Promise<HTMLCanvasElement> {
@@ -39,7 +40,6 @@ function preprocesar(src: HTMLCanvasElement, fraccionAlto: number): HTMLCanvasEl
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    // Realza el contraste alrededor del punto medio (texto más negro, fondo más claro).
     const v = g < 140 ? Math.max(0, g - 45) : Math.min(255, g + 30);
     d[i] = d[i + 1] = d[i + 2] = v;
   }
@@ -68,70 +68,86 @@ async function imagenACanvas(file: File): Promise<HTMLCanvasElement> {
   }
 }
 
-function sinAcentos(s: string): string {
+/** Minúsculas + sin acentos, conservando la longitud (á→a, ñ→n, etc.). */
+function normLP(s: string): string {
   return s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[áàäâ]/g, "a")
+    .replace(/[éèëê]/g, "e")
+    .replace(/[íìïî]/g, "i")
+    .replace(/[óòöô]/g, "o")
+    .replace(/[úùüû]/g, "u")
+    .replace(/ñ/g, "n");
 }
 
-/**
- * Busca el número de empleado y los números de serie leyendo por líneas.
- * El valor puede estar en la misma línea que la etiqueta (tabla) o en la siguiente.
- */
-export function extraerDatos(texto: string): { numeroEmpleado: string | null; series: string[] } {
-  const lineas = texto
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  let numeroEmpleado: string | null = null;
-  const series: string[] = [];
+/** Limpia la basura que el OCR mete alrededor de los valores (____, >>>>, |, etc.). */
+function limpiarValor(v: string): string {
+  return v
+    .replace(/^[\s_>|:.\-[\]¡!]+/, "")
+    .split(/\s{3,}|[_>|]{2,}/)[0]
+    .replace(/[\s_>|.,;:\-]+$/, "")
+    .trim();
+}
 
-  const numeroCerca = (i: number): string | null => {
-    const aqui = lineas[i].match(/(\d{2,6})(?!\d)/);
-    if (aqui) return aqui[1];
-    const sig = lineas[i + 1]?.match(/^\D{0,6}(\d{2,6})(?!\d)/);
-    return sig ? sig[1] : null;
+/** Toma el valor que sigue a una etiqueta (misma línea). etiqueta es un patrón regex. */
+function campo(texto: string, etiqueta: string): string {
+  const re = new RegExp(`(?:^|\\n)[\\s\\[|¡!]*${etiqueta}\\s*[:.|\\]]?\\s*([^\\n]+)`, "i");
+  const m = texto.match(re);
+  return m ? limpiarValor(m[1]) : "";
+}
+
+/** Extrae clase (tipo de carta), número de empleado y datos del equipo del texto reconocido. */
+export function extraerCarta(texto: string): {
+  clase: string | null;
+  numeroEmpleado: string | null;
+  equipo: Record<string, string>;
+} {
+  const nl = normLP(texto);
+  const sinEsp = nl.replace(/[^a-z0-9]/g, "");
+  const plano = nl.replace(/\s+/g, " ");
+
+  let clase: string | null = null;
+  if (/equipocelular|celular|telefono/.test(sinEsp)) clase = "CELULAR";
+  else if (/equipodecomputo|computo/.test(sinEsp)) clase = "COMPUTO";
+  else if (/otrosequipos/.test(sinEsp)) clase = "OTROS";
+  else if (/redwifi|wifi|wi-?fi/.test(sinEsp)) clase = "WIFI";
+
+  const num = plano.match(/numero\s*de\s*empleado\D{0,6}(\d{2,6})/);
+  const numeroEmpleado = num ? num[1] : null;
+
+  const equipo: Record<string, string> = {};
+  const set = (f: string, patron: string) => {
+    const v = campo(texto, patron);
+    if (v) equipo[f] = v;
   };
-
-  const serieCerca = (i: number): string | null => {
-    const n = sinAcentos(lineas[i]);
-    const pos = n.indexOf("serie");
-    const resto = pos >= 0 ? lineas[i].slice(pos + 5) : "";
-    let m = resto.match(/[A-Za-z0-9][A-Za-z0-9-]{3,}/);
-    if (!m && lineas[i + 1]) m = lineas[i + 1].match(/[A-Za-z0-9][A-Za-z0-9-]{3,}/);
-    return m ? m[0].toUpperCase().replace(/[.,;:]+$/, "") : null;
-  };
-
-  for (let i = 0; i < lineas.length; i++) {
-    const n = sinAcentos(lineas[i]);
-    if (
-      numeroEmpleado === null &&
-      n.includes("empleado") &&
-      (n.includes("numero") || n.includes("num ") || n.includes("no ") || n.includes("no.")) &&
-      !n.includes("quien recibe") &&
-      !n.includes("firma")
-    ) {
-      const num = numeroCerca(i);
-      if (num) numeroEmpleado = num;
-    }
-    if (n.includes("serie")) {
-      const s = serieCerca(i);
-      if (s && !series.includes(s)) series.push(s);
-    }
-  }
-  return { numeroEmpleado, series };
+  set("marca", "marca");
+  set("modelo", "modelo");
+  set("serie", "serie");
+  set("imei", "imei");
+  set("numero", "numero(?!\\s*de\\s*empleado)");
+  set("plan", "plan");
+  set("descripcion", "descripci[oó]n");
+  set("condicion", "condici[oó]n");
+  set("accesorios", "accesorios");
+  set("activo", "activo");
+  set("procesador", "procesador");
+  set("ram", "(?:memoria(?: ram)?|ram)");
+  set("hd", "(?:disco(?: duro)?|hd)");
+  set("sistema_operativo", "sistema operativo");
+  set("nombre_computadora", "nombre de la computadora");
+  set("nombre_equipo", "nombre del equipo");
+  set("monitor", "monitor");
+  return { clase, numeroEmpleado, equipo };
 }
 
 export async function leerResponsiva(file: File, onProgreso?: (msg: string) => void): Promise<ResultadoOcr> {
   const esPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
   onProgreso?.("Preparando la imagen…");
   const base = esPdf ? await pdfACanvas(file) : await imagenACanvas(file);
-  // En un PDF de página completa, los datos están arriba: recortamos para ganar nitidez.
   const lienzo = preprocesar(base, esPdf ? 0.6 : 1);
   onProgreso?.("Leyendo el texto (la primera vez descarga el idioma, puede tardar)…");
   const Tesseract = await import("tesseract.js");
   const { data } = await Tesseract.recognize(lienzo, "spa");
-  const { numeroEmpleado, series } = extraerDatos(data.text || "");
-  return { texto: data.text || "", numeroEmpleado, series };
+  const { clase, numeroEmpleado, equipo } = extraerCarta(data.text || "");
+  return { texto: data.text || "", clase, numeroEmpleado, equipo };
 }

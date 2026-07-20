@@ -97,6 +97,7 @@ export const CAMPOS_DETALLE: Record<TipoEquipo, CampoDetalle[]> = {
     { clave: "cuenta", etiqueta: "Cuenta" },
     { clave: "condicion", etiqueta: "Condición" },
     { clave: "descripcion", etiqueta: "Descripción" },
+    { clave: "accesorios", etiqueta: "Accesorios" },
   ],
   RADIO: [
     { clave: "num_equipo", etiqueta: "No. de equipo" },

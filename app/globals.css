@@ -44,9 +44,6 @@ body {
 }
 
 /* Capa de texto seleccionable sobre el escaneo (visor tipo "texto en vivo"). */
-.capa-ocr {
-  container-type: size;
-}
-.capa-ocr .ocr-palabra::selection {
-  background: rgba(234, 0, 41, 0.28);
+.capa-ocr span::selection {
+  background: rgba(234, 0, 41, 0.3);
 }

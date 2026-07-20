@@ -96,7 +96,11 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
       let empMatch: Empleado | undefined;
       if (res.numeroEmpleado) {
         const objetivo = soloNum(res.numeroEmpleado);
-        empMatch = empleados.find((e) => soloNum(e.numero_empleado) === objetivo);
+        // El borde de la tabla a veces se lee como un "1" pegado al número
+        // (|2422 → 12422): si no hay match exacto, prueba sin el primer dígito.
+        const candidatos = [objetivo];
+        if (objetivo.length >= 5) candidatos.push(soloNum(objetivo.slice(1)));
+        empMatch = empleados.find((e) => candidatos.includes(soloNum(e.numero_empleado)));
         if (empMatch) setEmpleadoId(empMatch.id);
       }
 

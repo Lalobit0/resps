@@ -11,7 +11,8 @@ export type ResultadoOcr = {
 };
 
 // Una palabra reconocida con su posición (en píxeles de la imagen).
-export type PalabraOcr = { texto: string; x: number; y: number; w: number; h: number };
+// fin marca la última palabra de un renglón (para el salto de línea al copiar).
+export type PalabraOcr = { texto: string; x: number; y: number; w: number; h: number; fin?: boolean };
 
 // Imagen del escaneo + palabras posicionadas, para pintar una capa de texto
 // seleccionable encima (como el "texto en vivo" del iPhone).
@@ -104,20 +105,26 @@ function aGrises(src: HTMLCanvasElement): HTMLCanvasElement {
 
 /** Corre Tesseract sobre un lienzo y devuelve el texto y cada palabra con su caja. */
 async function ocrConCajas(lienzo: HTMLCanvasElement): Promise<{ texto: string; palabras: PalabraOcr[] }> {
-  const { createWorker } = await import("tesseract.js");
+  const { createWorker, PSM } = await import("tesseract.js");
   const worker = await createWorker("spa");
   try {
+    // PSM 4 (una sola columna): lee las tablas del formato renglón por renglón,
+    // con etiqueta y valor juntos. El modo automático se comía la columna de
+    // etiquetas (probado contra escaneos reales de Sultana).
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_COLUMN });
     const { data } = await worker.recognize(lienzo, {}, { text: true, blocks: true });
     const palabras: PalabraOcr[] = [];
     for (const b of data.blocks ?? []) {
       for (const p of b.paragraphs ?? []) {
         for (const l of p.lines ?? []) {
+          const inicio = palabras.length;
           for (const w of l.words ?? []) {
             const t = (w.text ?? "").trim();
             if (!t) continue;
             const { x0, y0, x1, y1 } = w.bbox;
             palabras.push({ texto: t, x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
           }
+          if (palabras.length > inicio) palabras[palabras.length - 1].fin = true;
         }
       }
     }
@@ -176,48 +183,48 @@ function campo(texto: string, etiqueta: string): string {
   return m ? limpiarValor(m[1]) : "";
 }
 
-/** Índice de la línea del "modelo" (donde empieza el cuadro de características). */
-function lineaModelo(lineas: string[]): number {
-  return lineas.findIndex((l) => /model[o0]/i.test(l));
-}
-
-/** Primer token con pinta de número de serie en una línea (deja fuera la etiqueta mal leída). */
-function tokenSerie(linea: string): string {
-  const limpia = linea.replace(/[|>_<\][¡!=.,;:—–]+/g, " ");
-  for (const raw of limpia.split(/\s+/)) {
-    const t = raw.replace(/[^A-Za-z0-9-]/g, "");
-    if (t.length < 5 || t.length > 24) continue;
-    if (/[A-Za-z]/.test(t) && /\d/.test(t)) return t.toUpperCase(); // letras + dígitos = serie típica
-    if (/^\d{6,13}$/.test(t)) return t; // serie de solo dígitos (no llega a IMEI)
-  }
-  return "";
+/** Renglones del cuadro de características (entre "características" y las normas). */
+function bloqueEquipo(texto: string): string[] {
+  const lineas = texto.split(/\n/);
+  const ini = lineas.findIndex((l) => /caracteristicas/.test(normLP(l)));
+  if (ini < 0) return [];
+  let fin = lineas.findIndex((l, i) => i > ini && /usuario es responsable|obliga a cumplir/.test(normLP(l)));
+  if (fin < 0) fin = Math.min(lineas.length, ini + 14);
+  return lineas
+    .slice(ini + 1, fin)
+    .map((l) => l.replace(/[|>_<\][¡!=—–"']+/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
 }
 
 /**
- * La serie es la línea que sigue al modelo dentro del cuadro. El OCR suele
- * destrozar la etiqueta ("Serie" → "See"), así que la ubicamos por posición.
+ * Respaldo cuando el escaneo destroza las etiquetas del cuadro (Serie→"See",
+ * o de plano se pierden): clasifica cada renglón del cuadro POR SU FORMA
+ * (IMEI = 14-16 dígitos, teléfono = 10 dígitos, serie = token alfanumérico, …).
+ * Solo llena campos que sigan vacíos; nunca pisa lo encontrado por etiqueta.
  */
-function serieProbable(texto: string, equipo: Record<string, string>): string {
-  const lineas = texto.split(/\n/);
-  const idx = lineaModelo(lineas);
-  if (idx < 0) return "";
-  const imei = (equipo.imei ?? "").replace(/\D/g, "");
-  const numero = (equipo.numero ?? "").replace(/\s/g, "");
-  for (let i = idx + 1; i < Math.min(lineas.length, idx + 4); i++) {
-    const t = tokenSerie(lineas[i]);
-    if (!t) continue;
-    if (/^\d{14,}$/.test(t)) continue; // es el IMEI
-    if (imei && t.replace(/\D/g, "") === imei) continue;
-    if (numero && t === numero) continue;
-    return t;
+function llenarPorForma(texto: string, equipo: Record<string, string>): void {
+  const ETIQ = /^(marca|modelo|serie|imei|numero|plan|descripcion|condicion|accesorios)\b/;
+  const pon = (f: string, v: string) => {
+    if (!equipo[f] && v) equipo[f] = v;
+  };
+  for (const linea of bloqueEquipo(texto)) {
+    if (ETIQ.test(normLP(linea))) continue; // ya la intentó el match por etiqueta
+    const soloDigitos = linea.replace(/\D/g, "");
+    const tokens = linea.split(/\s+/);
+    if (/^[\d\s]+$/.test(linea) && soloDigitos.length >= 14 && soloDigitos.length <= 16) pon("imei", soloDigitos);
+    else if (/^[\d\s-]+$/.test(linea) && soloDigitos.length === 10) pon("numero", linea.trim());
+    else if (/\bplan\b/i.test(linea)) pon("plan", linea);
+    else if (/\/|\bpin\b/i.test(linea)) pon("descripcion", linea);
+    else if (/case|cargador|funda|mica|cable|audifono|estuche|protector/i.test(normLP(linea))) pon("accesorios", linea);
+    else if (/sin detalles|nuevo|usado|reemplazo|golpeado|rayado/i.test(normLP(linea))) pon("condicion", linea);
+    else if (tokens.length === 1 && /[A-Za-z]/.test(linea) && /\d/.test(linea) && linea.length >= 6 && linea.length <= 20)
+      pon("serie", linea.toUpperCase());
+    else if (/^[A-Za-zÁÉÍÓÚÑáéíóúñ]+(\s[A-Za-zÁÉÍÓÚÑáéíóúñ]+)?$/.test(linea) && !equipo.marca) pon("marca", linea);
+    else if (/[A-Za-z]/.test(linea) && /\d/.test(linea)) {
+      if (!equipo.modelo) pon("modelo", linea);
+      else pon("descripcion", linea);
+    }
   }
-  return "";
-}
-
-/** El IMEI es una corrida de 14-16 dígitos (tolera O→0, l/I→1 del OCR). */
-function imeiProbable(texto: string): string {
-  const m = texto.replace(/[Oo]/g, "0").replace(/[lI]/g, "1").match(/\d{14,16}/);
-  return m ? m[0] : "";
 }
 
 /** Extrae clase (tipo de carta), número de empleado y datos del equipo del texto reconocido. */
@@ -263,18 +270,10 @@ export function extraerCarta(texto: string): {
   set("nombre_equipo", "nombre del equipo");
   set("monitor", "monitor");
 
-  // Respaldos por forma cuando el OCR destroza la etiqueta:
-  // el IMEI (solo en celulares) es una corrida larga de dígitos…
-  if (!equipo.imei && clase === "CELULAR") {
-    const imei = imeiProbable(texto);
-    if (imei) equipo.imei = imei;
-  }
-  // …y en el celular la serie es la línea que sigue al modelo dentro del cuadro
-  // (en cómputo esa línea suele ser el procesador, así que ahí no adivinamos).
-  if (!equipo.serie && clase === "CELULAR") {
-    const serie = serieProbable(texto, equipo);
-    if (serie) equipo.serie = serie;
-  }
+  // Respaldo cuando el escaneo destroza las etiquetas del cuadro: clasifica los
+  // renglones del cuadro por su forma. Solo en celular, donde el cuadro es fijo
+  // (en cómputo hay campos ambiguos, ahí no adivinamos).
+  if (clase === "CELULAR") llenarPorForma(texto, equipo);
   return { clase, numeroEmpleado, equipo };
 }
 

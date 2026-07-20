@@ -67,8 +67,24 @@ export const TIPO_DEFAULTS: Record<TipoEquipo, { categoria: string; prefijo: str
   OTRO: { categoria: "Otro", prefijo: "OTR" },
 };
 
-// Campos de detalle (JSON) que se capturan por tipo de equipo
-export type CampoDetalle = { clave: string; etiqueta: string };
+// Campos de detalle (JSON) que se capturan por tipo de equipo.
+// Si un campo trae `opciones`, se captura con lista desplegable en vez de texto libre.
+export type OpcionCampo = { valor: string; etiqueta: string };
+export type CampoDetalle = { clave: string; etiqueta: string; opciones?: OpcionCampo[] };
+
+// Planes Telcel Plus Empresarial que se usan actualmente (2, 3, 4 y 5).
+export const OPCIONES_PLAN_CELULAR: OpcionCampo[] = [
+  { valor: "Plan 2 Telcel Plus Empresarial", etiqueta: "Plan 2 · 5.5 GB · $329" },
+  { valor: "Plan 3 Telcel Plus Empresarial", etiqueta: "Plan 3 · 7.5 GB · $429" },
+  { valor: "Plan 4 Telcel Plus Empresarial", etiqueta: "Plan 4 · 11 GB · $549" },
+  { valor: "Plan 5 Telcel Plus Empresarial", etiqueta: "Plan 5 · 15.5 GB · $649" },
+];
+
+export const OPCIONES_CONDICION: OpcionCampo[] = [
+  { valor: "NUEVO", etiqueta: "Nuevo" },
+  { valor: "USADO", etiqueta: "Usado" },
+  { valor: "REEMPLAZO", etiqueta: "Reemplazo" },
+];
 
 export const CAMPOS_DETALLE: Record<TipoEquipo, CampoDetalle[]> = {
   COMPUTO: [
@@ -87,7 +103,7 @@ export const CAMPOS_DETALLE: Record<TipoEquipo, CampoDetalle[]> = {
     { clave: "numero", etiqueta: "Número (línea)" },
     { clave: "imei", etiqueta: "IMEI" },
     { clave: "imei2", etiqueta: "IMEI 2" },
-    { clave: "plan", etiqueta: "Plan" },
+    { clave: "plan", etiqueta: "Plan", opciones: OPCIONES_PLAN_CELULAR },
     { clave: "plan_precio", etiqueta: "Precio del plan" },
     { clave: "pin", etiqueta: "PIN" },
     { clave: "icloud", etiqueta: "iCloud / cuenta" },
@@ -95,7 +111,7 @@ export const CAMPOS_DETALLE: Record<TipoEquipo, CampoDetalle[]> = {
     { clave: "region", etiqueta: "Región" },
     { clave: "cuenta_padre", etiqueta: "Cuenta padre" },
     { clave: "cuenta", etiqueta: "Cuenta" },
-    { clave: "condicion", etiqueta: "Condición" },
+    { clave: "condicion", etiqueta: "Condición", opciones: OPCIONES_CONDICION },
     { clave: "descripcion", etiqueta: "Descripción" },
     { clave: "accesorios", etiqueta: "Accesorios" },
   ],

@@ -316,12 +316,29 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
                       <Label>Modelo</Label>
                       <input className={inputCls} value={nuevoEq.modelo} onChange={(e) => setNuevoEq((p) => ({ ...p, modelo: e.target.value }))} />
                     </div>
-                    {CAMPOS_DETALLE[nuevoEq.tipo].map((c) => (
-                      <div key={c.clave}>
-                        <Label>{c.etiqueta}</Label>
-                        <input className={inputCls} value={nuevoEq.detalles[c.clave] ?? ""} onChange={(e) => setDet(c.clave, e.target.value)} />
-                      </div>
-                    ))}
+                    {CAMPOS_DETALLE[nuevoEq.tipo].map((c) => {
+                      const val = nuevoEq.detalles[c.clave] ?? "";
+                      return (
+                        <div key={c.clave}>
+                          <Label>{c.etiqueta}</Label>
+                          {c.opciones ? (
+                            <select className={inputCls} value={val} onChange={(e) => setDet(c.clave, e.target.value)}>
+                              <option value="">— Selecciona —</option>
+                              {val && !c.opciones.some((o) => o.valor === val) ? (
+                                <option value={val}>{val} (leído)</option>
+                              ) : null}
+                              {c.opciones.map((o) => (
+                                <option key={o.valor} value={o.valor}>
+                                  {o.etiqueta}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input className={inputCls} value={val} onChange={(e) => setDet(c.clave, e.target.value)} />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (

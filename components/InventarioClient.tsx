@@ -60,7 +60,7 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
   const setC = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
 
-  const setDetalle = (clave: string) => (ev: React.ChangeEvent<HTMLInputElement>) =>
+  const setDetalle = (clave: string) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => (f ? { ...f, detalles: { ...f.detalles, [clave]: ev.target.value } } : f));
 
   const enviar = () => {
@@ -166,12 +166,29 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
               <input className={`${inputCls} mono`} value={form.numero_serie} onChange={setC("numero_serie")} />
             </div>
 
-            {camposDetalle.map((c) => (
-              <div key={c.clave}>
-                <Label>{c.etiqueta}</Label>
-                <input className={inputCls} value={form.detalles[c.clave] ?? ""} onChange={setDetalle(c.clave)} />
-              </div>
-            ))}
+            {camposDetalle.map((c) => {
+              const val = form.detalles[c.clave] ?? "";
+              return (
+                <div key={c.clave}>
+                  <Label>{c.etiqueta}</Label>
+                  {c.opciones ? (
+                    <select className={inputCls} value={val} onChange={setDetalle(c.clave)}>
+                      <option value="">— Selecciona —</option>
+                      {val && !c.opciones.some((o) => o.valor === val) ? (
+                        <option value={val}>{val} (actual)</option>
+                      ) : null}
+                      {c.opciones.map((o) => (
+                        <option key={o.valor} value={o.valor}>
+                          {o.etiqueta}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input className={inputCls} value={val} onChange={setDetalle(c.clave)} />
+                  )}
+                </div>
+              );
+            })}
 
             <div>
               <Label>Fecha de compra</Label>

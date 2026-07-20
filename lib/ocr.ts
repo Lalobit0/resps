@@ -27,6 +27,47 @@ async function pdfACanvas(file: File): Promise<HTMLCanvasElement> {
   return canvas;
 }
 
+/**
+ * Lee el texto REAL incrustado en el PDF (cuando fue generado digitalmente).
+ * Devuelve "" si el PDF es una imagen escaneada (sin capa de texto), para
+ * caer entonces al OCR. Es exacto: no inventa caracteres como Tesseract.
+ */
+async function textoDePdf(file: File): Promise<string> {
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  const data = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({ data }).promise;
+  const page = await doc.getPage(1);
+  const content = await page.getTextContent();
+
+  const crudos = content.items as unknown as Array<{ str?: unknown; transform?: unknown }>;
+  const items: { str: string; x: number; y: number }[] = [];
+  for (const i of crudos) {
+    if (typeof i.str === "string" && i.str.trim() && Array.isArray(i.transform)) {
+      items.push({ str: i.str, x: i.transform[4] as number, y: i.transform[5] as number });
+    }
+  }
+
+  // Agrupa por renglón (misma Y, con tolerancia) y ordena cada renglón por X.
+  const filas: { y: number; items: typeof items }[] = [];
+  for (const it of [...items].sort((a, b) => b.y - a.y)) {
+    const fila = filas.find((f) => Math.abs(f.y - it.y) <= 3);
+    if (fila) fila.items.push(it);
+    else filas.push({ y: it.y, items: [it] });
+  }
+  return filas
+    .map((f) =>
+      f.items
+        .sort((a, b) => a.x - b.x)
+        .map((i) => i.str)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter(Boolean)
+    .join("\n");
+}
+
 /** Recorta la parte superior (donde están los datos) y pasa a escala de grises con contraste. */
 function preprocesar(src: HTMLCanvasElement, fraccionAlto: number): HTMLCanvasElement {
   const alto = Math.max(1, Math.floor(src.height * fraccionAlto));
@@ -200,6 +241,22 @@ export function extraerCarta(texto: string): {
 
 export async function leerResponsiva(file: File, onProgreso?: (msg: string) => void): Promise<ResultadoOcr> {
   const esPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+
+  // 1) Si el PDF trae texto real (generado digitalmente), se lee exacto: sin OCR.
+  if (esPdf) {
+    onProgreso?.("Leyendo el texto del PDF…");
+    try {
+      const texto = await textoDePdf(file);
+      if (texto.replace(/\s/g, "").length >= 40) {
+        const { clase, numeroEmpleado, equipo } = extraerCarta(texto);
+        return { texto, clase, numeroEmpleado, equipo };
+      }
+    } catch {
+      // Sin capa de texto o error: seguimos con el OCR de imagen.
+    }
+  }
+
+  // 2) Escaneo/foto (imagen sin texto): se reconoce con OCR (menos exacto).
   onProgreso?.("Preparando la imagen…");
   const base = esPdf ? await pdfACanvas(file) : await imagenACanvas(file);
   const lienzo = preprocesar(base, esPdf ? 0.6 : 1);

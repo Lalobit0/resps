@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import type { EmpleadoConEquipos } from "../lib/types";
 import { cambiarActivoEmpleado, eliminarEmpleado, guardarEmpleado, importarEmpleados } from "../app/empleados/actions";
-import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, thCls } from "./ui";
+import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
 
 type Formulario = {
   id?: number;
@@ -33,7 +33,8 @@ const FORM_VACIO: Formulario = {
   telefono: "",
 };
 
-const celda = "px-3 py-1 text-sm text-ink align-middle whitespace-nowrap";
+const celda = "px-2 py-1 text-sm text-ink align-middle whitespace-nowrap";
+const thc = "px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-soft whitespace-nowrap";
 const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
 const miniDanger = "rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50";
 
@@ -217,17 +218,17 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <Empty>No hay empleados que coincidan. Ajusta el filtro, registra uno o importa tu Excel.</Empty>
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[880px] border-collapse">
+          <table className="w-full min-w-[680px] border-collapse">
             <thead className="border-b border-line bg-paper/70">
               <tr>
-                <th className={thCls}>No.</th>
-                <th className={thCls}>Nombre</th>
-                <th className={thCls}>Puesto</th>
-                <th className={thCls}>Depto / Área</th>
-                <th className={thCls}>Jefe directo</th>
-                <th className={thCls}>Equipos</th>
-                <th className={thCls}>Estado</th>
-                <th className={thCls}>Acciones</th>
+                <th className={thc}>No.</th>
+                <th className={`${thc} w-full`}>Nombre</th>
+                <th className={thc}>Puesto</th>
+                <th className={thc}>Depto / Área</th>
+                <th className={thc}>Jefe directo</th>
+                <th className={`${thc} text-center`}>Eq.</th>
+                <th className={thc}>Estado</th>
+                <th className={thc}>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -253,7 +254,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                   <td className={`${celda} max-w-[160px] truncate text-xs text-soft`} title={e.supervisor ?? ""}>
                     {e.supervisor ?? "—"}
                   </td>
-                  <td className={celda}>
+                  <td className={`${celda} text-center`}>
                     {e.equipos_asignados > 0 ? (
                       <Link href={`/empleados/${e.id}`}>
                         <Badge tono="petrol">{e.equipos_asignados}</Badge>
@@ -267,9 +268,6 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                   </td>
                   <td className={celda}>
                     <div className="flex flex-nowrap items-center gap-1">
-                      <Link className={mini} href={`/empleados/${e.id}`}>
-                        Histórico
-                      </Link>
                       <button
                         className={mini}
                         onClick={() =>

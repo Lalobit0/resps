@@ -6,7 +6,12 @@ import type { EquipoConAsignado } from "../lib/types";
 import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
 import { eliminarEquipo, guardarEquipo, importarInventario } from "../app/inventario/actions";
-import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls, tonoEstadoEquipo } from "./ui";
+import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
+
+const tdc = "px-2 py-1.5 text-sm text-ink align-middle";
+const thc = "px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-soft whitespace-nowrap";
+const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
+const miniDanger = "rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50";
 
 type Formulario = {
   id?: number;
@@ -225,54 +230,54 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
         <Empty>No hay equipos con estos filtros. Registra uno nuevo o importa tu Excel.</Empty>
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[900px] border-collapse">
+          <table className="w-full min-w-[720px] border-collapse">
             <thead className="border-b border-line bg-paper/70">
               <tr>
-                <th className={thCls}>Código</th>
-                <th className={thCls}>Tipo</th>
-                <th className={thCls}>Equipo</th>
-                <th className={thCls}>Serie</th>
-                <th className={thCls}>Estado</th>
-                <th className={thCls}>Asignado a</th>
-                <th className={thCls}>Compra</th>
-                <th className={thCls}>Acciones</th>
+                <th className={thc}>Código</th>
+                <th className={thc}>Tipo</th>
+                <th className={`${thc} w-full`}>Equipo</th>
+                <th className={thc}>Serie</th>
+                <th className={thc}>Estado</th>
+                <th className={thc}>Asignado a</th>
+                <th className={thc}>Compra</th>
+                <th className={thc}>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {equipos.map((e) => (
                 <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
-                  <td className={`${tdCls} mono text-xs font-semibold`}>{e.codigo}</td>
-                  <td className={`${tdCls} text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
-                  <td className={tdCls}>
+                  <td className={`${tdc} mono whitespace-nowrap text-xs font-semibold`}>{e.codigo}</td>
+                  <td className={`${tdc} whitespace-nowrap text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
+                  <td className={tdc}>
                     <div className="font-medium">
                       {e.marca} {e.modelo}
                     </div>
                     {e.specs ? <div className="text-xs text-soft">{e.specs}</div> : null}
                   </td>
-                  <td className={`${tdCls} mono text-xs`}>{e.numero_serie ?? "—"}</td>
-                  <td className={tdCls}>
+                  <td className={`${tdc} mono whitespace-nowrap text-xs`}>{e.numero_serie ?? "—"}</td>
+                  <td className={tdc}>
                     <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>
                   </td>
-                  <td className={tdCls}>
+                  <td className={`${tdc} whitespace-nowrap text-xs`}>
                     {e.asignado_nombre ? (
                       <>
-                        <span className="mono text-xs text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
+                        <span className="mono text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
                       </>
                     ) : (
                       <span className="text-soft">—</span>
                     )}
                   </td>
-                  <td className={`${tdCls} text-xs text-soft`}>
+                  <td className={`${tdc} whitespace-nowrap text-xs text-soft`}>
                     {fechaCorta(e.fecha_compra)}
                     {e.costo !== null ? <div>{dinero(e.costo)}</div> : null}
                   </td>
-                  <td className={tdCls}>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button className={btnGhost} onClick={() => setVerEq(e)}>
+                  <td className={tdc}>
+                    <div className="flex flex-nowrap items-center gap-1">
+                      <button className={mini} onClick={() => setVerEq(e)}>
                         Ver
                       </button>
                       <button
-                        className={btnGhost}
+                        className={mini}
                         onClick={() =>
                           setForm({
                             id: e.id,
@@ -291,11 +296,11 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
                       >
                         Editar
                       </button>
-                      <Link className={btnGhost} href={`/mantenimientos?equipo=${e.id}`}>
+                      <Link className={mini} href={`/mantenimientos?equipo=${e.id}`}>
                         Historial
                       </Link>
                       <button
-                        className={btnDanger}
+                        className={miniDanger}
                         disabled={pendiente}
                         onClick={() => {
                           if (confirm(`¿Eliminar el equipo ${e.codigo}?`)) {

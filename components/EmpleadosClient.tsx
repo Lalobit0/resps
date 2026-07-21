@@ -236,12 +236,22 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       {filtrados.length === 0 ? (
         <Empty>No hay empleados que coincidan. Ajusta el filtro, registra uno o importa tu Excel.</Empty>
       ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[680px] border-collapse">
+        <Card className="p-0">
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[7%]" />
+              <col className="w-[21%]" />
+              <col className="w-[16%]" />
+              <col className="w-[15%]" />
+              <col className="w-[12%]" />
+              <col className="w-[5%]" />
+              <col className="w-[8%]" />
+              <col className="w-[16%]" />
+            </colgroup>
             <thead className="border-b border-line bg-paper/70">
               <tr>
                 <th className={thc}>No.</th>
-                <th className={`${thc} w-full`}>Nombre</th>
+                <th className={thc}>Nombre</th>
                 <th className={thc}>Puesto</th>
                 <th className={thc}>Depto / Área</th>
                 <th className={thc}>Jefe directo</th>
@@ -254,23 +264,19 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
               {filtrados.map((e) => (
                 <tr key={e.id} className="border-b border-line/60 last:border-0 hover:bg-paper/40">
                   <td className={`${celda} mono text-xs`}>{e.numero_empleado}</td>
-                  <td className={celda}>
-                    <Link
-                      href={`/empleados/${e.id}`}
-                      className="font-medium text-ink hover:text-kraft hover:underline"
-                      title="Ver histórico"
-                    >
+                  <td className={`${celda} truncate`} title={`${e.nombre} · ver histórico`}>
+                    <Link href={`/empleados/${e.id}`} className="font-medium text-ink hover:text-kraft hover:underline">
                       {e.nombre}
                     </Link>
                   </td>
-                  <td className={`${celda} max-w-[190px] truncate text-xs`} title={e.puesto}>
+                  <td className={`${celda} truncate text-xs`} title={e.puesto}>
                     {e.puesto}
                   </td>
-                  <td className={`${celda} text-xs`}>
+                  <td className={`${celda} truncate text-xs`} title={`${e.departamento}${e.area && e.area !== e.departamento ? " · " + e.area : ""}`}>
                     {e.departamento}
                     {e.area && e.area !== e.departamento ? <span className="text-soft"> · {e.area}</span> : null}
                   </td>
-                  <td className={`${celda} max-w-[160px] truncate text-xs text-soft`} title={e.supervisor ?? ""}>
+                  <td className={`${celda} truncate text-xs text-soft`} title={e.supervisor ?? ""}>
                     {e.supervisor ?? "—"}
                   </td>
                   <td className={`${celda} text-center`}>
@@ -286,7 +292,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                     {e.activo ? <Badge tono="verde">Activo</Badge> : <Badge tono="gris">Inactivo</Badge>}
                   </td>
                   <td className={celda}>
-                    <div className="flex flex-nowrap items-center gap-1">
+                    <div className="flex flex-wrap items-center gap-1">
                       <button
                         className={mini}
                         onClick={() =>

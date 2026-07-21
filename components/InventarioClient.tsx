@@ -229,13 +229,23 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
       {equipos.length === 0 ? (
         <Empty>No hay equipos con estos filtros. Registra uno nuevo o importa tu Excel.</Empty>
       ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[720px] border-collapse">
+        <Card className="p-0">
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[8%]" />
+              <col className="w-[9%]" />
+              <col className="w-[20%]" />
+              <col className="w-[11%]" />
+              <col className="w-[9%]" />
+              <col className="w-[16%]" />
+              <col className="w-[8%]" />
+              <col className="w-[19%]" />
+            </colgroup>
             <thead className="border-b border-line bg-paper/70">
               <tr>
                 <th className={thc}>Código</th>
                 <th className={thc}>Tipo</th>
-                <th className={`${thc} w-full`}>Equipo</th>
+                <th className={thc}>Equipo</th>
                 <th className={thc}>Serie</th>
                 <th className={thc}>Estado</th>
                 <th className={thc}>Asignado a</th>
@@ -246,19 +256,19 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
             <tbody>
               {equipos.map((e) => (
                 <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
-                  <td className={`${tdc} mono whitespace-nowrap text-xs font-semibold`}>{e.codigo}</td>
-                  <td className={`${tdc} whitespace-nowrap text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
-                  <td className={tdc}>
-                    <div className="font-medium">
+                  <td className={`${tdc} mono truncate text-xs font-semibold`}>{e.codigo}</td>
+                  <td className={`${tdc} truncate text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
+                  <td className={`${tdc} truncate`} title={`${e.marca} ${e.modelo}${e.specs ? " · " + e.specs : ""}`}>
+                    <div className="truncate font-medium">
                       {e.marca} {e.modelo}
                     </div>
-                    {e.specs ? <div className="text-xs text-soft">{e.specs}</div> : null}
+                    {e.specs ? <div className="truncate text-xs text-soft">{e.specs}</div> : null}
                   </td>
-                  <td className={`${tdc} mono whitespace-nowrap text-xs`}>{e.numero_serie ?? "—"}</td>
+                  <td className={`${tdc} mono truncate text-xs`} title={e.numero_serie ?? ""}>{e.numero_serie ?? "—"}</td>
                   <td className={tdc}>
                     <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>
                   </td>
-                  <td className={`${tdc} whitespace-nowrap text-xs`}>
+                  <td className={`${tdc} truncate text-xs`} title={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : ""}>
                     {e.asignado_nombre ? (
                       <>
                         <span className="mono text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
@@ -272,7 +282,7 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
                     {e.costo !== null ? <div>{dinero(e.costo)}</div> : null}
                   </td>
                   <td className={tdc}>
-                    <div className="flex flex-nowrap items-center gap-1">
+                    <div className="flex flex-wrap items-center gap-1">
                       <button className={mini} onClick={() => setVerEq(e)}>
                         Ver
                       </button>

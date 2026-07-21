@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/lineas", etiqueta: "Líneas telefónicas" },
   { href: "/responsivas", etiqueta: "Responsivas" },
   { href: "/mantenimientos", etiqueta: "Mantenimientos" },
+  { href: "/bitacora", etiqueta: "Bitácora" },
   { href: "/plantillas", etiqueta: "Plantillas y datos" },
   { href: "/respaldos", etiqueta: "Respaldos" },
 ];

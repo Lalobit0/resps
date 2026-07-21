@@ -4,6 +4,7 @@ import path from "path";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 export const STORAGE_DIR = path.join(process.cwd(), "storage", "responsivas");
+export const STORAGE_ELIMINADAS = path.join(process.cwd(), "storage", "responsivas_eliminadas");
 export const DB_PATH = path.join(DATA_DIR, "app.db");
 export const BACKUP_DIR = path.join(DATA_DIR, "backups");
 
@@ -89,6 +90,16 @@ CREATE TABLE IF NOT EXISTS plantillas (
 CREATE TABLE IF NOT EXISTS config (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bitacora (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  accion TEXT NOT NULL,
+  descripcion TEXT NOT NULL,
+  snapshot TEXT,
+  revertible INTEGER NOT NULL DEFAULT 0,
+  revertida INTEGER NOT NULL DEFAULT 0
 );
 `;
 
@@ -223,6 +234,7 @@ function aplicarRestauracionPendiente() {
 function crearDb(): Database.Database {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(STORAGE_DIR, { recursive: true });
+  fs.mkdirSync(STORAGE_ELIMINADAS, { recursive: true });
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
   aplicarRestauracionPendiente();
   const db = new Database(DB_PATH);

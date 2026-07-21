@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import fs from "fs";
 import path from "path";
-import { db, getConfig } from "../../lib/db";
+import { db, getConfig, STORAGE_DIR, STORAGE_ELIMINADAS } from "../../lib/db";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
@@ -17,6 +17,17 @@ function revalidar() {
   revalidatePath("/responsivas");
   revalidatePath("/empleados");
   revalidatePath("/responsivas/nueva");
+  revalidatePath("/bitacora");
+  revalidatePath("/lineas");
+}
+
+function registrarBitacora(accion: string, descripcion: string, snapshot: unknown, revertible: boolean) {
+  db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,?)").run(
+    accion,
+    descripcion,
+    snapshot ? JSON.stringify(snapshot) : null,
+    revertible ? 1 : 0
+  );
 }
 
 function siguienteFolio(prefijo: string): string {
@@ -410,5 +421,144 @@ export async function cargarResponsivaFirmada(formData: FormData): Promise<Resul
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo cargar la responsiva. Revisa la consola del servidor." };
+  }
+}
+
+// ---------- Eliminar responsiva (papelera + bitácora + revertir) ----------
+
+function rutaAbs(rel: string): string {
+  return path.isAbsolute(rel) ? rel : path.join(process.cwd(), rel);
+}
+
+/** Mueve el PDF entre carpetas (responsivas <-> responsivas_eliminadas). Devuelve la nueva ruta relativa. */
+function moverPdf(relActual: string, haciaEliminadas: boolean): string {
+  const abs = rutaAbs(relActual);
+  const base = path.basename(abs);
+  const destDir = haciaEliminadas ? STORAGE_ELIMINADAS : STORAGE_DIR;
+  fs.mkdirSync(destDir, { recursive: true });
+  const destAbs = path.join(destDir, base);
+  if (fs.existsSync(abs) && abs !== destAbs) fs.renameSync(abs, destAbs);
+  return path.relative(process.cwd(), destAbs);
+}
+
+type SnapEquipo =
+  | { modo: "BORRADO"; equipo: Equipo }
+  | { modo: "LIBERADO"; equipoId: number; estadoPrev: string; asignadoPrev: number | null };
+
+export async function eliminarResponsiva(id: number): Promise<ResultadoAccion> {
+  try {
+    const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(id) as Responsiva | undefined;
+    if (!r) return { ok: false, error: "La responsiva ya no existe." };
+    if (r.estado === "ELIMINADA") return { ok: false, error: "Esta responsiva ya está en la papelera." };
+
+    const empleado = db.prepare("SELECT nombre FROM empleados WHERE id = ?").get(r.empleado_id) as { nombre: string } | undefined;
+    const items = db.prepare("SELECT * FROM responsiva_items WHERE responsiva_id = ?").all(id) as { equipo_id: number }[];
+
+    const snapEquipos: SnapEquipo[] = [];
+    let pdfNuevo: string | null = r.pdf_path;
+
+    const tx = db.transaction(() => {
+      // Solo las asignaciones controlan el inventario; una devolución no.
+      if (r.tipo === "ASIGNACION") {
+        for (const it of items) {
+          const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(it.equipo_id) as Equipo | undefined;
+          if (!eq) continue;
+          // ¿Otro documento vigente usa este equipo?
+          const otras = db
+            .prepare(
+              `SELECT COUNT(*) AS c FROM responsiva_items ri JOIN responsivas r2 ON r2.id = ri.responsiva_id
+               WHERE ri.equipo_id = ? AND ri.responsiva_id != ? AND r2.estado != 'ELIMINADA'`
+            )
+            .get(it.equipo_id, id) as { c: number };
+          if (otras.c === 0) {
+            // Nadie más lo usa: se retira del inventario (guardando copia para revertir).
+            snapEquipos.push({ modo: "BORRADO", equipo: eq });
+            db.prepare("DELETE FROM mantenimientos WHERE equipo_id = ?").run(eq.id);
+            db.prepare("DELETE FROM equipos WHERE id = ?").run(eq.id);
+          } else {
+            // Otro documento lo usa: solo se libera si estaba asignado a este empleado.
+            snapEquipos.push({ modo: "LIBERADO", equipoId: eq.id, estadoPrev: eq.estado, asignadoPrev: eq.asignado_a });
+            if (eq.asignado_a === r.empleado_id) {
+              db.prepare("UPDATE equipos SET estado='DISPONIBLE', asignado_a=NULL WHERE id=?").run(eq.id);
+            }
+          }
+        }
+      }
+
+      if (r.pdf_path) pdfNuevo = moverPdf(r.pdf_path, true);
+      db.prepare("UPDATE responsivas SET estado='ELIMINADA', pdf_path=? WHERE id=?").run(pdfNuevo, id);
+
+      registrarBitacora(
+        "ELIMINAR_RESPONSIVA",
+        `Se eliminó la responsiva ${r.folio}${empleado ? ` de ${empleado.nombre}` : ""}`,
+        { responsivaId: id, folio: r.folio, estadoPrev: r.estado, pdfAntes: r.pdf_path, pdfDespues: pdfNuevo, equipos: snapEquipos },
+        true
+      );
+    });
+    tx();
+
+    revalidar();
+    return { ok: true };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo eliminar la responsiva." };
+  }
+}
+
+export async function revertirBitacora(bitacoraId: number): Promise<ResultadoAccion> {
+  try {
+    const b = db.prepare("SELECT * FROM bitacora WHERE id = ?").get(bitacoraId) as
+      | { id: number; accion: string; snapshot: string | null; revertible: number; revertida: number }
+      | undefined;
+    if (!b) return { ok: false, error: "El movimiento ya no existe." };
+    if (!b.revertible || b.revertida) return { ok: false, error: "Este movimiento no se puede revertir." };
+    if (b.accion !== "ELIMINAR_RESPONSIVA" || !b.snapshot) return { ok: false, error: "Acción no reversible." };
+
+    const snap = JSON.parse(b.snapshot) as {
+      responsivaId: number;
+      folio: string;
+      estadoPrev: string;
+      pdfAntes: string | null;
+      pdfDespues: string | null;
+      equipos: SnapEquipo[];
+    };
+
+    const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(snap.responsivaId) as Responsiva | undefined;
+    if (!r) return { ok: false, error: "La responsiva original ya no existe." };
+
+    const tx = db.transaction(() => {
+      for (const s of snap.equipos) {
+        if (s.modo === "BORRADO") {
+          const e = s.equipo;
+          // Se vuelve a insertar con el MISMO id para conservar los vínculos.
+          const existe = db.prepare("SELECT 1 FROM equipos WHERE id = ?").get(e.id);
+          if (!existe) {
+            db.prepare(
+              `INSERT INTO equipos (id, codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, estado, asignado_a, notas, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+            ).run(
+              e.id, e.codigo, e.tipo, e.categoria, e.marca, e.modelo, e.numero_serie, e.specs, e.detalles,
+              e.fecha_compra, e.costo, e.estado, e.asignado_a, e.notas, e.created_at
+            );
+          }
+        } else {
+          db.prepare("UPDATE equipos SET estado=?, asignado_a=? WHERE id=?").run(s.estadoPrev, s.asignadoPrev, s.equipoId);
+        }
+      }
+
+      let pdfFinal: string | null = r.pdf_path;
+      if (snap.pdfDespues) pdfFinal = moverPdf(snap.pdfDespues, false);
+      db.prepare("UPDATE responsivas SET estado=?, pdf_path=? WHERE id=?").run(snap.estadoPrev || "VIGENTE", pdfFinal, snap.responsivaId);
+
+      db.prepare("UPDATE bitacora SET revertida=1 WHERE id=?").run(b.id);
+      registrarBitacora("REVERTIR_ELIMINACION", `Se restauró la responsiva ${snap.folio}`, null, false);
+    });
+    tx();
+
+    revalidar();
+    return { ok: true };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo revertir el movimiento." };
   }
 }

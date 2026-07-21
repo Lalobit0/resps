@@ -61,6 +61,17 @@ export interface ResponsivaLista extends Responsiva {
   empleado_nombre: string;
   empleado_numero: string;
   equipos: string | null;
+  es_duplicado?: number;
+}
+
+export interface Bitacora {
+  id: number;
+  fecha: string;
+  accion: string;
+  descripcion: string;
+  snapshot: string | null;
+  revertible: number;
+  revertida: number;
 }
 
 export interface ResponsivaItem {

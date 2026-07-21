@@ -38,7 +38,7 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
     .prepare(
       `SELECT r.*,
         (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
-       FROM responsivas r WHERE r.empleado_id = ? ORDER BY r.id DESC`
+       FROM responsivas r WHERE r.empleado_id = ? AND r.estado != 'ELIMINADA' ORDER BY r.id DESC`
     )
     .all(empleado.id) as ResponsivaEmp[];
 

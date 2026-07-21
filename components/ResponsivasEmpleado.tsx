@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ETIQUETA_CLASE } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
+import EliminarResponsivaBtn from "./EliminarResponsivaBtn";
 import { Badge, Card, Empty, btnGhost, btnPrimary, tdCls, thCls } from "./ui";
 
 function puedeDevolver(r: { tipo: string; estado: string; clase: string }): boolean {
@@ -84,7 +85,7 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
                       Devolución
                     </Link>
                   ) : null}
-                  {!r.pdf_path && !puedeDevolver(r) ? <span className="text-soft">—</span> : null}
+                  <EliminarResponsivaBtn id={r.id} folio={r.folio} />
                 </div>
               </td>
             </tr>

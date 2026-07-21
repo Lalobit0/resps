@@ -4,6 +4,7 @@ import type { ResponsivaLista } from "../../lib/types";
 import { fechaCorta } from "../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "../../components/ui";
 import ExportarBotones from "../../components/ExportarBotones";
+import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export default async function PaginaResponsivas({
   };
   const orderBy = ORDENES[orden] ?? ORDENES.recientes;
 
-  const condiciones: string[] = [];
+  const condiciones: string[] = ["r.estado != 'ELIMINADA'"];
   const valores: string[] = [];
   if (tipo) {
     condiciones.push("r.tipo = ?");
@@ -42,18 +43,22 @@ export default async function PaginaResponsivas({
     condiciones.push("(r.folio LIKE ? OR em.nombre LIKE ? OR em.numero_empleado LIKE ?)");
     valores.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
-  const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
+  const where = `WHERE ${condiciones.join(" AND ")}`;
 
   const responsivas = db
     .prepare(
       `SELECT r.*, em.nombre AS empleado_nombre, em.numero_empleado AS empleado_numero,
-        (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
+        (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos,
+        (SELECT COUNT(*) FROM responsivas rd WHERE rd.empleado_id = r.empleado_id AND rd.clase = r.clase AND rd.fecha = r.fecha
+           AND rd.tipo = 'ASIGNACION' AND rd.estado != 'ELIMINADA' AND rd.id != r.id) AS es_duplicado
        FROM responsivas r
        JOIN empleados em ON em.id = r.empleado_id
        ${where}
        ORDER BY ${orderBy}`
     )
     .all(...valores) as ResponsivaLista[];
+
+  const totalDuplicados = responsivas.filter((r) => (r.es_duplicado ?? 0) > 0).length;
 
   return (
     <>
@@ -69,6 +74,13 @@ export default async function PaginaResponsivas({
       {nueva ? (
         <div className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           Se generó el documento <span className="mono font-semibold">{nueva}</span> y quedó guardado en el repositorio.
+        </div>
+      ) : null}
+
+      {totalDuplicados > 0 ? (
+        <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          ⚠️ Se detectaron <b>{totalDuplicados}</b> responsiva(s) que parecen duplicadas (mismo empleado, tipo y fecha).
+          Revísalas y elimina la que sobre; la eliminación va a la papelera y se puede revertir.
         </div>
       ) : null}
 
@@ -123,11 +135,16 @@ export default async function PaginaResponsivas({
                     <div className="flex flex-wrap items-center gap-1">
                       {r.tipo === "ASIGNACION" ? <Badge tono="petrol">Asignación</Badge> : <Badge tono="kraft">Devolución</Badge>}
                       {r.origen === "CARGADA" ? <Badge tono="ambar">Cargada</Badge> : null}
+                      {(r.es_duplicado ?? 0) > 0 ? <Badge tono="rojo">Posible duplicado</Badge> : null}
                     </div>
                     <div className="mt-1 text-[11px] text-soft">{ETIQUETA_CLASE[r.clase] ?? r.clase}</div>
                   </td>
                   <td className={`${tdCls} mono text-xs`}>{r.empleado_numero}</td>
-                  <td className={`${tdCls} font-medium`}>{r.empleado_nombre}</td>
+                  <td className={`${tdCls} font-medium`}>
+                    <Link href={`/empleados/${r.empleado_id}`} className="text-ink hover:text-kraft hover:underline" title="Ver histórico">
+                      {r.empleado_nombre}
+                    </Link>
+                  </td>
                   <td className={`${tdCls} mono text-xs`}>{r.equipos ?? "—"}</td>
                   <td className={tdCls}>{fechaCorta(r.fecha)}</td>
                   <td className={tdCls}>
@@ -151,6 +168,7 @@ export default async function PaginaResponsivas({
                           Registrar devolución
                         </Link>
                       ) : null}
+                      <EliminarResponsivaBtn id={r.id} folio={r.folio} />
                     </div>
                   </td>
                 </tr>

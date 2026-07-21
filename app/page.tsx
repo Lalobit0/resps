@@ -55,6 +55,7 @@ export default async function PaginaInicio() {
       `SELECT r.*, em.nombre AS empleado_nombre,
          (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
        FROM responsivas r JOIN empleados em ON em.id = r.empleado_id
+       WHERE r.estado != 'ELIMINADA'
        ORDER BY r.id DESC LIMIT 6`
     )
     .all() as ResponsivaLista[];

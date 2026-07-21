@@ -23,8 +23,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Uso interno · v1.0
             </div>
           </aside>
-          <main className="min-w-0 flex-1 px-4 py-6 md:px-10 md:py-10">
-            <div className="mx-auto w-full max-w-6xl">{children}</div>
+          <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-10">
+            <div className="w-full">{children}</div>
           </main>
         </div>
       </body>

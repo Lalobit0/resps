@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado, Equipo } from "../lib/types";
-import { CAMPOS_DETALLE, CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../lib/constants";
+import { CAMPOS_DETALLE, CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../lib/constants";
 import { cargarResponsivaFirmada } from "../app/responsivas/actions";
 import { leerResponsiva, type LecturaSeleccionable } from "../lib/ocr";
 import BuscadorEmpleado from "./BuscadorEmpleado";
@@ -65,7 +65,12 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
   }, [equipos, filtro]);
 
   const setDet = (clave: string, valor: string) =>
-    setNuevoEq((p) => ({ ...p, detalles: { ...p.detalles, [clave]: valor } }));
+    setNuevoEq((p) => {
+      const detalles = { ...p.detalles, [clave]: valor };
+      // Al elegir el plan se autollena su precio del tarifario.
+      if (clave === "plan" && PRECIO_POR_PLAN[valor]) detalles.plan_precio = PRECIO_POR_PLAN[valor];
+      return { ...p, detalles };
+    });
 
   const cambiarClase = (c: ClaseCarta) => {
     setClase(c);

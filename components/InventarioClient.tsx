@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import type { EquipoConAsignado } from "../lib/types";
-import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
+import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
 import { eliminarEquipo, guardarEquipo, importarInventario } from "../app/inventario/actions";
 import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls, tonoEstadoEquipo } from "./ui";
@@ -51,6 +51,7 @@ const IMPORTABLES: { tipo: TipoEquipo; etiqueta: string }[] = [
 
 export default function InventarioClient({ equipos }: { equipos: EquipoConAsignado[] }) {
   const [form, setForm] = useState<Formulario | null>(null);
+  const [verEq, setVerEq] = useState<EquipoConAsignado | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [pendiente, iniciar] = useTransition();
@@ -61,7 +62,13 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
     setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
 
   const setDetalle = (clave: string) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm((f) => (f ? { ...f, detalles: { ...f.detalles, [clave]: ev.target.value } } : f));
+    setForm((f) => {
+      if (!f) return f;
+      const detalles = { ...f.detalles, [clave]: ev.target.value };
+      // Al elegir el plan se autollena su precio del tarifario.
+      if (clave === "plan" && PRECIO_POR_PLAN[ev.target.value]) detalles.plan_precio = PRECIO_POR_PLAN[ev.target.value];
+      return { ...f, detalles };
+    });
 
   const enviar = () => {
     if (!form) return;
@@ -246,13 +253,24 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
                   <td className={tdCls}>
                     <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>
                   </td>
-                  <td className={tdCls}>{e.asignado_nombre ?? <span className="text-soft">—</span>}</td>
+                  <td className={tdCls}>
+                    {e.asignado_nombre ? (
+                      <>
+                        <span className="mono text-xs text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
+                      </>
+                    ) : (
+                      <span className="text-soft">—</span>
+                    )}
+                  </td>
                   <td className={`${tdCls} text-xs text-soft`}>
                     {fechaCorta(e.fecha_compra)}
                     {e.costo !== null ? <div>{dinero(e.costo)}</div> : null}
                   </td>
                   <td className={tdCls}>
                     <div className="flex flex-wrap gap-1.5">
+                      <button className={btnGhost} onClick={() => setVerEq(e)}>
+                        Ver
+                      </button>
                       <button
                         className={btnGhost}
                         onClick={() =>
@@ -299,6 +317,76 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
           </table>
         </Card>
       )}
+
+      {verEq ? <DetalleEquipo equipo={verEq} onCerrar={() => setVerEq(null)} /> : null}
+    </div>
+  );
+}
+
+/** Etiqueta legible para una clave de detalle (busca en el tipo del equipo y luego en todos). */
+function etiquetaDetalle(tipo: string, clave: string): string {
+  const propio = (CAMPOS_DETALLE[tipo as TipoEquipo] ?? []).find((c) => c.clave === clave);
+  if (propio) return propio.etiqueta;
+  for (const t of TIPOS_EQUIPO) {
+    const c = CAMPOS_DETALLE[t].find((x) => x.clave === clave);
+    if (c) return c.etiqueta;
+  }
+  return clave;
+}
+
+/** Modal con TODOS los campos del equipo (básicos + detalles por tipo). */
+function DetalleEquipo({ equipo: e, onCerrar }: { equipo: EquipoConAsignado; onCerrar: () => void }) {
+  const detalles = parseDetalles(e.detalles);
+  const dato = (etiqueta: string, valor: React.ReactNode) => (
+    <div key={etiqueta}>
+      <p className="text-[11px] font-bold uppercase tracking-wide text-soft">{etiqueta}</p>
+      <p className="mt-0.5 break-words text-sm text-ink">{valor ?? "—"}</p>
+    </div>
+  );
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" onClick={onCerrar}>
+      <div
+        className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line bg-white p-5 shadow-xl"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</p>
+            <h2 className="text-lg font-bold text-ink">
+              {e.marca} {e.modelo}
+            </h2>
+          </div>
+          <button className={btnGhost} onClick={onCerrar}>
+            ✕ Cerrar
+          </button>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {dato("Tipo", ETIQUETA_TIPO[e.tipo] ?? e.tipo)}
+          {dato("Categoría", e.categoria)}
+          {dato("Número de serie", e.numero_serie ? <span className="mono">{e.numero_serie}</span> : null)}
+          {dato("Estado", <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>)}
+          {dato(
+            "Asignado a",
+            e.asignado_nombre ? (
+              <>
+                <span className="mono text-xs text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
+              </>
+            ) : null
+          )}
+          {dato("Fecha de compra", e.fecha_compra ? fechaCorta(e.fecha_compra) : null)}
+          {dato("Costo", e.costo !== null ? dinero(e.costo) : null)}
+          {Object.entries(detalles)
+            .filter(([, v]) => v && String(v).trim())
+            .map(([clave, valor]) => dato(etiquetaDetalle(e.tipo, clave), String(valor)))}
+          {e.specs ? dato("Specs", e.specs) : null}
+        </div>
+        {e.notas ? (
+          <div className="mt-4 border-t border-line pt-3">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-soft">Notas</p>
+            <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink">{e.notas}</p>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

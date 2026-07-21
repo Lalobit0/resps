@@ -17,6 +17,15 @@ export default async function PaginaResponsivas({
   const estado = typeof sp.estado === "string" ? sp.estado : "";
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const nueva = typeof sp.nueva === "string" ? sp.nueva : "";
+  const orden = typeof sp.orden === "string" ? sp.orden : "recientes";
+
+  const ORDENES: Record<string, string> = {
+    recientes: "r.fecha DESC, r.id DESC",
+    antiguas: "r.fecha ASC, r.id ASC",
+    emp_asc: "CAST(em.numero_empleado AS INTEGER) ASC, r.fecha DESC",
+    emp_desc: "CAST(em.numero_empleado AS INTEGER) DESC, r.fecha DESC",
+  };
+  const orderBy = ORDENES[orden] ?? ORDENES.recientes;
 
   const condiciones: string[] = [];
   const valores: string[] = [];
@@ -29,19 +38,19 @@ export default async function PaginaResponsivas({
     valores.push(estado);
   }
   if (q) {
-    condiciones.push("(r.folio LIKE ? OR em.nombre LIKE ?)");
-    valores.push(`%${q}%`, `%${q}%`);
+    condiciones.push("(r.folio LIKE ? OR em.nombre LIKE ? OR em.numero_empleado LIKE ?)");
+    valores.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
 
   const responsivas = db
     .prepare(
-      `SELECT r.*, em.nombre AS empleado_nombre,
+      `SELECT r.*, em.nombre AS empleado_nombre, em.numero_empleado AS empleado_numero,
         (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
        FROM responsivas r
        JOIN empleados em ON em.id = r.empleado_id
        ${where}
-       ORDER BY r.id DESC`
+       ORDER BY ${orderBy}`
     )
     .all(...valores) as ResponsivaLista[];
 
@@ -74,6 +83,12 @@ export default async function PaginaResponsivas({
           <option value="VIGENTE">Vigente</option>
           <option value="CERRADA">Cerrada</option>
         </select>
+        <select name="orden" defaultValue={orden} className={`${inputCls} max-w-[230px]`}>
+          <option value="recientes">Más recientes primero</option>
+          <option value="antiguas">Más antiguas primero</option>
+          <option value="emp_asc">No. de empleado (menor a mayor)</option>
+          <option value="emp_desc">No. de empleado (mayor a menor)</option>
+        </select>
         <button type="submit" className={btnGhost}>
           Filtrar
         </button>
@@ -88,6 +103,7 @@ export default async function PaginaResponsivas({
               <tr>
                 <th className={thCls}>Folio</th>
                 <th className={thCls}>Tipo</th>
+                <th className={thCls}>No.</th>
                 <th className={thCls}>Empleado</th>
                 <th className={thCls}>Equipos</th>
                 <th className={thCls}>Fecha</th>
@@ -106,6 +122,7 @@ export default async function PaginaResponsivas({
                     </div>
                     <div className="mt-1 text-[11px] text-soft">{ETIQUETA_CLASE[r.clase] ?? r.clase}</div>
                   </td>
+                  <td className={`${tdCls} mono text-xs`}>{r.empleado_numero}</td>
                   <td className={`${tdCls} font-medium`}>{r.empleado_nombre}</td>
                   <td className={`${tdCls} mono text-xs`}>{r.equipos ?? "—"}</td>
                   <td className={tdCls}>{fechaCorta(r.fecha)}</td>

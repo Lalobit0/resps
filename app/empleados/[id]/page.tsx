@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { db } from "../../../lib/db";
 import type { Empleado, Equipo, MantenimientoConEquipo, Responsiva } from "../../../lib/types";
-import { ETIQUETA_CLASE, ETIQUETA_TIPO, ETIQUETA_ESTADO, ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENIMIENTO } from "../../../lib/constants";
+import { ETIQUETA_TIPO, ETIQUETA_ESTADO, ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENIMIENTO } from "../../../lib/constants";
 import { dinero, fechaCorta } from "../../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "../../../components/ui";
+import ResponsivasEmpleado from "../../../components/ResponsivasEmpleado";
 
 export const dynamic = "force-dynamic";
 
@@ -132,55 +133,19 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
       )}
 
       <h2 className="mb-2 mt-6 text-base font-bold text-ink">Responsivas</h2>
-      {responsivas.length === 0 ? (
-        <Empty>Este empleado no tiene responsivas registradas.</Empty>
-      ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[720px] border-collapse">
-            <thead className="border-b border-line bg-paper/70">
-              <tr>
-                <th className={thCls}>Folio</th>
-                <th className={thCls}>Tipo</th>
-                <th className={thCls}>Equipos</th>
-                <th className={thCls}>Fecha</th>
-                <th className={thCls}>Estado</th>
-                <th className={thCls}>PDF</th>
-              </tr>
-            </thead>
-            <tbody>
-              {responsivas.map((r) => (
-                <tr key={r.id} className="border-b border-line/60 last:border-0">
-                  <td className={`${tdCls} mono text-xs font-semibold`}>{r.folio}</td>
-                  <td className={`${tdCls} text-xs`}>
-                    {r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} · {ETIQUETA_CLASE[r.clase] ?? r.clase}
-                    {r.origen === "CARGADA" ? <Badge tono="ambar">Cargada</Badge> : null}
-                  </td>
-                  <td className={`${tdCls} mono text-xs`}>{r.equipos ?? "—"}</td>
-                  <td className={tdCls}>{fechaCorta(r.fecha)}</td>
-                  <td className={tdCls}>
-                    {r.tipo === "DEVOLUCION" ? (
-                      <span className="text-soft">—</span>
-                    ) : r.estado === "VIGENTE" ? (
-                      <Badge tono="verde">Vigente</Badge>
-                    ) : (
-                      <Badge tono="gris">Cerrada</Badge>
-                    )}
-                  </td>
-                  <td className={tdCls}>
-                    {r.pdf_path ? (
-                      <a href={`/api/pdf/${r.id}`} target="_blank" className={btnGhost}>
-                        Ver
-                      </a>
-                    ) : (
-                      <span className="text-soft">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
+      <ResponsivasEmpleado
+        responsivas={responsivas.map((r) => ({
+          id: r.id,
+          folio: r.folio,
+          tipo: r.tipo,
+          clase: r.clase,
+          origen: r.origen,
+          equipos: r.equipos,
+          fecha: r.fecha,
+          estado: r.estado,
+          pdf_path: r.pdf_path,
+        }))}
+      />
 
       <h2 className="mb-2 mt-6 text-base font-bold text-ink">Mantenimientos de sus equipos</h2>
       {mantenimientos.length === 0 ? (

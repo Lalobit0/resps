@@ -72,13 +72,28 @@ export const TIPO_DEFAULTS: Record<TipoEquipo, { categoria: string; prefijo: str
 export type OpcionCampo = { valor: string; etiqueta: string };
 export type CampoDetalle = { clave: string; etiqueta: string; opciones?: OpcionCampo[] };
 
-// Planes Telcel Plus Empresarial que se usan actualmente (2, 3, 4 y 5).
-export const OPCIONES_PLAN_CELULAR: OpcionCampo[] = [
-  { valor: "Plan 2 Telcel Plus Empresarial", etiqueta: "Plan 2 · 5.5 GB · $329" },
-  { valor: "Plan 3 Telcel Plus Empresarial", etiqueta: "Plan 3 · 7.5 GB · $429" },
-  { valor: "Plan 4 Telcel Plus Empresarial", etiqueta: "Plan 4 · 11 GB · $549" },
-  { valor: "Plan 5 Telcel Plus Empresarial", etiqueta: "Plan 5 · 15.5 GB · $649" },
-];
+// Planes Telcel que se manejan actualmente (tarifario vigente).
+export const PLANES_CELULAR = [
+  { plan: "TELCEL EMPRESA CONTROLADO 2", precio: "$329.00", gb: "6 GB" },
+  { plan: "TELCEL EMPRESA CONTROLADO 3", precio: "$429.00", gb: "7.2 GB" },
+  { plan: "TELCEL EMPRESA CONTROLADO 4", precio: "$549.00", gb: "12 GB" },
+  { plan: "TELCEL EMPRESA 5", precio: "$599.00", gb: "24 GB" },
+] as const;
+
+export const OPCIONES_PLAN_CELULAR: OpcionCampo[] = PLANES_CELULAR.map((p) => ({
+  valor: p.plan,
+  etiqueta: `${p.plan} · ${p.gb} · ${p.precio}`,
+}));
+
+export const OPCIONES_PRECIO_PLAN: OpcionCampo[] = PLANES_CELULAR.map((p) => ({
+  valor: p.precio,
+  etiqueta: `${p.precio} (${p.plan})`,
+}));
+
+// Para autollenar el precio al elegir el plan.
+export const PRECIO_POR_PLAN: Record<string, string> = Object.fromEntries(
+  PLANES_CELULAR.map((p) => [p.plan, p.precio])
+);
 
 export const OPCIONES_CONDICION: OpcionCampo[] = [
   { valor: "NUEVO", etiqueta: "Nuevo" },
@@ -104,9 +119,10 @@ export const CAMPOS_DETALLE: Record<TipoEquipo, CampoDetalle[]> = {
     { clave: "imei", etiqueta: "IMEI" },
     { clave: "imei2", etiqueta: "IMEI 2" },
     { clave: "plan", etiqueta: "Plan", opciones: OPCIONES_PLAN_CELULAR },
-    { clave: "plan_precio", etiqueta: "Precio del plan" },
+    { clave: "plan_precio", etiqueta: "Precio del plan", opciones: OPCIONES_PRECIO_PLAN },
     { clave: "pin", etiqueta: "PIN" },
     { clave: "icloud", etiqueta: "iCloud / cuenta" },
+    { clave: "icloud_password", etiqueta: "Contraseña (cuenta / iCloud)" },
     { clave: "mac", etiqueta: "MAC" },
     { clave: "region", etiqueta: "Región" },
     { clave: "cuenta_padre", etiqueta: "Cuenta padre" },

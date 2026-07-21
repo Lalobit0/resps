@@ -15,6 +15,16 @@ export default async function PaginaInventario({
   const estado = typeof sp.estado === "string" ? sp.estado : "";
   const tipo = typeof sp.tipo === "string" ? sp.tipo : "";
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
+  const orden = typeof sp.orden === "string" ? sp.orden : "codigo";
+
+  const ORDENES: Record<string, string> = {
+    codigo: "CASE e.estado WHEN 'BAJA' THEN 1 ELSE 0 END, e.codigo ASC",
+    recientes: "e.id DESC",
+    antiguos: "e.id ASC",
+    emp_asc: "em.numero_empleado IS NULL, CAST(em.numero_empleado AS INTEGER) ASC, e.codigo ASC",
+    emp_desc: "em.numero_empleado IS NULL, CAST(em.numero_empleado AS INTEGER) DESC, e.codigo ASC",
+  };
+  const orderBy = ORDENES[orden] ?? ORDENES.codigo;
 
   const condiciones: string[] = [];
   const valores: (string | number)[] = [];
@@ -27,19 +37,21 @@ export default async function PaginaInventario({
     valores.push(tipo);
   }
   if (q) {
-    condiciones.push("(e.codigo LIKE ? OR e.marca LIKE ? OR e.modelo LIKE ? OR e.numero_serie LIKE ? OR em.nombre LIKE ?)");
+    condiciones.push(
+      "(e.codigo LIKE ? OR e.marca LIKE ? OR e.modelo LIKE ? OR e.numero_serie LIKE ? OR em.nombre LIKE ? OR em.numero_empleado LIKE ?)"
+    );
     const like = `%${q}%`;
-    valores.push(like, like, like, like, like);
+    valores.push(like, like, like, like, like, like);
   }
   const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
 
   const equipos = db
     .prepare(
-      `SELECT e.*, em.nombre AS asignado_nombre
+      `SELECT e.*, em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero
        FROM equipos e
        LEFT JOIN empleados em ON em.id = e.asignado_a
        ${where}
-       ORDER BY CASE e.estado WHEN 'BAJA' THEN 1 ELSE 0 END, e.codigo ASC`
+       ORDER BY ${orderBy}`
     )
     .all(...valores) as EquipoConAsignado[];
 
@@ -70,6 +82,13 @@ export default async function PaginaInventario({
               {etiqueta}
             </option>
           ))}
+        </select>
+        <select name="orden" defaultValue={orden} className={`${inputCls} max-w-[230px]`}>
+          <option value="codigo">Por código</option>
+          <option value="recientes">Más recientes primero</option>
+          <option value="antiguos">Más antiguos primero</option>
+          <option value="emp_asc">No. de empleado (menor a mayor)</option>
+          <option value="emp_desc">No. de empleado (mayor a menor)</option>
         </select>
         <button type="submit" className={btnGhost}>
           Filtrar

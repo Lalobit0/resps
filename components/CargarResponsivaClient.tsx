@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado, Equipo } from "../lib/types";
-import { CAMPOS_DETALLE, CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../lib/constants";
+import { CAMPOS_DETALLE, CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../lib/constants";
 import { cargarResponsivaFirmada } from "../app/responsivas/actions";
 import { leerResponsiva, type LecturaSeleccionable } from "../lib/ocr";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import VisorTextoSeleccionable from "./VisorTextoSeleccionable";
+import SelectConOtro from "./SelectConOtro";
 import { Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
 
 type NuevoEq = { tipo: TipoEquipo; marca: string; modelo: string; numero_serie: string; detalles: Record<string, string> };
@@ -326,7 +327,17 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
                     </div>
                     <div>
                       <Label>Marca</Label>
-                      <input className={inputCls} value={nuevoEq.marca} onChange={(e) => setNuevoEq((p) => ({ ...p, marca: e.target.value }))} />
+                      {nuevoEq.tipo === "COMPUTO" ? (
+                        <SelectConOtro
+                          value={nuevoEq.marca}
+                          onChange={(v) => setNuevoEq((p) => ({ ...p, marca: v }))}
+                          opciones={OPCIONES_MARCA_COMPUTO}
+                          permitirOtro
+                          placeholder="Escribe la marca"
+                        />
+                      ) : (
+                        <input className={inputCls} value={nuevoEq.marca} onChange={(e) => setNuevoEq((p) => ({ ...p, marca: e.target.value }))} />
+                      )}
                     </div>
                     <div>
                       <Label>Modelo</Label>
@@ -338,17 +349,7 @@ export default function CargarResponsivaClient({ empleados, equipos }: { emplead
                         <div key={c.clave}>
                           <Label>{c.etiqueta}</Label>
                           {c.opciones ? (
-                            <select className={inputCls} value={val} onChange={(e) => setDet(c.clave, e.target.value)}>
-                              <option value="">— Selecciona —</option>
-                              {val && !c.opciones.some((o) => o.valor === val) ? (
-                                <option value={val}>{val} (leído)</option>
-                              ) : null}
-                              {c.opciones.map((o) => (
-                                <option key={o.valor} value={o.valor}>
-                                  {o.etiqueta}
-                                </option>
-                              ))}
-                            </select>
+                            <SelectConOtro value={val} onChange={(v) => setDet(c.clave, v)} opciones={c.opciones} permitirOtro={c.permitirOtro} />
                           ) : (
                             <input className={inputCls} value={val} onChange={(e) => setDet(c.clave, e.target.value)} />
                           )}

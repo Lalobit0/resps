@@ -178,7 +178,8 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       </div>
 
       {form ? (
-        <Card>
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+        <Card className="my-6 w-full max-w-3xl">
           <h2 className="mb-4 text-base font-bold text-ink">{form.id ? "Editar empleado" : "Nuevo empleado"}</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
@@ -231,6 +232,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
             </button>
           </div>
         </Card>
+        </div>
       ) : null}
 
       {filtrados.length === 0 ? (

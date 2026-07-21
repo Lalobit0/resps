@@ -69,8 +69,18 @@ export const TIPO_DEFAULTS: Record<TipoEquipo, { categoria: string; prefijo: str
 
 // Campos de detalle (JSON) que se capturan por tipo de equipo.
 // Si un campo trae `opciones`, se captura con lista desplegable en vez de texto libre.
+// `permitirOtro` agrega la opción "Otro (escribir)…" para capturar un valor libre.
 export type OpcionCampo = { valor: string; etiqueta: string };
-export type CampoDetalle = { clave: string; etiqueta: string; opciones?: OpcionCampo[] };
+export type CampoDetalle = { clave: string; etiqueta: string; opciones?: OpcionCampo[]; permitirOtro?: boolean };
+
+const lista = (valores: string[]): OpcionCampo[] => valores.map((v) => ({ valor: v, etiqueta: v }));
+
+// Marcas de equipo de cómputo (con opción de escribir otra).
+export const OPCIONES_MARCA_COMPUTO: OpcionCampo[] = lista(["DELL", "LENOVO", "HP"]);
+// Memoria RAM (GB).
+export const OPCIONES_RAM: OpcionCampo[] = lista(["8 GB", "12 GB", "16 GB", "24 GB", "32 GB", "40 GB", "48 GB"]);
+// Disco duro (con opción de escribir otro).
+export const OPCIONES_HD: OpcionCampo[] = lista(["256 GB", "512 GB", "1 TB", "2 TB"]);
 
 // Planes Telcel que se manejan actualmente (tarifario vigente).
 export const PLANES_CELULAR = [
@@ -105,8 +115,8 @@ export const CAMPOS_DETALLE: Record<TipoEquipo, CampoDetalle[]> = {
   COMPUTO: [
     { clave: "nombre_computadora", etiqueta: "Nombre de la computadora" },
     { clave: "procesador", etiqueta: "Procesador" },
-    { clave: "ram", etiqueta: "Memoria RAM" },
-    { clave: "hd", etiqueta: "Disco duro" },
+    { clave: "ram", etiqueta: "Memoria RAM", opciones: OPCIONES_RAM },
+    { clave: "hd", etiqueta: "Disco duro", opciones: OPCIONES_HD, permitirOtro: true },
     { clave: "sistema_operativo", etiqueta: "Sistema operativo" },
     { clave: "ip", etiqueta: "Dirección IP" },
     { clave: "activo", etiqueta: "No. de activo" },

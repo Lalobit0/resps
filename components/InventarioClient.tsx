@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import type { EquipoConAsignado } from "../lib/types";
-import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
+import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
 import { eliminarEquipo, guardarEquipo, importarInventario } from "../app/inventario/actions";
+import SelectConOtro from "./SelectConOtro";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
 
 const tdc = "px-2 py-1.5 text-sm text-ink align-middle";
@@ -66,14 +67,17 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
   const setC = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
 
-  const setDetalle = (clave: string) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const ponerDetalle = (clave: string, valor: string) =>
     setForm((f) => {
       if (!f) return f;
-      const detalles = { ...f.detalles, [clave]: ev.target.value };
+      const detalles = { ...f.detalles, [clave]: valor };
       // Al elegir el plan se autollena su precio del tarifario.
-      if (clave === "plan" && PRECIO_POR_PLAN[ev.target.value]) detalles.plan_precio = PRECIO_POR_PLAN[ev.target.value];
+      if (clave === "plan" && PRECIO_POR_PLAN[valor]) detalles.plan_precio = PRECIO_POR_PLAN[valor];
       return { ...f, detalles };
     });
+  const setDetalle = (clave: string) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    ponerDetalle(clave, ev.target.value);
+  const setMarca = (v: string) => setForm((f) => (f ? { ...f, marca: v } : f));
 
   const enviar = () => {
     if (!form) return;
@@ -139,7 +143,8 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
       </div>
 
       {form ? (
-        <Card>
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+        <Card className="my-6 w-full max-w-4xl">
           <h2 className="mb-4 text-base font-bold text-ink">{form.id ? "Editar equipo" : "Nuevo equipo"}</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
@@ -167,7 +172,11 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
             </div>
             <div>
               <Label>Marca</Label>
-              <input className={inputCls} value={form.marca} onChange={setC("marca")} placeholder="Dell, HP, TXPRO…" />
+              {form.tipo === "COMPUTO" ? (
+                <SelectConOtro value={form.marca} onChange={setMarca} opciones={OPCIONES_MARCA_COMPUTO} permitirOtro placeholder="Escribe la marca" />
+              ) : (
+                <input className={inputCls} value={form.marca} onChange={setC("marca")} placeholder="Dell, HP, TXPRO…" />
+              )}
             </div>
             <div>
               <Label>Modelo</Label>
@@ -184,17 +193,7 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
                 <div key={c.clave}>
                   <Label>{c.etiqueta}</Label>
                   {c.opciones ? (
-                    <select className={inputCls} value={val} onChange={setDetalle(c.clave)}>
-                      <option value="">— Selecciona —</option>
-                      {val && !c.opciones.some((o) => o.valor === val) ? (
-                        <option value={val}>{val} (actual)</option>
-                      ) : null}
-                      {c.opciones.map((o) => (
-                        <option key={o.valor} value={o.valor}>
-                          {o.etiqueta}
-                        </option>
-                      ))}
-                    </select>
+                    <SelectConOtro value={val} onChange={(v) => ponerDetalle(c.clave, v)} opciones={c.opciones} permitirOtro={c.permitirOtro} />
                   ) : (
                     <input className={inputCls} value={val} onChange={setDetalle(c.clave)} />
                   )}
@@ -224,6 +223,7 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
             </button>
           </div>
         </Card>
+        </div>
       ) : null}
 
       {equipos.length === 0 ? (

@@ -4,6 +4,8 @@ import path from "path";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 export const STORAGE_DIR = path.join(process.cwd(), "storage", "responsivas");
+export const DB_PATH = path.join(DATA_DIR, "app.db");
+export const BACKUP_DIR = path.join(DATA_DIR, "backups");
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS empleados (
@@ -203,10 +205,27 @@ function seed(db: Database.Database) {
   );
 }
 
+// Si hay un respaldo marcado para restaurar (app.db.restore), se intercambia
+// ANTES de abrir la conexión: así el archivo nunca se toca con la base abierta.
+function aplicarRestauracionPendiente() {
+  const pendiente = `${DB_PATH}.restore`;
+  if (!fs.existsSync(pendiente)) return;
+  for (const ext of ["", "-wal", "-shm"]) {
+    try {
+      fs.rmSync(`${DB_PATH}${ext}`, { force: true });
+    } catch {
+      // si no existe, seguimos
+    }
+  }
+  fs.renameSync(pendiente, DB_PATH);
+}
+
 function crearDb(): Database.Database {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(STORAGE_DIR, { recursive: true });
-  const db = new Database(path.join(DATA_DIR, "app.db"));
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  aplicarRestauracionPendiente();
+  const db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);

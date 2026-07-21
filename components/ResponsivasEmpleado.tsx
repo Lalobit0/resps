@@ -1,9 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ETIQUETA_CLASE } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
 import { Badge, Card, Empty, btnGhost, btnPrimary, tdCls, thCls } from "./ui";
+
+function puedeDevolver(r: { tipo: string; estado: string; clase: string }): boolean {
+  return r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE";
+}
 
 export type FilaResponsiva = {
   id: number;
@@ -39,7 +44,7 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
             <th className={thCls}>Equipos</th>
             <th className={thCls}>Fecha</th>
             <th className={thCls}>Estado</th>
-            <th className={thCls}>PDF</th>
+            <th className={thCls}>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -65,16 +70,22 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
                 )}
               </td>
               <td className={tdCls}>
-                {r.pdf_path ? (
-                  <button
-                    className={sel?.id === r.id ? btnPrimary : btnGhost}
-                    onClick={() => setSel(sel?.id === r.id ? null : r)}
-                  >
-                    {sel?.id === r.id ? "Ocultar" : "Ver"}
-                  </button>
-                ) : (
-                  <span className="text-soft">—</span>
-                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {r.pdf_path ? (
+                    <button
+                      className={sel?.id === r.id ? btnPrimary : btnGhost}
+                      onClick={() => setSel(sel?.id === r.id ? null : r)}
+                    >
+                      {sel?.id === r.id ? "Ocultar" : "Ver"}
+                    </button>
+                  ) : null}
+                  {puedeDevolver(r) ? (
+                    <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
+                      Devolución
+                    </Link>
+                  ) : null}
+                  {!r.pdf_path && !puedeDevolver(r) ? <span className="text-soft">—</span> : null}
+                </div>
               </td>
             </tr>
           ))}

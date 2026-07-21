@@ -3,6 +3,7 @@ import { db } from "../../lib/db";
 import type { ResponsivaLista } from "../../lib/types";
 import { fechaCorta } from "../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "../../components/ui";
+import ExportarBotones from "../../components/ExportarBotones";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -92,6 +93,9 @@ export default async function PaginaResponsivas({
         <button type="submit" className={btnGhost}>
           Filtrar
         </button>
+        <div className="ml-auto">
+          <ExportarBotones tabla="responsivas" params={{ q, tipo, estado }} />
+        </div>
       </form>
 
       {responsivas.length === 0 ? (

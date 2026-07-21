@@ -140,6 +140,28 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
   }
 }
 
+export type DatosBaja = {
+  equipos: { id: number; codigo: string; tipo: string; marca: string; modelo: string }[];
+  responsivas: { id: number; folio: string; clase: string; equipos: string | null }[];
+};
+
+/** Equipos asignados y responsivas vigentes de un empleado, para guiar su baja. */
+export async function datosBajaEmpleado(id: number): Promise<DatosBaja> {
+  const equipos = db
+    .prepare("SELECT id, codigo, tipo, marca, modelo FROM equipos WHERE asignado_a = ? ORDER BY tipo, codigo")
+    .all(id) as DatosBaja["equipos"];
+  const responsivas = db
+    .prepare(
+      `SELECT r.id, r.folio, r.clase,
+        (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
+       FROM responsivas r
+       WHERE r.empleado_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE' AND r.clase NOT IN ('WIFI','VALE')
+       ORDER BY r.id DESC`
+    )
+    .all(id) as DatosBaja["responsivas"];
+  return { equipos, responsivas };
+}
+
 export async function cambiarActivoEmpleado(id: number, activo: boolean): Promise<ResultadoAccion> {
   try {
     if (!activo) {

@@ -73,6 +73,35 @@ export async function guardarEquipo(datos: {
     if (costo !== null && Number.isNaN(costo)) return { ok: false, error: "El costo debe ser un número." };
 
     const detalles = limpiarDetalles(tipo, datos.detalles || {});
+    // Normaliza IMEI (sin espacios) para validar y comparar duplicados.
+    if (detalles.imei) detalles.imei = detalles.imei.replace(/\s+/g, "");
+    if (detalles.imei2) detalles.imei2 = detalles.imei2.replace(/\s+/g, "");
+
+    // Validación: IMEI debe ser de 15 dígitos exactos.
+    if (tipo === "CELULAR") {
+      for (const [etiqueta, val] of [["IMEI", detalles.imei], ["IMEI 2", detalles.imei2]] as const) {
+        if (val && !/^\d{15}$/.test(val)) {
+          return { ok: false, error: `El ${etiqueta} debe tener 15 dígitos (capturaste ${val.replace(/\D/g, "").length}).` };
+        }
+      }
+    }
+
+    // Duplicados: misma serie o mismo IMEI en otro equipo.
+    const serieTrim = datos.numero_serie.trim();
+    const idActual = datos.id ?? -1;
+    if (serieTrim) {
+      const dupSerie = db
+        .prepare("SELECT codigo FROM equipos WHERE numero_serie = ? AND id != ?")
+        .get(serieTrim, idActual) as { codigo: string } | undefined;
+      if (dupSerie) return { ok: false, error: `La serie ${serieTrim} ya está registrada en el equipo ${dupSerie.codigo}.` };
+    }
+    if (detalles.imei) {
+      const dupImei = db
+        .prepare("SELECT codigo FROM equipos WHERE json_extract(detalles, '$.imei') = ? AND id != ?")
+        .get(detalles.imei, idActual) as { codigo: string } | undefined;
+      if (dupImei) return { ok: false, error: `El IMEI ${detalles.imei} ya está registrado en el equipo ${dupImei.codigo}.` };
+    }
+
     const specs = componerSpecs(tipo, detalles);
     const detallesJson = Object.keys(detalles).length ? JSON.stringify(detalles) : null;
     let codigo = datos.codigo.trim().toUpperCase();
@@ -311,7 +340,23 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
     revalidar();
     const partes = [`${nuevos} nuevos`, `${actualizados} actualizados`, `${vinculados} ligados a empleado`];
     if (omitidos) partes.push(`${omitidos} omitidos`);
-    return { ok: true, mensaje: `Importación lista: ${partes.join(", ")}.` };
+
+    // Aviso de posibles duplicados (misma serie o mismo IMEI en más de un equipo).
+    const dupSerie = (db
+      .prepare(
+        "SELECT COUNT(*) AS c FROM (SELECT numero_serie FROM equipos WHERE numero_serie IS NOT NULL AND numero_serie != '' GROUP BY numero_serie HAVING COUNT(*) > 1)"
+      )
+      .get() as { c: number }).c;
+    const dupImei = (db
+      .prepare(
+        "SELECT COUNT(*) AS c FROM (SELECT json_extract(detalles,'$.imei') AS im FROM equipos WHERE im IS NOT NULL AND im != '' GROUP BY im HAVING COUNT(*) > 1)"
+      )
+      .get() as { c: number }).c;
+    const avisos: string[] = [];
+    if (dupSerie) avisos.push(`${dupSerie} serie(s) repetida(s)`);
+    if (dupImei) avisos.push(`${dupImei} IMEI repetido(s)`);
+    const aviso = avisos.length ? ` ⚠️ Revisa: ${avisos.join(" y ")}.` : "";
+    return { ok: true, mensaje: `Importación lista: ${partes.join(", ")}.${aviso}` };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo leer el archivo. Asegúrate de que sea un Excel (.xlsx) válido." };

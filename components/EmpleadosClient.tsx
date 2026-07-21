@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import type { EmpleadoConEquipos } from "../lib/types";
-import { cambiarActivoEmpleado, eliminarEmpleado, guardarEmpleado, importarEmpleados } from "../app/empleados/actions";
+import { cambiarActivoEmpleado, datosBajaEmpleado, eliminarEmpleado, guardarEmpleado, importarEmpleados, type DatosBaja } from "../app/empleados/actions";
+import { ETIQUETA_TIPO } from "../lib/constants";
+import ExportarBotones from "./ExportarBotones";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
 
 type Formulario = {
@@ -45,6 +47,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
   const [filtroEstado, setFiltroEstado] = useState("");
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [baja, setBaja] = useState<{ empleado: EmpleadoConEquipos; datos: DatosBaja } | null>(null);
   const [pendiente, iniciar] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -92,6 +95,19 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       const res = await fn();
       if (!res.ok) setError(res.error ?? "Error desconocido.");
     });
+  };
+
+  // Al desactivar: si trae equipos, se muestra el aviso con las devoluciones pendientes.
+  const alternarActivo = (e: EmpleadoConEquipos) => {
+    if (e.activo && e.equipos_asignados > 0) {
+      setError("");
+      iniciar(async () => {
+        const datos = await datosBajaEmpleado(e.id);
+        setBaja({ empleado: e, datos });
+      });
+      return;
+    }
+    ejecutar(() => cambiarActivoEmpleado(e.id, !e.activo));
   };
 
   const importar = (ev: React.ChangeEvent<HTMLInputElement>) => {
@@ -154,9 +170,12 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         </button>
       </div>
 
-      <p className="text-xs text-soft">
-        {filtrados.length} de {empleados.length} empleados · haz clic en un nombre para ver su histórico.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-soft">
+          {filtrados.length} de {empleados.length} empleados · haz clic en un nombre para ver su histórico.
+        </p>
+        <ExportarBotones tabla="empleados" params={{ q: busqueda, depto: filtroDepto, estado: filtroEstado }} />
+      </div>
 
       {form ? (
         <Card>
@@ -288,7 +307,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                       >
                         Editar
                       </button>
-                      <button className={mini} disabled={pendiente} onClick={() => ejecutar(() => cambiarActivoEmpleado(e.id, !e.activo))}>
+                      <button className={mini} disabled={pendiente} onClick={() => alternarActivo(e)}>
                         {e.activo ? "Desactivar" : "Activar"}
                       </button>
                       <button
@@ -310,6 +329,71 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
           </table>
         </Card>
       )}
+
+      {baja ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" onClick={() => setBaja(null)}>
+          <div
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border border-line bg-white p-5 shadow-xl"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-ink">Baja de {baja.empleado.nombre}</h2>
+            <p className="mt-1 text-sm text-soft">
+              Antes de darlo de baja, este empleado debe devolver {baja.empleado.equipos_asignados} equipo(s). Registra
+              la devolución de cada carta responsiva; al terminar podrás desactivarlo.
+            </p>
+
+            {baja.datos.responsivas.length > 0 ? (
+              <div className="mt-4">
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-soft">Responsivas por devolver</p>
+                <div className="space-y-2">
+                  {baja.datos.responsivas.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-2 rounded-md border border-line bg-paper/40 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="mono text-xs font-semibold text-kraft-dark">{r.folio}</p>
+                        <p className="mono truncate text-[11px] text-soft">{r.equipos ?? "—"}</p>
+                      </div>
+                      <Link href={`/responsivas/${r.id}/devolucion`} className={`${btnPrimary} shrink-0 px-3 py-1.5 text-xs`}>
+                        Registrar devolución
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {baja.datos.equipos.length > 0 ? (
+              <div className="mt-4">
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-soft">Equipos asignados</p>
+                <ul className="space-y-1 text-sm">
+                  {baja.datos.equipos.map((eq) => (
+                    <li key={eq.id} className="flex items-center gap-2">
+                      <span className="mono text-xs font-semibold text-kraft-dark">{eq.codigo}</span>
+                      <span className="text-soft">
+                        {ETIQUETA_TIPO[eq.tipo] ?? eq.tipo} · {eq.marca} {eq.modelo}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {baja.datos.responsivas.length === 0 ? (
+                  <p className="mt-2 text-xs text-soft">
+                    Estos equipos están asignados sin una responsiva del sistema (probablemente importados). Libéralos
+                    en el inventario (cambia su estado a Disponible) para poder dar de baja al empleado.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <Link href={`/empleados/${baja.empleado.id}`} className={btnGhost}>
+                Ver histórico
+              </Link>
+              <button className={btnGhost} onClick={() => setBaja(null)}>
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

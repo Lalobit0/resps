@@ -7,9 +7,11 @@ const LINKS = [
   { href: "/", etiqueta: "Inicio" },
   { href: "/empleados", etiqueta: "Empleados" },
   { href: "/inventario", etiqueta: "Inventario" },
+  { href: "/lineas", etiqueta: "Líneas telefónicas" },
   { href: "/responsivas", etiqueta: "Responsivas" },
   { href: "/mantenimientos", etiqueta: "Mantenimientos" },
   { href: "/plantillas", etiqueta: "Plantillas y datos" },
+  { href: "/respaldos", etiqueta: "Respaldos" },
 ];
 
 export default function Nav() {
@@ -26,6 +28,13 @@ export default function Nav() {
       >
         + Nueva responsiva
       </Link>
+      <form action="/buscar" method="get" className="mr-2 shrink-0 md:mb-3 md:mr-0">
+        <input
+          name="q"
+          placeholder="🔍 Buscar IMEI, serie, empleado…"
+          className="w-44 rounded-md border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/50 outline-none focus:border-white/40 md:w-full"
+        />
+      </form>
       {LINKS.map((l) => (
         <Link
           key={l.href}

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { db } from "../lib/db";
 import type { MantenimientoConEquipo, ResponsivaLista } from "../lib/types";
-import { diasPara, fechaCorta } from "../lib/helpers";
+import { diasPara, dinero, fechaCorta } from "../lib/helpers";
+import { ETIQUETA_TIPO, TIPOS_EQUIPO } from "../lib/constants";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary } from "../components/ui";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,23 @@ export default async function PaginaInicio() {
        FROM equipos WHERE estado != 'BAJA'`
     )
     .get() as { total: number; disponibles: number; asignados: number; mantenimiento: number };
+
+  const emp = db
+    .prepare("SELECT COALESCE(SUM(activo = 1), 0) AS activos, COUNT(*) AS total FROM empleados")
+    .get() as { activos: number; total: number };
+
+  const porTipoRows = db
+    .prepare("SELECT tipo, COUNT(*) AS c FROM equipos WHERE estado != 'BAJA' GROUP BY tipo")
+    .all() as { tipo: string; c: number }[];
+  const porTipo: Record<string, number> = {};
+  for (const r of porTipoRows) porTipo[r.tipo] = r.c;
+
+  const lineas = db
+    .prepare(
+      "SELECT json_extract(detalles,'$.plan_precio') AS precio FROM equipos WHERE tipo='CELULAR' AND estado != 'BAJA'"
+    )
+    .all() as { precio: string | null }[];
+  const costoLineas = lineas.reduce((s, l) => s + (Number((l.precio ?? "").replace(/[^\d.]/g, "")) || 0), 0);
 
   const vigentes = (db
     .prepare("SELECT COUNT(*) AS c FROM responsivas WHERE tipo='ASIGNACION' AND estado='VIGENTE'")
@@ -42,11 +60,18 @@ export default async function PaginaInicio() {
     .all() as ResponsivaLista[];
 
   const tarjetas = [
-    { titulo: "Equipos activos", valor: stats.total, href: "/inventario" },
-    { titulo: "Disponibles", valor: stats.disponibles, href: "/inventario?estado=DISPONIBLE" },
-    { titulo: "Asignados", valor: stats.asignados, href: "/inventario?estado=ASIGNADO" },
-    { titulo: "En mantenimiento", valor: stats.mantenimiento, href: "/inventario?estado=MANTENIMIENTO" },
+    { titulo: "Empleados activos", valor: emp.activos, sub: `de ${emp.total}`, href: "/empleados" },
+    { titulo: "Equipos activos", valor: stats.total, sub: "en servicio", href: "/inventario" },
+    { titulo: "Asignados", valor: stats.asignados, sub: "en uso", href: "/inventario?estado=ASIGNADO" },
+    { titulo: "Disponibles", valor: stats.disponibles, sub: "libres", href: "/inventario?estado=DISPONIBLE" },
   ];
+
+  const tipos = TIPOS_EQUIPO.map((t) => ({
+    tipo: t,
+    etiqueta: ETIQUETA_TIPO[t] ?? t,
+    valor: porTipo[t] ?? 0,
+    href: t === "CELULAR" ? "/lineas" : `/inventario?tipo=${t}`,
+  }));
 
   return (
     <>
@@ -62,9 +87,38 @@ export default async function PaginaInicio() {
             <Card className="transition-colors hover:border-kraft/60">
               <p className="text-[11px] font-bold uppercase tracking-wide text-soft">{t.titulo}</p>
               <p className="mt-1 text-3xl font-bold text-ink">{t.valor}</p>
+              <p className="text-xs text-soft">{t.sub}</p>
             </Card>
           </Link>
         ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-soft">Equipos por tipo</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {tipos.map((t) => (
+              <Link key={t.tipo} href={t.href} className="rounded-md border border-line bg-white px-3 py-2 hover:border-kraft/60">
+                <p className="text-2xl font-bold text-ink">{t.valor}</p>
+                <p className="text-xs text-soft">{t.etiqueta}</p>
+              </Link>
+            ))}
+          </div>
+        </Card>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-1">
+          <Link href="/inventario?estado=MANTENIMIENTO">
+            <Card className="transition-colors hover:border-kraft/60">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-soft">En mantenimiento</p>
+              <p className="mt-1 text-2xl font-bold text-ink">{stats.mantenimiento}</p>
+            </Card>
+          </Link>
+          <Link href="/lineas">
+            <Card className="transition-colors hover:border-kraft/60">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-soft">Costo líneas / mes</p>
+              <p className="mt-1 text-2xl font-bold text-ink">{dinero(costoLineas)}</p>
+            </Card>
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-2">

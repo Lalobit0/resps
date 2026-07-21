@@ -2,6 +2,7 @@ import { db } from "../../lib/db";
 import type { EquipoConAsignado } from "../../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constants";
 import InventarioClient from "../../components/InventarioClient";
+import ExportarBotones from "../../components/ExportarBotones";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +94,9 @@ export default async function PaginaInventario({
         <button type="submit" className={btnGhost}>
           Filtrar
         </button>
+        <div className="ml-auto">
+          <ExportarBotones tabla="inventario" params={{ q, tipo, estado }} />
+        </div>
       </form>
 
       <InventarioClient equipos={equipos} />

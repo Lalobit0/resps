@@ -85,9 +85,41 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
 
   if (!sel) return tabla;
 
+  // Con el preview abierto la lista se compacta a una columna angosta y el
+  // documento se lleva casi todo el ancho.
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <div>{tabla}</div>
+    <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+      <div className="space-y-1.5 lg:max-h-[80vh] lg:overflow-y-auto lg:pr-1">
+        {responsivas.map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            disabled={!r.pdf_path}
+            onClick={() => r.pdf_path && setSel(r)}
+            className={`block w-full rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+              sel.id === r.id
+                ? "border-kraft bg-orange-50/70"
+                : r.pdf_path
+                  ? "border-line bg-white hover:bg-paper/60"
+                  : "cursor-default border-line bg-white opacity-60"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="mono text-xs font-semibold text-kraft-dark">{r.folio}</span>
+              {r.tipo === "DEVOLUCION" ? null : r.estado === "VIGENTE" ? (
+                <Badge tono="verde">Vigente</Badge>
+              ) : (
+                <Badge tono="gris">Cerrada</Badge>
+              )}
+            </div>
+            <div className="mt-0.5 text-xs text-soft">
+              {r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} · {ETIQUETA_CLASE[r.clase] ?? r.clase} ·{" "}
+              {fechaCorta(r.fecha)}
+            </div>
+            {r.equipos ? <div className="mono mt-0.5 text-[11px] text-soft">{r.equipos}</div> : null}
+          </button>
+        ))}
+      </div>
       <div className="lg:sticky lg:top-4 lg:self-start">
         <Card className="p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -101,7 +133,7 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
               </button>
             </div>
           </div>
-          <iframe title={`Responsiva ${sel.folio}`} src={`/api/pdf/${sel.id}`} className="h-[75vh] w-full rounded-md border border-line bg-white" />
+          <iframe title={`Responsiva ${sel.folio}`} src={`/api/pdf/${sel.id}`} className="h-[80vh] w-full rounded-md border border-line bg-white" />
         </Card>
       </div>
     </div>

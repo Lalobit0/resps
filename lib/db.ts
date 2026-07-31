@@ -198,6 +198,7 @@ function migrar(db: Database.Database) {
   agregarColumna(db, "equipos", "detalles", "TEXT");
   agregarColumna(db, "responsivas", "clase", "TEXT NOT NULL DEFAULT 'COMPUTO'");
   agregarColumna(db, "responsivas", "origen", "TEXT NOT NULL DEFAULT 'SISTEMA'");
+  agregarColumna(db, "responsivas", "firma_autoridad", "TEXT");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
 }

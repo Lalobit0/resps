@@ -3,11 +3,34 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado, Equipo } from "../lib/types";
-import { CARTAS, CLASES_CARTA, ETIQUETA_TIPO, type ClaseCarta } from "../lib/constants";
+import {
+  CAMPOS_DETALLE,
+  CARTAS,
+  CLASES_CARTA,
+  ETIQUETA_TIPO,
+  OPCIONES_MARCA_COMPUTO,
+  PRECIO_POR_PLAN,
+  type ClaseCarta,
+  type TipoEquipo,
+} from "../lib/constants";
 import { crearResponsiva } from "../app/responsivas/actions";
+import { guardarEquipo } from "../app/inventario/actions";
 import SignatureCanvas from "./SignatureCanvas";
 import BuscadorEmpleado from "./BuscadorEmpleado";
-import { Badge, Card, Empty, Label, btnPrimary, inputCls } from "./ui";
+import SelectConOtro from "./SelectConOtro";
+import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
+
+type NuevoEquipoForm = {
+  tipo: TipoEquipo;
+  codigo: string;
+  marca: string;
+  modelo: string;
+  numero_serie: string;
+  fecha_compra: string;
+  costo: string;
+  notas: string;
+  detalles: Record<string, string>;
+};
 
 export default function NuevaResponsivaClient({
   empleados,
@@ -20,32 +43,97 @@ export default function NuevaResponsivaClient({
   const [clase, setClase] = useState<ClaseCarta>("COMPUTO");
   const [empleadoId, setEmpleadoId] = useState<number | null>(null);
   const [equipoId, setEquipoId] = useState<number | null>(null);
+  const [tipoFiltro, setTipoFiltro] = useState<TipoEquipo | "TODOS">("TODOS");
   const [filtro, setFiltro] = useState("");
+  const [formEquipo, setFormEquipo] = useState<NuevoEquipoForm | null>(null);
+  const [errorEquipo, setErrorEquipo] = useState("");
+  const [guardandoEquipo, iniciarEquipo] = useTransition();
   const [observaciones, setObservaciones] = useState("");
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
   const [firma, setFirma] = useState<string | null>(null);
+  const [firmaAutoridad, setFirmaAutoridad] = useState<string | null>(null);
+  const [firmarDespues, setFirmarDespues] = useState(true);
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
 
   const config = CARTAS[clase];
   const requiereEquipo = config.tiposEquipo.length > 0;
   const esVale = !!config.esVale;
+  const rolAutoridad = esVale ? "Encargado de RH" : "Jefe de sistemas";
   const empleado = empleados.find((e) => e.id === empleadoId);
 
   const equiposDelTipo = useMemo(() => {
     const q = filtro.trim().toLowerCase();
     return equipos
       .filter((e) => config.tiposEquipo.includes(e.tipo as (typeof config.tiposEquipo)[number]))
+      .filter((e) => (tipoFiltro === "TODOS" ? true : e.tipo === tipoFiltro))
       .filter((e) =>
         !q ? true : [e.codigo, e.categoria, e.marca, e.modelo, e.numero_serie ?? ""].join(" ").toLowerCase().includes(q)
       );
-  }, [equipos, config, filtro]);
+  }, [equipos, config, filtro, tipoFiltro]);
 
   const cambiarClase = (c: ClaseCarta) => {
     setClase(c);
     setEquipoId(null);
+    setTipoFiltro("TODOS");
+    setFiltro("");
+    setFormEquipo(null);
     setError("");
+  };
+
+  const abrirNuevoEquipo = () => {
+    const tipoInicial = tipoFiltro !== "TODOS" ? tipoFiltro : config.tiposEquipo[0];
+    setFormEquipo({
+      tipo: tipoInicial,
+      codigo: "",
+      marca: "",
+      modelo: "",
+      numero_serie: "",
+      fecha_compra: "",
+      costo: "",
+      notas: "",
+      detalles: {},
+    });
+    setErrorEquipo("");
+  };
+
+  const setCE = (campo: keyof NuevoEquipoForm) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setFormEquipo((f) => (f ? { ...f, [campo]: ev.target.value } : f));
+
+  const ponerDetalleNuevo = (clave: string, valor: string) =>
+    setFormEquipo((f) => {
+      if (!f) return f;
+      const detalles = { ...f.detalles, [clave]: valor };
+      if (clave === "plan" && PRECIO_POR_PLAN[valor]) detalles.plan_precio = PRECIO_POR_PLAN[valor];
+      return { ...f, detalles };
+    });
+
+  const guardarNuevoEquipo = () => {
+    if (!formEquipo) return;
+    setErrorEquipo("");
+    iniciarEquipo(async () => {
+      const res = await guardarEquipo({
+        tipo: formEquipo.tipo,
+        codigo: formEquipo.codigo,
+        marca: formEquipo.marca,
+        modelo: formEquipo.modelo,
+        numero_serie: formEquipo.numero_serie,
+        fecha_compra: formEquipo.fecha_compra,
+        costo: formEquipo.costo,
+        estado: "DISPONIBLE",
+        notas: formEquipo.notas,
+        detalles: formEquipo.detalles,
+      });
+      if (res.ok && res.id) {
+        setEquipoId(res.id);
+        setTipoFiltro(formEquipo.tipo);
+        setFiltro("");
+        setFormEquipo(null);
+      } else {
+        setErrorEquipo(res.error ?? "No se pudo guardar el equipo.");
+      }
+    });
   };
 
   const enviar = () => {
@@ -55,6 +143,7 @@ export default function NuevaResponsivaClient({
     if (esVale && !concepto.trim()) return setError("Indica el concepto del descuento.");
     if (esVale && !(Number(monto) > 0)) return setError("Indica el valor de reposición.");
     if (!firma) return setError("Falta la firma del empleado en pantalla.");
+    if (!firmarDespues && !firmaAutoridad) return setError(`Falta la firma del ${rolAutoridad.toLowerCase()} en pantalla.`);
 
     iniciar(async () => {
       const res = await crearResponsiva({
@@ -63,6 +152,7 @@ export default function NuevaResponsivaClient({
         equipoId: requiereEquipo ? equipoId : null,
         observaciones,
         firma,
+        firmaAutoridad: firmarDespues ? null : firmaAutoridad,
         concepto: esVale ? concepto : undefined,
         monto: esVale ? monto : undefined,
       });
@@ -112,15 +202,53 @@ export default function NuevaResponsivaClient({
 
         {requiereEquipo ? (
           <Card>
-            <h2 className="mb-3 text-base font-bold text-ink">3. Equipo a entregar</h2>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-bold text-ink">3. Equipo a entregar</h2>
+              <button type="button" className={btnGhost} onClick={abrirNuevoEquipo}>
+                + Registrar equipo nuevo
+              </button>
+            </div>
+
+            {config.tiposEquipo.length > 1 ? (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setTipoFiltro("TODOS")}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    tipoFiltro === "TODOS" ? "border-kraft bg-orange-50/60 text-kraft-dark" : "border-line bg-white hover:bg-paper/60"
+                  }`}
+                >
+                  Todos
+                </button>
+                {config.tiposEquipo.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTipoFiltro(t)}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                      tipoFiltro === t ? "border-kraft bg-orange-50/60 text-kraft-dark" : "border-line bg-white hover:bg-paper/60"
+                    }`}
+                  >
+                    {ETIQUETA_TIPO[t]}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
             <input
               className={`${inputCls} mb-3`}
-              placeholder="Filtrar equipos disponibles…"
+              placeholder="Buscar por código, marca, modelo o serie…"
               value={filtro}
               onChange={(e) => setFiltro(e.target.value)}
             />
             {equiposDelTipo.length === 0 ? (
-              <Empty>No hay equipos disponibles de este tipo. Regístralos en el inventario primero.</Empty>
+              <Empty>
+                No hay equipos disponibles con este filtro.{" "}
+                <button type="button" className="font-semibold text-kraft-dark underline" onClick={abrirNuevoEquipo}>
+                  Registra uno nuevo
+                </button>{" "}
+                en el inventario.
+              </Empty>
             ) : (
               <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
                 {equiposDelTipo.map((e) => (
@@ -208,8 +336,39 @@ export default function NuevaResponsivaClient({
         </Card>
 
         <Card>
-          <h2 className="mb-3 text-base font-bold text-ink">5. Firma del empleado</h2>
-          <SignatureCanvas onChange={setFirma} />
+          <h2 className="mb-3 text-base font-bold text-ink">5. Firmas</h2>
+          <div className="space-y-5">
+            <div>
+              <p className="mb-2 text-sm font-semibold text-ink">Firma del empleado</p>
+              <SignatureCanvas onChange={setFirma} />
+            </div>
+
+            <div className="border-t border-line pt-4">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-ink">Firma del {rolAutoridad}</p>
+                <label className="flex items-center gap-1.5 text-xs text-soft">
+                  <input
+                    type="checkbox"
+                    className="accent-kraft"
+                    checked={firmarDespues}
+                    onChange={(e) => {
+                      setFirmarDespues(e.target.checked);
+                      if (e.target.checked) setFirmaAutoridad(null);
+                    }}
+                  />
+                  Firmará más tarde (en papel)
+                </label>
+              </div>
+              {firmarDespues ? (
+                <p className="rounded-md border border-dashed border-line bg-paper/60 px-3 py-4 text-center text-xs text-soft">
+                  El documento se generará con la línea de firma en blanco para que el {rolAutoridad.toLowerCase()} firme
+                  físicamente después.
+                </p>
+              ) : (
+                <SignatureCanvas onChange={setFirmaAutoridad} />
+              )}
+            </div>
+          </div>
         </Card>
 
         {error ? (
@@ -223,6 +382,92 @@ export default function NuevaResponsivaClient({
           El PDF se guarda en el repositorio con el formato oficial de Sultana Packaging.
         </p>
       </div>
+
+      {formEquipo ? (
+        <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+          <Card className="my-6 w-full max-w-2xl">
+            <h2 className="mb-4 text-base font-bold text-ink">Registrar equipo nuevo</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label>Tipo de equipo *</Label>
+                <select className={inputCls} value={formEquipo.tipo} onChange={setCE("tipo")}>
+                  {config.tiposEquipo.map((t) => (
+                    <option key={t} value={t}>
+                      {ETIQUETA_TIPO[t]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Código interno</Label>
+                <input className={`${inputCls} mono`} value={formEquipo.codigo} onChange={setCE("codigo")} placeholder="Vacío = se genera solo" />
+              </div>
+              <div>
+                <Label>Marca</Label>
+                {formEquipo.tipo === "COMPUTO" ? (
+                  <SelectConOtro
+                    value={formEquipo.marca}
+                    onChange={(v) => setFormEquipo((f) => (f ? { ...f, marca: v } : f))}
+                    opciones={OPCIONES_MARCA_COMPUTO}
+                    permitirOtro
+                    placeholder="Escribe la marca"
+                  />
+                ) : (
+                  <input className={inputCls} value={formEquipo.marca} onChange={setCE("marca")} placeholder="Dell, HP, TXPRO…" />
+                )}
+              </div>
+              <div>
+                <Label>Modelo</Label>
+                <input className={inputCls} value={formEquipo.modelo} onChange={setCE("modelo")} />
+              </div>
+              <div>
+                <Label>Número de serie</Label>
+                <input className={`${inputCls} mono`} value={formEquipo.numero_serie} onChange={setCE("numero_serie")} />
+              </div>
+
+              {CAMPOS_DETALLE[formEquipo.tipo].map((c) => {
+                const val = formEquipo.detalles[c.clave] ?? "";
+                return (
+                  <div key={c.clave}>
+                    <Label>{c.etiqueta}</Label>
+                    {c.opciones ? (
+                      <SelectConOtro value={val} onChange={(v) => ponerDetalleNuevo(c.clave, v)} opciones={c.opciones} permitirOtro={c.permitirOtro} />
+                    ) : (
+                      <input className={inputCls} value={val} onChange={(e) => ponerDetalleNuevo(c.clave, e.target.value)} />
+                    )}
+                  </div>
+                );
+              })}
+
+              <div>
+                <Label>Fecha de compra</Label>
+                <input className={inputCls} type="date" value={formEquipo.fecha_compra} onChange={setCE("fecha_compra")} />
+              </div>
+              <div>
+                <Label>Costo (MXN)</Label>
+                <input className={inputCls} type="number" step="0.01" value={formEquipo.costo} onChange={setCE("costo")} />
+              </div>
+              <div className="sm:col-span-2">
+                <Label>Notas</Label>
+                <textarea className={inputCls} rows={2} value={formEquipo.notas} onChange={setCE("notas")} />
+              </div>
+            </div>
+
+            {errorEquipo ? (
+              <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{errorEquipo}</div>
+            ) : null}
+
+            <div className="mt-4 flex gap-2">
+              <button className={btnPrimary} onClick={guardarNuevoEquipo} disabled={guardandoEquipo}>
+                {guardandoEquipo ? "Guardando…" : "Guardar y seleccionar"}
+              </button>
+              <button className={btnGhost} onClick={() => setFormEquipo(null)} disabled={guardandoEquipo}>
+                Cancelar
+              </button>
+            </div>
+          </Card>
+        </div>
+      ) : null}
     </div>
   );
 }

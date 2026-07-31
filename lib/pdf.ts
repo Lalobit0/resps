@@ -33,6 +33,7 @@ export interface DatosCarta {
   filasEquipo: FilaCarta[];
   cuerpo: string;
   firma: string | null;
+  firmaDer?: string | null;
   etiquetaIzq: string;
   etiquetaDer: string;
   sustituye?: boolean;
@@ -93,6 +94,14 @@ export async function generarCarta(datos: DatosCarta): Promise<Uint8Array> {
       firmaImg = await doc.embedPng(datos.firma);
     } catch {
       firmaImg = null;
+    }
+  }
+  let firmaDerImg: PDFImage | null = null;
+  if (datos.firmaDer) {
+    try {
+      firmaDerImg = await doc.embedPng(datos.firmaDer);
+    } catch {
+      firmaDerImg = null;
     }
   }
 
@@ -199,6 +208,12 @@ export async function generarCarta(datos: DatosCarta): Promise<Uint8Array> {
       const fw = firmaImg.width * escala;
       const fh = firmaImg.height * escala;
       page.drawImage(firmaImg, { x: xIzq + (anchoBloque - fw) / 2, y: yLinea + 4 * k, width: fw, height: fh });
+    }
+    if (page && firmaDerImg) {
+      const escala = Math.min((175 * k) / firmaDerImg.width, (48 * k) / firmaDerImg.height, 1);
+      const fw = firmaDerImg.width * escala;
+      const fh = firmaDerImg.height * escala;
+      page.drawImage(firmaDerImg, { x: xDer + (anchoBloque - fw) / 2, y: yLinea + 4 * k, width: fw, height: fh });
     }
     if (page) {
       for (const x of [xIzq, xDer]) {

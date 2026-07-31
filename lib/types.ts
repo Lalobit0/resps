@@ -54,6 +54,7 @@ export interface Responsiva {
   entregado_por: string | null;
   observaciones: string | null;
   pdf_path: string | null;
+  firma_autoridad: string | null;
   created_at: string;
 }
 

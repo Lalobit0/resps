@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Empleado, Equipo } from "../lib/types";
+import type { Empleado, Equipo, FirmaGuardada } from "../lib/types";
 import {
   CAMPOS_DETALLE,
   CARTAS,
@@ -19,6 +19,7 @@ import {
 import { crearResponsiva } from "../app/responsivas/actions";
 import { guardarEquipo } from "../app/inventario/actions";
 import SignatureCanvas from "./SignatureCanvas";
+import SelectorFirmaAutoridad, { type FirmaElegida } from "./SelectorFirmaAutoridad";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import SelectConOtro from "./SelectConOtro";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
@@ -46,9 +47,11 @@ const filtroPorClase = (c: ClaseCarta): TipoEquipo | "TODOS" => {
 export default function NuevaResponsivaClient({
   empleados,
   equipos,
+  firmas,
 }: {
   empleados: Empleado[];
   equipos: Equipo[];
+  firmas: FirmaGuardada[];
 }) {
   const router = useRouter();
   const [clase, setClase] = useState<ClaseCarta>("COMPUTO");
@@ -63,7 +66,7 @@ export default function NuevaResponsivaClient({
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
   const [firma, setFirma] = useState<string | null>(null);
-  const [firmaAutoridad, setFirmaAutoridad] = useState<string | null>(null);
+  const [firmaAutoridad, setFirmaAutoridad] = useState<FirmaElegida | null>(null);
   const [firmarDespues, setFirmarDespues] = useState(true);
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
@@ -170,7 +173,10 @@ export default function NuevaResponsivaClient({
     if (esVale && !concepto.trim()) return setError("Indica el concepto del descuento.");
     if (esVale && !(Number(monto) > 0)) return setError("Indica el valor de reposición.");
     if (!firma) return setError("Falta la firma del empleado en pantalla.");
-    if (!firmarDespues && !firmaAutoridad) return setError(`Falta la firma del ${rol.toLowerCase()} en pantalla.`);
+    if (!firmarDespues && !firmaAutoridad) return setError(`Falta la firma del ${rol.toLowerCase()}.`);
+    if (!firmarDespues && firmaAutoridad?.ausencia && !firmaAutoridad.nombre.trim()) {
+      return setError("Escribe el nombre de quien firma por ausencia.");
+    }
 
     iniciar(async () => {
       const res = await crearResponsiva({
@@ -179,7 +185,11 @@ export default function NuevaResponsivaClient({
         equipoId: requiereEquipo ? equipoId : null,
         observaciones,
         firma,
-        firmaAutoridad: firmarDespues ? null : firmaAutoridad,
+        firmaAutoridad: firmarDespues ? null : firmaAutoridad?.imagen ?? null,
+        firmanteAutoridad:
+          firmarDespues || !firmaAutoridad
+            ? null
+            : { nombre: firmaAutoridad.nombre, puesto: firmaAutoridad.puesto, ausencia: firmaAutoridad.ausencia },
         concepto: esVale ? concepto : undefined,
         monto: esVale ? monto : undefined,
       });
@@ -391,7 +401,7 @@ export default function NuevaResponsivaClient({
                   digitalmente después desde el listado de responsivas y el PDF se regenera con las dos firmas.
                 </p>
               ) : (
-                <SignatureCanvas onChange={setFirmaAutoridad} />
+                <SelectorFirmaAutoridad clase={clase} firmas={firmas} onChange={setFirmaAutoridad} />
               )}
             </div>
           </div>

@@ -55,9 +55,23 @@ export interface Responsiva {
   observaciones: string | null;
   pdf_path: string | null;
   firma_autoridad: string | null;
+  firma_autoridad_nombre: string | null;
+  firma_autoridad_puesto: string | null;
+  firma_autoridad_ausencia: number;
   firma_empleado: string | null;
   concepto: string | null;
   monto: number | null;
+  created_at: string;
+}
+
+/** Firma guardada del jefe de sistemas, de RH o de quien firma por ausencia. */
+export interface FirmaGuardada {
+  id: number;
+  nombre: string;
+  puesto: string;
+  rol: string; // SISTEMAS | RH | OTRO
+  imagen: string;
+  activo: number;
   created_at: string;
 }
 

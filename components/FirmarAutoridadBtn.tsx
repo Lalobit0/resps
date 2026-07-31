@@ -2,18 +2,32 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import type { FirmaGuardada } from "../lib/types";
 import { firmarAutoridad } from "../app/responsivas/actions";
-import SignatureCanvas from "./SignatureCanvas";
+import SelectorFirmaAutoridad, { type FirmaElegida } from "./SelectorFirmaAutoridad";
 import { Card, btnGhost, btnPrimary } from "./ui";
 
 /**
  * Firma digital tardía: el jefe de sistemas (o RH en los vales) firma en
- * pantalla y el PDF se regenera con las dos firmas, conservando el folio.
+ * pantalla, usa su firma guardada o se carga la de quien firma por ausencia.
+ * El PDF se regenera con las dos firmas, conservando el folio.
  */
-export default function FirmarAutoridadBtn({ id, folio, rol }: { id: number; folio: string; rol: string }) {
+export default function FirmarAutoridadBtn({
+  id,
+  folio,
+  clase,
+  rol,
+  firmas,
+}: {
+  id: number;
+  folio: string;
+  clase: string;
+  rol: string;
+  firmas: FirmaGuardada[];
+}) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
-  const [firma, setFirma] = useState<string | null>(null);
+  const [firma, setFirma] = useState<FirmaElegida | null>(null);
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
 
@@ -25,9 +39,16 @@ export default function FirmarAutoridadBtn({ id, folio, rol }: { id: number; fol
 
   const enviar = () => {
     setError("");
-    if (!firma) return setError("Falta la firma en pantalla.");
+    if (!firma) return setError("Falta la firma: dibújala, elige una guardada o carga un archivo.");
+    if (firma.ausencia && !firma.nombre.trim()) {
+      return setError("Escribe el nombre de quien firma por ausencia.");
+    }
     iniciar(async () => {
-      const res = await firmarAutoridad(id, firma);
+      const res = await firmarAutoridad(id, firma.imagen, {
+        nombre: firma.nombre,
+        puesto: firma.puesto,
+        ausencia: firma.ausencia,
+      });
       if (res.ok) {
         cerrar();
         router.refresh();
@@ -52,7 +73,7 @@ export default function FirmarAutoridadBtn({ id, folio, rol }: { id: number; fol
               del empleado y la tuya.
             </p>
 
-            <SignatureCanvas onChange={setFirma} />
+            <SelectorFirmaAutoridad clase={clase} firmas={firmas} onChange={setFirma} />
 
             {error ? (
               <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>

@@ -53,6 +53,29 @@ function guardarPdf(folio: string, bytes: Uint8Array): string {
 const ETIQ_EMPLEADO = "Nombre, Firma y No. de empleado quien recibe";
 const ETIQ_COORDINADOR = "Nombre y firma del Coordinador de sistemas";
 
+/** Datos de quien firma por la empresa; sin nombre se asume el titular. */
+export type Firmante = { nombre?: string | null; puesto?: string | null; ausencia?: boolean };
+
+/**
+ * Texto bajo la línea de firma de la empresa. Si firmó alguien que no es el
+ * titular, se imprime la leyenda "por ausencia" con su nombre y puesto.
+ */
+function etiquetaAutoridad(clase: ClaseCarta, firmante: Firmante | null): string {
+  const esVale = !!CARTAS[clase].esVale;
+  const base = esVale ? "RECURSOS HUMANOS" : ETIQ_COORDINADOR;
+  const nombre = firmante?.nombre?.trim();
+  if (!nombre) return base;
+
+  if (firmante?.ausencia) {
+    // Aquí el puesto sí aporta: identifica a quien firma en lugar del titular.
+    const quien = firmante?.puesto?.trim() ? `${nombre} - ${firmante.puesto.trim()}` : nombre;
+    const titular = esVale ? "del encargado de Recursos Humanos" : "del Coordinador de sistemas";
+    return `Por ausencia ${titular}: ${quien}`;
+  }
+  // El titular ya lleva su cargo en la etiqueta base: basta el nombre.
+  return `${base}: ${nombre}`;
+}
+
 /**
  * Arma el PDF de una carta de asignación con los datos guardados. Se usa al
  * crearla y al regenerarla cuando la autoridad firma digitalmente después.
@@ -66,6 +89,7 @@ async function bytesAsignacion(datos: {
   monto: number | null;
   firmaEmpleado: string | null;
   firmaAutoridad: string | null;
+  firmante: Firmante | null;
   empleado: Empleado;
   equipo: Equipo | undefined;
 }): Promise<Uint8Array> {
@@ -100,7 +124,7 @@ async function bytesAsignacion(datos: {
     firma: datos.firmaEmpleado,
     firmaDer: datos.firmaAutoridad,
     etiquetaIzq: config.esVale ? "EMPLEADO — Firma de conformidad" : ETIQ_EMPLEADO,
-    etiquetaDer: config.esVale ? "RECURSOS HUMANOS" : ETIQ_COORDINADOR,
+    etiquetaDer: etiquetaAutoridad(datos.clase, datos.firmante),
     sustituye: !config.esVale && datos.clase !== "WIFI",
   });
 }
@@ -112,6 +136,7 @@ export async function crearResponsiva(datos: {
   observaciones: string;
   firma: string;
   firmaAutoridad?: string | null;
+  firmanteAutoridad?: Firmante | null;
   concepto?: string;
   monto?: string;
 }): Promise<ResultadoAccion> {
@@ -147,11 +172,13 @@ export async function crearResponsiva(datos: {
     const folio = siguienteFolio(config.esVale ? "VALE" : "RESP");
     const fecha = hoyISO();
     const entregadoPor = getConfig("entrega_default", "Departamento de TI");
+    // Sin firma de la empresa no hay firmante que registrar.
+    const firmante: Firmante | null = datos.firmaAutoridad ? datos.firmanteAutoridad ?? null : null;
 
     const crear = db.transaction(() => {
       const info = db
         .prepare(
-          "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, entregado_por, observaciones, firma_empleado, firma_autoridad, concepto, monto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, entregado_por, observaciones, firma_empleado, firma_autoridad, firma_autoridad_nombre, firma_autoridad_puesto, firma_autoridad_ausencia, concepto, monto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         )
         .run(
           folio,
@@ -164,6 +191,9 @@ export async function crearResponsiva(datos: {
           datos.observaciones.trim() || null,
           datos.firma,
           datos.firmaAutoridad || null,
+          firmante?.nombre?.trim() || null,
+          firmante?.puesto?.trim() || null,
+          firmante?.ausencia ? 1 : 0,
           config.esVale ? datos.concepto?.trim() || null : null,
           montoNum
         );
@@ -190,6 +220,7 @@ export async function crearResponsiva(datos: {
         monto: montoNum,
         firmaEmpleado: datos.firma,
         firmaAutoridad: datos.firmaAutoridad || null,
+        firmante,
         empleado,
         equipo,
       });
@@ -217,9 +248,14 @@ export async function crearResponsiva(datos: {
  * Firma digital tardía del jefe de sistemas / RH: guarda la firma y vuelve a
  * generar el PDF con las dos firmas, conservando el mismo folio y archivo.
  */
-export async function firmarAutoridad(responsivaId: number, firma: string): Promise<ResultadoAccion> {
+export async function firmarAutoridad(
+  responsivaId: number,
+  firma: string,
+  firmante?: Firmante | null
+): Promise<ResultadoAccion> {
   try {
-    if (!firma) return { ok: false, error: "Falta la firma en pantalla." };
+    if (!firma) return { ok: false, error: "Falta la firma: dibújala, elige una guardada o carga un archivo." };
+    if (!/^data:image\/(png|jpe?g);base64,/i.test(firma)) return { ok: false, error: "La firma debe ser PNG o JPG." };
 
     const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(responsivaId) as Responsiva | undefined;
     if (!r) return { ok: false, error: "La responsiva ya no existe." };
@@ -252,18 +288,26 @@ export async function firmarAutoridad(responsivaId: number, firma: string): Prom
       monto: r.monto,
       firmaEmpleado: r.firma_empleado,
       firmaAutoridad: firma,
+      firmante: firmante ?? null,
       empleado,
       equipo,
     });
 
     const ruta = guardarPdf(r.folio, bytes);
-    db.prepare("UPDATE responsivas SET firma_autoridad=?, pdf_path=? WHERE id=?").run(firma, ruta, r.id);
-    registrarBitacora(
-      "FIRMA_AUTORIDAD",
-      `${rolAutoridad(r.clase)} firmó la responsiva ${r.folio} de ${empleado.nombre}`,
-      null,
-      false
+    db.prepare(
+      "UPDATE responsivas SET firma_autoridad=?, firma_autoridad_nombre=?, firma_autoridad_puesto=?, firma_autoridad_ausencia=?, pdf_path=? WHERE id=?"
+    ).run(
+      firma,
+      firmante?.nombre?.trim() || null,
+      firmante?.puesto?.trim() || null,
+      firmante?.ausencia ? 1 : 0,
+      ruta,
+      r.id
     );
+    const quien = firmante?.nombre?.trim()
+      ? `${firmante.nombre.trim()}${firmante.ausencia ? ` (por ausencia del ${rolAutoridad(r.clase).toLowerCase()})` : ""}`
+      : rolAutoridad(r.clase);
+    registrarBitacora("FIRMA_AUTORIDAD", `${quien} firmó la responsiva ${r.folio} de ${empleado.nombre}`, null, false);
 
     revalidar();
     return { ok: true, id: r.id, folio: r.folio };

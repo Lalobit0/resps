@@ -1,5 +1,5 @@
 import { db } from "../../../lib/db";
-import type { Empleado, Equipo } from "../../../lib/types";
+import type { Empleado, Equipo, FirmaGuardada } from "../../../lib/types";
 import NuevaResponsivaClient from "../../../components/NuevaResponsivaClient";
 import { PageHeader } from "../../../components/ui";
 
@@ -13,10 +13,14 @@ export default async function PaginaNuevaResponsiva() {
     .prepare("SELECT * FROM equipos WHERE estado = 'DISPONIBLE' ORDER BY tipo ASC, codigo ASC")
     .all() as Equipo[];
 
+  const firmas = db
+    .prepare("SELECT * FROM firmas WHERE activo = 1 ORDER BY rol ASC, nombre ASC")
+    .all() as FirmaGuardada[];
+
   return (
     <>
       <PageHeader eyebrow="Asignación" title="Nueva carta responsiva" />
-      <NuevaResponsivaClient empleados={empleados} equipos={equipos} />
+      <NuevaResponsivaClient empleados={empleados} equipos={equipos} firmas={firmas} />
     </>
   );
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { db } from "../../lib/db";
-import type { ResponsivaLista } from "../../lib/types";
+import type { FirmaGuardada, ResponsivaLista } from "../../lib/types";
 import { fechaCorta } from "../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "../../components/ui";
 import ExportarBotones from "../../components/ExportarBotones";
@@ -58,6 +58,10 @@ export default async function PaginaResponsivas({
        ORDER BY ${orderBy}`
     )
     .all(...valores) as ResponsivaLista[];
+
+  const firmas = db
+    .prepare("SELECT * FROM firmas WHERE activo = 1 ORDER BY rol ASC, nombre ASC")
+    .all() as FirmaGuardada[];
 
   const totalDuplicados = responsivas.filter((r) => (r.es_duplicado ?? 0) > 0).length;
   // Generadas por el sistema a las que todavía les falta la firma de sistemas / RH.
@@ -177,7 +181,13 @@ export default async function PaginaResponsivas({
                         </a>
                       ) : null}
                       {faltaFirma(r) ? (
-                        <FirmarAutoridadBtn id={r.id} folio={r.folio} rol={rolAutoridad(r.clase)} />
+                        <FirmarAutoridadBtn
+                          id={r.id}
+                          folio={r.folio}
+                          clase={r.clase}
+                          rol={rolAutoridad(r.clase)}
+                          firmas={firmas}
+                        />
                       ) : null}
                       {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE" ? (
                         <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>

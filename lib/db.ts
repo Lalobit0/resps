@@ -198,7 +198,12 @@ function migrar(db: Database.Database) {
   agregarColumna(db, "equipos", "detalles", "TEXT");
   agregarColumna(db, "responsivas", "clase", "TEXT NOT NULL DEFAULT 'COMPUTO'");
   agregarColumna(db, "responsivas", "origen", "TEXT NOT NULL DEFAULT 'SISTEMA'");
+  // Firmas y datos guardados para poder regenerar el PDF cuando la autoridad
+  // (jefe de sistemas / RH) firma digitalmente después.
   agregarColumna(db, "responsivas", "firma_autoridad", "TEXT");
+  agregarColumna(db, "responsivas", "firma_empleado", "TEXT");
+  agregarColumna(db, "responsivas", "concepto", "TEXT");
+  agregarColumna(db, "responsivas", "monto", "REAL");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
 }

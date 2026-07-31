@@ -176,6 +176,20 @@ export const ETIQUETA_CLASE: Record<string, string> = {
   VALE: "Vale de descuento",
 };
 
+// Clase de carta que corresponde a cada tipo de equipo del inventario.
+// Permite elegir primero el equipo y que el tipo de carta se ajuste solo.
+export const CLASE_POR_TIPO: Record<TipoEquipo, ClaseCarta> = {
+  COMPUTO: "COMPUTO",
+  CELULAR: "CELULAR",
+  RADIO: "OTROS",
+  OTRO: "OTROS",
+};
+
+/** Quién firma del lado de la empresa según la clase de carta. */
+export function rolAutoridad(clase: string): string {
+  return clase === "VALE" ? "Encargado de RH" : "Jefe de sistemas";
+}
+
 export const CARTAS: Record<ClaseCarta, ConfigCarta> = {
   COMPUTO: {
     etiqueta: "Equipo de cómputo",

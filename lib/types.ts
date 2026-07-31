@@ -55,6 +55,9 @@ export interface Responsiva {
   observaciones: string | null;
   pdf_path: string | null;
   firma_autoridad: string | null;
+  firma_empleado: string | null;
+  concepto: string | null;
+  monto: number | null;
   created_at: string;
 }
 

@@ -7,7 +7,7 @@ import { db, getConfig, STORAGE_DIR, STORAGE_ELIMINADAS } from "../../lib/db";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
-import { CAMPOS_DETALLE, CARTAS, TIPO_DEFAULTS, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
+import { CAMPOS_DETALLE, CARTAS, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
 
@@ -53,6 +53,58 @@ function guardarPdf(folio: string, bytes: Uint8Array): string {
 const ETIQ_EMPLEADO = "Nombre, Firma y No. de empleado quien recibe";
 const ETIQ_COORDINADOR = "Nombre y firma del Coordinador de sistemas";
 
+/**
+ * Arma el PDF de una carta de asignación con los datos guardados. Se usa al
+ * crearla y al regenerarla cuando la autoridad firma digitalmente después.
+ */
+async function bytesAsignacion(datos: {
+  clase: ClaseCarta;
+  folio: string;
+  fecha: string;
+  observaciones: string | null;
+  concepto: string | null;
+  monto: number | null;
+  firmaEmpleado: string | null;
+  firmaAutoridad: string | null;
+  empleado: Empleado;
+  equipo: Equipo | undefined;
+}): Promise<Uint8Array> {
+  const config = CARTAS[datos.clase];
+  const obs = (datos.observaciones ?? "").trim();
+  const plantilla = llenarPlantilla(contenidoPlantilla(config.plantilla), {
+    fecha: fechaLarga(datos.fecha),
+    ciudad: getConfig("ciudad"),
+    empresa: getConfig("empresa"),
+    nombre_empleado: datos.empleado.nombre,
+    numero_empleado: datos.empleado.numero_empleado,
+    puesto: datos.empleado.puesto,
+    departamento: datos.empleado.departamento,
+    observaciones: obs ? `Observaciones: ${obs}` : "",
+    folio: datos.folio,
+    concepto: datos.concepto?.trim() || "",
+    monto: datos.monto != null ? montoEnLetra(datos.monto) : "",
+  });
+  const { intro, cuerpo } = partirPlantilla(plantilla);
+
+  return generarCarta({
+    encabezado: config.encabezado,
+    titulo: config.titulo,
+    fecha: fechaCorta(datos.fecha),
+    folio: datos.folio,
+    empresa: getConfig("empresa"),
+    direccion: getConfig("direccion"),
+    filasUsuario: config.esVale ? [] : filasUsuario(datos.empleado),
+    intro,
+    filasEquipo: datos.equipo ? filasEquipo(datos.clase, datos.equipo) : [],
+    cuerpo,
+    firma: datos.firmaEmpleado,
+    firmaDer: datos.firmaAutoridad,
+    etiquetaIzq: config.esVale ? "EMPLEADO — Firma de conformidad" : ETIQ_EMPLEADO,
+    etiquetaDer: config.esVale ? "RECURSOS HUMANOS" : ETIQ_COORDINADOR,
+    sustituye: !config.esVale && datos.clase !== "WIFI",
+  });
+}
+
 export async function crearResponsiva(datos: {
   clase: ClaseCarta;
   empleadoId: number;
@@ -71,12 +123,12 @@ export async function crearResponsiva(datos: {
     if (!empleado) return { ok: false, error: "Selecciona un empleado." };
     if (!datos.firma) return { ok: false, error: "Falta la firma del empleado." };
 
-    let montoTxt = "";
+    let montoNum: number | null = null;
     if (config.esVale) {
       if (!datos.concepto?.trim()) return { ok: false, error: "Indica el concepto del descuento." };
       const m = Number(datos.monto);
       if (!datos.monto || Number.isNaN(m) || m <= 0) return { ok: false, error: "Indica un valor de reposición válido." };
-      montoTxt = montoEnLetra(m);
+      montoNum = m;
     }
 
     const requiereEquipo = config.tiposEquipo.length > 0;
@@ -99,7 +151,7 @@ export async function crearResponsiva(datos: {
     const crear = db.transaction(() => {
       const info = db
         .prepare(
-          "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, entregado_por, observaciones, firma_autoridad) VALUES (?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, entregado_por, observaciones, firma_empleado, firma_autoridad, concepto, monto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
         )
         .run(
           folio,
@@ -110,7 +162,10 @@ export async function crearResponsiva(datos: {
           "VIGENTE",
           entregadoPor,
           datos.observaciones.trim() || null,
-          datos.firmaAutoridad || null
+          datos.firma,
+          datos.firmaAutoridad || null,
+          config.esVale ? datos.concepto?.trim() || null : null,
+          montoNum
         );
       const rid = Number(info.lastInsertRowid);
       if (equipo) {
@@ -126,37 +181,17 @@ export async function crearResponsiva(datos: {
     const id = crear();
 
     try {
-      const plantilla = llenarPlantilla(contenidoPlantilla(config.plantilla), {
-        fecha: fechaLarga(fecha),
-        ciudad: getConfig("ciudad"),
-        empresa: getConfig("empresa"),
-        nombre_empleado: empleado.nombre,
-        numero_empleado: empleado.numero_empleado,
-        puesto: empleado.puesto,
-        departamento: empleado.departamento,
-        observaciones: datos.observaciones.trim() ? `Observaciones: ${datos.observaciones.trim()}` : "",
+      const bytes = await bytesAsignacion({
+        clase: datos.clase,
         folio,
-        concepto: datos.concepto?.trim() || "",
-        monto: montoTxt,
-      });
-      const { intro, cuerpo } = partirPlantilla(plantilla);
-
-      const bytes = await generarCarta({
-        encabezado: config.encabezado,
-        titulo: config.titulo,
-        fecha: fechaCorta(fecha),
-        folio,
-        empresa: getConfig("empresa"),
-        direccion: getConfig("direccion"),
-        filasUsuario: config.esVale ? [] : filasUsuario(empleado),
-        intro,
-        filasEquipo: equipo ? filasEquipo(datos.clase, equipo) : [],
-        cuerpo,
-        firma: datos.firma,
-        firmaDer: datos.firmaAutoridad || null,
-        etiquetaIzq: config.esVale ? "EMPLEADO — Firma de conformidad" : ETIQ_EMPLEADO,
-        etiquetaDer: config.esVale ? "RECURSOS HUMANOS" : ETIQ_COORDINADOR,
-        sustituye: !config.esVale && datos.clase !== "WIFI",
+        fecha,
+        observaciones: datos.observaciones,
+        concepto: config.esVale ? datos.concepto?.trim() || null : null,
+        monto: montoNum,
+        firmaEmpleado: datos.firma,
+        firmaAutoridad: datos.firmaAutoridad || null,
+        empleado,
+        equipo,
       });
 
       const ruta = guardarPdf(folio, bytes);
@@ -175,6 +210,66 @@ export async function crearResponsiva(datos: {
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo generar la responsiva. Revisa la consola del servidor." };
+  }
+}
+
+/**
+ * Firma digital tardía del jefe de sistemas / RH: guarda la firma y vuelve a
+ * generar el PDF con las dos firmas, conservando el mismo folio y archivo.
+ */
+export async function firmarAutoridad(responsivaId: number, firma: string): Promise<ResultadoAccion> {
+  try {
+    if (!firma) return { ok: false, error: "Falta la firma en pantalla." };
+
+    const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(responsivaId) as Responsiva | undefined;
+    if (!r) return { ok: false, error: "La responsiva ya no existe." };
+    if (r.estado === "ELIMINADA") return { ok: false, error: "Esta responsiva está en la papelera." };
+    if (r.tipo !== "ASIGNACION") return { ok: false, error: "Solo se pueden firmar las cartas de asignación." };
+    if (r.origen === "CARGADA") {
+      return { ok: false, error: "Esta responsiva es un escaneo cargado; no se puede firmar digitalmente." };
+    }
+    if (r.firma_autoridad) return { ok: false, error: "Esta responsiva ya está firmada." };
+
+    const config = CARTAS[r.clase as ClaseCarta];
+    if (!config) return { ok: false, error: "La responsiva tiene un tipo de carta desconocido." };
+
+    const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(r.empleado_id) as Empleado | undefined;
+    if (!empleado) return { ok: false, error: "El empleado de la responsiva ya no existe." };
+
+    const item = db.prepare("SELECT equipo_id FROM responsiva_items WHERE responsiva_id = ?").get(r.id) as
+      | { equipo_id: number }
+      | undefined;
+    const equipo = item
+      ? (db.prepare("SELECT * FROM equipos WHERE id = ?").get(item.equipo_id) as Equipo | undefined)
+      : undefined;
+
+    const bytes = await bytesAsignacion({
+      clase: r.clase as ClaseCarta,
+      folio: r.folio,
+      fecha: r.fecha,
+      observaciones: r.observaciones,
+      concepto: r.concepto,
+      monto: r.monto,
+      firmaEmpleado: r.firma_empleado,
+      firmaAutoridad: firma,
+      empleado,
+      equipo,
+    });
+
+    const ruta = guardarPdf(r.folio, bytes);
+    db.prepare("UPDATE responsivas SET firma_autoridad=?, pdf_path=? WHERE id=?").run(firma, ruta, r.id);
+    registrarBitacora(
+      "FIRMA_AUTORIDAD",
+      `${rolAutoridad(r.clase)} firmó la responsiva ${r.folio} de ${empleado.nombre}`,
+      null,
+      false
+    );
+
+    revalidar();
+    return { ok: true, id: r.id, folio: r.folio };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo firmar la responsiva. Revisa la consola del servidor." };
   }
 }
 

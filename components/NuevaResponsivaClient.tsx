@@ -7,9 +7,12 @@ import {
   CAMPOS_DETALLE,
   CARTAS,
   CLASES_CARTA,
+  CLASE_POR_TIPO,
   ETIQUETA_TIPO,
   OPCIONES_MARCA_COMPUTO,
   PRECIO_POR_PLAN,
+  TIPOS_EQUIPO,
+  rolAutoridad,
   type ClaseCarta,
   type TipoEquipo,
 } from "../lib/constants";
@@ -32,6 +35,14 @@ type NuevoEquipoForm = {
   detalles: Record<string, string>;
 };
 
+const claseDeTipo = (tipo: string): ClaseCarta => CLASE_POR_TIPO[tipo as TipoEquipo] ?? "OTROS";
+
+/** Filtro sugerido al cambiar de tipo de carta: el tipo exacto si solo admite uno. */
+const filtroPorClase = (c: ClaseCarta): TipoEquipo | "TODOS" => {
+  const tipos = CARTAS[c].tiposEquipo;
+  return tipos.length === 1 ? tipos[0] : "TODOS";
+};
+
 export default function NuevaResponsivaClient({
   empleados,
   equipos,
@@ -43,7 +54,7 @@ export default function NuevaResponsivaClient({
   const [clase, setClase] = useState<ClaseCarta>("COMPUTO");
   const [empleadoId, setEmpleadoId] = useState<number | null>(null);
   const [equipoId, setEquipoId] = useState<number | null>(null);
-  const [tipoFiltro, setTipoFiltro] = useState<TipoEquipo | "TODOS">("TODOS");
+  const [tipoFiltro, setTipoFiltro] = useState<TipoEquipo | "TODOS">("COMPUTO");
   const [filtro, setFiltro] = useState("");
   const [formEquipo, setFormEquipo] = useState<NuevoEquipoForm | null>(null);
   const [errorEquipo, setErrorEquipo] = useState("");
@@ -60,32 +71,41 @@ export default function NuevaResponsivaClient({
   const config = CARTAS[clase];
   const requiereEquipo = config.tiposEquipo.length > 0;
   const esVale = !!config.esVale;
-  const rolAutoridad = esVale ? "Encargado de RH" : "Jefe de sistemas";
+  const rol = rolAutoridad(clase);
   const empleado = empleados.find((e) => e.id === empleadoId);
 
-  const equiposDelTipo = useMemo(() => {
+  // La lista no se limita al tipo de carta: se filtra por tipo de equipo y, al
+  // elegir uno, la carta se ajusta sola al que corresponde.
+  const equiposFiltrados = useMemo(() => {
     const q = filtro.trim().toLowerCase();
     return equipos
-      .filter((e) => config.tiposEquipo.includes(e.tipo as (typeof config.tiposEquipo)[number]))
       .filter((e) => (tipoFiltro === "TODOS" ? true : e.tipo === tipoFiltro))
       .filter((e) =>
         !q ? true : [e.codigo, e.categoria, e.marca, e.modelo, e.numero_serie ?? ""].join(" ").toLowerCase().includes(q)
       );
-  }, [equipos, config, filtro, tipoFiltro]);
+  }, [equipos, filtro, tipoFiltro]);
 
   const cambiarClase = (c: ClaseCarta) => {
     setClase(c);
-    setEquipoId(null);
-    setTipoFiltro("TODOS");
+    setTipoFiltro(filtroPorClase(c));
     setFiltro("");
     setFormEquipo(null);
+    setError("");
+    // Si el equipo ya elegido no corresponde a la nueva carta, se deselecciona.
+    const permitidos = CARTAS[c].tiposEquipo as readonly string[];
+    const actual = equipos.find((e) => e.id === equipoId);
+    if (!actual || !permitidos.includes(actual.tipo)) setEquipoId(null);
+  };
+
+  const elegirEquipo = (e: Equipo) => {
+    setEquipoId(e.id);
+    setClase(claseDeTipo(e.tipo));
     setError("");
   };
 
   const abrirNuevoEquipo = () => {
-    const tipoInicial = tipoFiltro !== "TODOS" ? tipoFiltro : config.tiposEquipo[0];
     setFormEquipo({
-      tipo: tipoInicial,
+      tipo: tipoFiltro !== "TODOS" ? tipoFiltro : config.tiposEquipo[0] ?? "COMPUTO",
       codigo: "",
       marca: "",
       modelo: "",
@@ -100,6 +120,10 @@ export default function NuevaResponsivaClient({
 
   const setCE = (campo: keyof NuevoEquipoForm) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setFormEquipo((f) => (f ? { ...f, [campo]: ev.target.value } : f));
+
+  // Al cambiar el tipo se limpian los detalles: cada tipo tiene sus propios campos.
+  const cambiarTipoNuevo = (tipo: TipoEquipo) =>
+    setFormEquipo((f) => (f ? { ...f, tipo, detalles: {} } : f));
 
   const ponerDetalleNuevo = (clave: string, valor: string) =>
     setFormEquipo((f) => {
@@ -127,9 +151,12 @@ export default function NuevaResponsivaClient({
       });
       if (res.ok && res.id) {
         setEquipoId(res.id);
+        setClase(claseDeTipo(formEquipo.tipo));
         setTipoFiltro(formEquipo.tipo);
         setFiltro("");
         setFormEquipo(null);
+        setError("");
+        router.refresh();
       } else {
         setErrorEquipo(res.error ?? "No se pudo guardar el equipo.");
       }
@@ -143,7 +170,7 @@ export default function NuevaResponsivaClient({
     if (esVale && !concepto.trim()) return setError("Indica el concepto del descuento.");
     if (esVale && !(Number(monto) > 0)) return setError("Indica el valor de reposición.");
     if (!firma) return setError("Falta la firma del empleado en pantalla.");
-    if (!firmarDespues && !firmaAutoridad) return setError(`Falta la firma del ${rolAutoridad.toLowerCase()} en pantalla.`);
+    if (!firmarDespues && !firmaAutoridad) return setError(`Falta la firma del ${rol.toLowerCase()} en pantalla.`);
 
     iniciar(async () => {
       const res = await crearResponsiva({
@@ -209,31 +236,30 @@ export default function NuevaResponsivaClient({
               </button>
             </div>
 
-            {config.tiposEquipo.length > 1 ? (
-              <div className="mb-2 flex flex-wrap gap-1.5">
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setTipoFiltro("TODOS")}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  tipoFiltro === "TODOS" ? "border-kraft bg-orange-50/60 text-kraft-dark" : "border-line bg-white hover:bg-paper/60"
+                }`}
+              >
+                Todos los tipos
+              </button>
+              {TIPOS_EQUIPO.map((t) => (
                 <button
+                  key={t}
                   type="button"
-                  onClick={() => setTipoFiltro("TODOS")}
+                  onClick={() => setTipoFiltro(t)}
                   className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                    tipoFiltro === "TODOS" ? "border-kraft bg-orange-50/60 text-kraft-dark" : "border-line bg-white hover:bg-paper/60"
+                    tipoFiltro === t ? "border-kraft bg-orange-50/60 text-kraft-dark" : "border-line bg-white hover:bg-paper/60"
                   }`}
                 >
-                  Todos
+                  {ETIQUETA_TIPO[t]}
                 </button>
-                {config.tiposEquipo.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTipoFiltro(t)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                      tipoFiltro === t ? "border-kraft bg-orange-50/60 text-kraft-dark" : "border-line bg-white hover:bg-paper/60"
-                    }`}
-                  >
-                    {ETIQUETA_TIPO[t]}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+              ))}
+            </div>
+            <p className="mb-2 text-xs text-soft">El tipo de carta se ajusta solo al equipo que elijas.</p>
 
             <input
               className={`${inputCls} mb-3`}
@@ -241,7 +267,7 @@ export default function NuevaResponsivaClient({
               value={filtro}
               onChange={(e) => setFiltro(e.target.value)}
             />
-            {equiposDelTipo.length === 0 ? (
+            {equiposFiltrados.length === 0 ? (
               <Empty>
                 No hay equipos disponibles con este filtro.{" "}
                 <button type="button" className="font-semibold text-kraft-dark underline" onClick={abrirNuevoEquipo}>
@@ -251,7 +277,7 @@ export default function NuevaResponsivaClient({
               </Empty>
             ) : (
               <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
-                {equiposDelTipo.map((e) => (
+                {equiposFiltrados.map((e) => (
                   <label
                     key={e.id}
                     className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${
@@ -263,7 +289,7 @@ export default function NuevaResponsivaClient({
                       name="equipo"
                       className="mt-0.5 accent-kraft"
                       checked={equipoId === e.id}
-                      onChange={() => setEquipoId(e.id)}
+                      onChange={() => elegirEquipo(e)}
                     />
                     <span>
                       <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
@@ -345,7 +371,7 @@ export default function NuevaResponsivaClient({
 
             <div className="border-t border-line pt-4">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-ink">Firma del {rolAutoridad}</p>
+                <p className="text-sm font-semibold text-ink">Firma del {rol}</p>
                 <label className="flex items-center gap-1.5 text-xs text-soft">
                   <input
                     type="checkbox"
@@ -356,13 +382,13 @@ export default function NuevaResponsivaClient({
                       if (e.target.checked) setFirmaAutoridad(null);
                     }}
                   />
-                  Firmará más tarde (en papel)
+                  Firmar después
                 </label>
               </div>
               {firmarDespues ? (
                 <p className="rounded-md border border-dashed border-line bg-paper/60 px-3 py-4 text-center text-xs text-soft">
-                  El documento se generará con la línea de firma en blanco para que el {rolAutoridad.toLowerCase()} firme
-                  físicamente después.
+                  La responsiva quedará marcada como <b>pendiente de firma</b>. El {rol.toLowerCase()} podrá firmarla
+                  digitalmente después desde el listado de responsivas y el PDF se regenera con las dos firmas.
                 </p>
               ) : (
                 <SignatureCanvas onChange={setFirmaAutoridad} />
@@ -390,8 +416,8 @@ export default function NuevaResponsivaClient({
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label>Tipo de equipo *</Label>
-                <select className={inputCls} value={formEquipo.tipo} onChange={setCE("tipo")}>
-                  {config.tiposEquipo.map((t) => (
+                <select className={inputCls} value={formEquipo.tipo} onChange={(e) => cambiarTipoNuevo(e.target.value as TipoEquipo)}>
+                  {TIPOS_EQUIPO.map((t) => (
                     <option key={t} value={t}>
                       {ETIQUETA_TIPO[t]}
                     </option>

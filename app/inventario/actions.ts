@@ -149,29 +149,33 @@ export async function guardarEquipo(datos: {
         datos.notas.trim() || null,
         datos.id
       );
+      revalidar();
+      return { ok: true, id: datos.id };
     } else {
       if (!codigo) codigo = generarCodigo(TIPO_DEFAULTS[tipo].prefijo);
       const dup = db.prepare("SELECT id FROM equipos WHERE codigo = ?").get(codigo);
       if (dup) return { ok: false, error: `Ya existe un equipo con el código ${codigo}.` };
-      db.prepare(
-        "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, estado, notas) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
-      ).run(
-        codigo,
-        tipo,
-        TIPO_DEFAULTS[tipo].categoria,
-        datos.marca.trim(),
-        datos.modelo.trim(),
-        datos.numero_serie.trim() || null,
-        specs || null,
-        detallesJson,
-        datos.fecha_compra || null,
-        costo,
-        estadoLibre,
-        datos.notas.trim() || null
-      );
+      const info = db
+        .prepare(
+          "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, estado, notas) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+        )
+        .run(
+          codigo,
+          tipo,
+          TIPO_DEFAULTS[tipo].categoria,
+          datos.marca.trim(),
+          datos.modelo.trim(),
+          datos.numero_serie.trim() || null,
+          specs || null,
+          detallesJson,
+          datos.fecha_compra || null,
+          costo,
+          estadoLibre,
+          datos.notas.trim() || null
+        );
+      revalidar();
+      return { ok: true, id: Number(info.lastInsertRowid) };
     }
-    revalidar();
-    return { ok: true };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo guardar el equipo." };

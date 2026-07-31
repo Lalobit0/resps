@@ -59,6 +59,7 @@ export async function crearResponsiva(datos: {
   equipoId: number | null;
   observaciones: string;
   firma: string;
+  firmaAutoridad?: string | null;
   concepto?: string;
   monto?: string;
 }): Promise<ResultadoAccion> {
@@ -98,9 +99,19 @@ export async function crearResponsiva(datos: {
     const crear = db.transaction(() => {
       const info = db
         .prepare(
-          "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, entregado_por, observaciones) VALUES (?,?,?,?,?,?,?,?)"
+          "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, entregado_por, observaciones, firma_autoridad) VALUES (?,?,?,?,?,?,?,?,?)"
         )
-        .run(folio, "ASIGNACION", datos.clase, empleado.id, fecha, "VIGENTE", entregadoPor, datos.observaciones.trim() || null);
+        .run(
+          folio,
+          "ASIGNACION",
+          datos.clase,
+          empleado.id,
+          fecha,
+          "VIGENTE",
+          entregadoPor,
+          datos.observaciones.trim() || null,
+          datos.firmaAutoridad || null
+        );
       const rid = Number(info.lastInsertRowid);
       if (equipo) {
         db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion) VALUES (?,?,?)").run(
@@ -142,6 +153,7 @@ export async function crearResponsiva(datos: {
         filasEquipo: equipo ? filasEquipo(datos.clase, equipo) : [],
         cuerpo,
         firma: datos.firma,
+        firmaDer: datos.firmaAutoridad || null,
         etiquetaIzq: config.esVale ? "EMPLEADO — Firma de conformidad" : ETIQ_EMPLEADO,
         etiquetaDer: config.esVale ? "RECURSOS HUMANOS" : ETIQ_COORDINADOR,
         sustituye: !config.esVale && datos.clase !== "WIFI",

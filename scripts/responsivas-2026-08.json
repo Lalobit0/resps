@@ -1,0 +1,237 @@
+{
+  "_nota": "Datos extraídos de los escaneos del lote 2026-08 (21 PDF / 24 responsivas). Los campos 'revisar' señalan lo que requiere confirmación humana antes de cargarse. Fechas en ISO. 'pagina' es la página del PDF donde está la responsiva.",
+  "responsivas": [
+    {
+      "archivo": "1780.pdf", "pagina": 1, "fecha": "2024-08-30", "clase": "OTROS",
+      "empleado": { "numero": "1780", "nombre": "FLORES GARCIA ERICK", "area": "PRODUCCION", "supervisor": "ARMANDO HERNANDEZ HERNANDEZ" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A04935",
+        "detalles": { "nombre_equipo": "SPKRAD935", "descripcion": "RADIO (ANTENA, BATERIA, CLIP, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true
+    },
+    {
+      "archivo": "1916_20260804205127.pdf", "pagina": 1, "fecha": "2024-04-09", "clase": "OTROS",
+      "empleado": { "numero": "1916", "nombre": "OSCAR GONZALEZ", "area": "MRO", "supervisor": "JUAN CARLOS MARTINEZ" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2308A01501",
+        "detalles": { "nombre_equipo": "SPKRAD1501", "descripcion": "RADIO - ANTENA - CARGADOR" } },
+      "firmado": true,
+      "revisar": "Mismo radio que 1916.pdf (serie 2308A01501). Esta es la entrega anterior; la de 2024-09-02 la sustituye."
+    },
+    {
+      "archivo": "1916.pdf", "pagina": 1, "fecha": "2024-09-02", "clase": "OTROS",
+      "empleado": { "numero": "1916", "nombre": "OSCAR GONZALEZ", "area": "MRO", "supervisor": "JUAN CARLOS MARTINEZ" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2308A01501",
+        "detalles": { "nombre_equipo": "SPKRAD501", "descripcion": "RADIO (ANTENA, BATERIA, CLIP, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true, "vigente": true,
+      "revisar": "Datos del empleado manuscritos. Nombre del equipo difiere del documento anterior (SPKRAD501 vs SPKRAD1501) para la misma serie."
+    },
+    {
+      "archivo": "2107.pdf", "pagina": 1, "fecha": "2024-02-26", "clase": "COMPUTO",
+      "empleado": { "numero": "2107", "nombre": "ORLANDO RAMOS PORTILLO", "area": "CONTABILIDAD", "supervisor": "MONSERRAT ESCOBAR" },
+      "equipo": { "tipo": "COMPUTO", "marca": "Dell", "modelo": "Vostro 3681", "serie": "92Z6F93",
+        "detalles": { "nombre_computadora": "SPK-CREDITO2-W", "descripcion": "Equipo de escritorio i5-10400 8gb 1TBHDD", "procesador": "i5-10400", "ram": "8 GB", "hd": "1 TB", "accesorios": "mouse-teclado", "monitor": "ACER V226HQL" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2120.pdf", "pagina": 1, "fecha": "2025-03-11", "clase": "COMPUTO",
+      "empleado": { "numero": "2120", "nombre": "GONZALEZ LUGO JOSE MANUEL", "area": "CONTABILIDAD", "supervisor": "MONSERRAT DEL SAGRADO CORAZON ESCOBAR CARDONA" },
+      "equipo": { "tipo": "COMPUTO", "marca": "Dell", "modelo": "Vostro 3400", "serie": "FDHRXC3",
+        "detalles": { "nombre_computadora": "SPK-CONTJR-W", "descripcion": "Intel Core i5 8GB 1TB Microsoft Windows 10 Pro", "ram": "8 GB", "hd": "1 TB", "sistema_operativo": "Windows 10 Pro", "accesorios": "TECLADO Y MOUSE", "monitor": "MONITOR DELL" } },
+      "firmado": true, "vigente": true,
+      "revisar": "En el documento la Marca dice 'Vostro 3400' y el Modelo 'Dell Vostro 3400'. Se normalizó a Marca Dell / Modelo Vostro 3400."
+    },
+    {
+      "archivo": "2121.pdf", "pagina": 1, "fecha": "2024-04-26", "clase": "OTROS",
+      "empleado": { "numero": "2121", "nombre": "CONTRERAS DIAZ CRISTIAN ANTONIO", "area": "CALIDAD", "supervisor": "VICTORIA ILIANA RAMOS IBARRA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "23080A1506",
+        "detalles": { "nombre_equipo": "SPKRAD506", "descripcion": "RADIO - ANTENA - CARGADOR" } },
+      "firmado": true, "vigente": true,
+      "revisar": "La serie 23080A1506 tiene 10 caracteres; las demás del lote tienen 9 (patrón 2308A0####). Posible dígito de más."
+    },
+    {
+      "archivo": "2121.pdf", "pagina": 2, "fecha": "2025-02-27", "clase": "COMPUTO",
+      "empleado": { "numero": "2121", "nombre": "CONTRERAS DIAZ CRISTIAN ANTONIO", "area": "PRODUCCION", "supervisor": "ARMANDO HERNANDEZ HERNANDEZ" },
+      "equipo": { "tipo": "COMPUTO", "marca": "DELL", "modelo": "VOSTRO 3681", "serie": "83889LM3",
+        "detalles": { "nombre_computadora": "SPK-GTEMPC-W", "descripcion": "Intel Core i5-10400 - 12GB RAM - 1TB SSD W11PRO", "procesador": "i5-10400", "ram": "12 GB", "hd": "1 TB", "sistema_operativo": "W11 PRO", "accesorios": "TECLADO - MOUSE", "monitor": "MONITOR" } },
+      "firmado": true, "vigente": true,
+      "revisar": "El área del empleado cambia de CALIDAD (2024) a PRODUCCION (2025). Se toma la más reciente."
+    },
+    {
+      "archivo": "2123_20260804205607.pdf", "pagina": 1, "fecha": "2024-09-04", "clase": "OTROS",
+      "empleado": { "numero": "2123", "nombre": "PEREZ FUENTES ARTURO", "area": "CALIDAD", "supervisor": "VICTORIA ILIANA RAMOS IBARRA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A05338",
+        "detalles": { "nombre_equipo": "SPKRAD338", "descripcion": "RADIO (ANTENA, BATERIA, CLIP, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true, "vigente": true,
+      "revisar": "2123.pdf es el MISMO documento escaneado incompleto (sin firmas). Se conserva este y se descarta el otro."
+    },
+    {
+      "archivo": "2130.pdf", "pagina": 1, "fecha": "2023-11-29", "clase": "CELULAR",
+      "empleado": { "numero": "2130", "nombre": "IGNACIO OLIVAS ALARCON", "area": "EMBARQUES", "supervisor": "JUAN CARLOS MARTINEZ" },
+      "equipo": { "tipo": "CELULAR", "marca": "MOTOROLA", "modelo": "XT2335 G53 5G", "serie": "PAWR0044MX",
+        "detalles": { "imei": "352295696494376", "numero": "6641276064", "plan": "PLUS EMPRESARIAL CONTROLADO 3 - 7.50GB", "descripcion": "Telefono Motorola G53 Negro 128GB", "condicion": "NUEVO", "accesorios": "Cargador carga rapida, Case transparente" } },
+      "firmado": true, "vigente": true,
+      "revisar": "Fecha manuscrita, ilegible con certeza (se leyó 29/11/23). La serie PAWR0044MX aparece en 3 celulares distintos del lote: no es serie única."
+    },
+    {
+      "archivo": "2130.pdf", "pagina": 2, "fecha": "2024-08-29", "clase": "CELULAR",
+      "empleado": { "numero": "2130", "nombre": "IGNACIO OLIVAS ALARCON", "area": "EMBARQUES", "supervisor": "JUAN CARLOS MARTINEZ" },
+      "equipo": { "tipo": "CELULAR", "marca": "XIAOMI", "modelo": "REDMI 9A", "serie": "37566/62TC07801",
+        "detalles": { "imei": "863135061349627", "numero": "6644137597", "plan": "PLUS EMPRESARIAL 1.5 CONTROLADO - 4.50 GB", "descripcion": "TELEFONO XIAOMI REDMI 9A", "condicion": "NUEVO", "accesorios": "CABLE DE DATOS Y CARGADOR" } },
+      "firmado": true,
+      "revisar": "Fecha manuscrita (29/08/24, firma 8/30/24). La línea 6644137597 se reasigna después a la empleada 2437 (2026): no pueden quedar ambas vigentes."
+    },
+    {
+      "archivo": "2130_20260804205929.pdf", "pagina": 1, "fecha": "2024-08-27", "clase": "OTROS",
+      "empleado": { "numero": "2130", "nombre": "IGNACIO OLIVAS ALARCON", "area": "EMBARQUES", "supervisor": "JUAN CARLOS MARTINEZ" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A04921",
+        "detalles": { "nombre_equipo": "SPKRAD01EMB", "descripcion": "RADIO (ANTENA, BATERIA, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2175.pdf", "pagina": 1, "fecha": "2024-04-09", "clase": "OTROS",
+      "empleado": { "numero": "2175", "nombre": "ALVAREZ HEREDIA SALVADOR", "area": "SEGURIDAD E HIGIENE", "supervisor": "ISAAC GARCIA GRIJALVA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2308A01493",
+        "detalles": { "nombre_equipo": "SPKRAD493", "descripcion": "RADIO - ANTENA - CARGADOR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2175.pdf", "pagina": 2, "fecha": "2024-09-04", "clase": "OTROS",
+      "empleado": { "numero": "2175", "nombre": "ALVAREZ HEREDIA SALVADOR", "area": "RECURSOS HUMANOS", "supervisor": "ISAAC GARCIA GRIJALVA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A05786",
+        "detalles": { "nombre_equipo": "SPKRAD786", "descripcion": "RADIO (ANTENA, BATERIA, CLIP, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2175.pdf", "pagina": 3, "fecha": "2024-09-04", "clase": "OTROS",
+      "empleado": { "numero": "2175", "nombre": "ALVAREZ HEREDIA SALVADOR", "area": "RECURSOS HUMANOS", "supervisor": "ISAAC GARCIA GRIJALVA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A05785",
+        "detalles": { "nombre_equipo": "SPKRAD785", "descripcion": "RADIO (ANTENA, BATERIA, CLIP, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2175.pdf", "pagina": 4, "fecha": "2024-09-04", "clase": "OTROS",
+      "empleado": { "numero": "2175", "nombre": "ALVAREZ HEREDIA SALVADOR", "area": "RECURSOS HUMANOS", "supervisor": "ISAAC GARCIA GRIJALVA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A05340",
+        "detalles": { "nombre_equipo": "SPKRAD340", "descripcion": "RADIO (ANTENA, BATERIA, CLIP, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2175.pdf", "pagina": 5, "fecha": "2025-01-13", "clase": "OTROS",
+      "empleado": { "numero": "2175", "nombre": "ALVAREZ HEREDIA SALVADOR", "area": "RECURSOS HUMANOS", "supervisor": "ISAAC GARCIA GRIJALVA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A05795",
+        "detalles": { "nombre_equipo": "SPKRAD795", "descripcion": "RADIO", "accesorios": "ANTENA, CARGADOR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2175.pdf", "pagina": 6, "fecha": "2025-02-21", "clase": "OTROS",
+      "empleado": { "numero": "2175", "nombre": "ALVAREZ HEREDIA SALVADOR", "area": "RECURSOS HUMANOS", "supervisor": "ISAAC GARCIA GRIJALVA" },
+      "equipo": { "tipo": "RADIO", "marca": "KENWOOD", "modelo": "TK-300", "serie": "B8919059",
+        "detalles": { "nombre_equipo": "SPKRAD9059", "descripcion": "RADIO (ANTENA, BATERIA, CARGADOR)" } },
+      "firmado": true, "vigente": true,
+      "revisar": "El accesorio AURICULAR viene tachado en el documento. Sin firma del empleado visible."
+    },
+    {
+      "archivo": "2186.pdf", "pagina": 2, "fecha": "2023-12-13", "clase": "COMPUTO",
+      "empleado": { "numero": "2186", "nombre": "VAZQUEZ RAMIREZ JOSE RODRIGO", "area": "SEGURIDAD PATRIMONIAL", "supervisor": "SALVADOR ALVAREZ HEREDIA" },
+      "equipo": { "tipo": "COMPUTO", "marca": "Dell", "modelo": "Vostro 3020", "serie": "HGYKNZ3",
+        "detalles": { "nombre_computadora": "SPK-SEGURIDAD-W", "descripcion": "PC ESCRITORIO i7-13700, 16GBRAM, 500 SSD", "procesador": "i7-13700", "ram": "16 GB", "hd": "500 GB SSD", "accesorios": "Mouse, teclado y monitor Dell P2722H ST D1ZH5P3" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2186.pdf", "pagina": 1, "fecha": "2024-09-03", "clase": "OTROS",
+      "empleado": { "numero": "2186", "nombre": "VAZQUEZ RAMIREZ JOSE RODRIGO", "area": "RECURSOS HUMANOS", "supervisor": "SALVADOR ALVAREZ HEREDIA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A05337",
+        "detalles": { "nombre_equipo": "SPKRAD337", "descripcion": "RADIO (ANTENA, BATERIA, CLIP, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true, "vigente": true,
+      "revisar": "El área cambia de SEGURIDAD PATRIMONIAL (2023) a RECURSOS HUMANOS (2024). Se toma la más reciente."
+    },
+    {
+      "archivo": "2236.pdf", "pagina": 1, "fecha": "2024-02-26", "clase": "COMPUTO",
+      "empleado": { "numero": "2236", "nombre": "ANGEL JAVIER TORRES RANGEL", "area": "IMPORT - EXPORT", "supervisor": "MARLEN CABADA" },
+      "equipo": { "tipo": "COMPUTO", "marca": "Dell", "modelo": "Vostro 3470", "serie": "957JZT2",
+        "detalles": { "nombre_computadora": "SPK-IMEX-W", "descripcion": "Equipo de escritorio i3-8100 12GB 1TBHDD", "procesador": "i3-8100", "ram": "12 GB", "hd": "1 TB", "accesorios": "mouse-teclado", "monitor": "ACER V226HQL" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2238.pdf", "pagina": 1, "fecha": "2024-09-13", "clase": "OTROS",
+      "empleado": { "numero": "2238", "nombre": "VALVERDE BACA LESLYE TAYZ", "area": "PLANEACION", "supervisor": "THELMA VIOLETA TORRES SOMBRA" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A05334",
+        "detalles": { "nombre_equipo": "SPKRAD334", "descripcion": "RADIO (ANTENA, BATERIA, CLIP, CARGADOR)", "accesorios": "AURICULAR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2332.pdf", "pagina": 1, "fecha": "2025-02-28", "clase": "COMPUTO",
+      "empleado": { "numero": "2332", "nombre": "PEREZ PEREZ FRANCISCO GAMALIEL", "area": "ALMACEN MRO", "supervisor": "ROBERTO GERARDO ALFARO PEÑA" },
+      "equipo": { "tipo": "COMPUTO", "marca": "HP", "modelo": "TPC-F007-SF", "serie": "2UA2040QQ7",
+        "detalles": { "nombre_computadora": "SPKW40QQ7", "descripcion": "Intel Core i5-2400 - 16GB RAM - 1TB HDD W10PRO", "procesador": "i5-2400", "ram": "16 GB", "hd": "1 TB", "sistema_operativo": "W10 PRO", "accesorios": "TECLADO - MOUSE", "monitor": "MONITOR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2351.pdf", "pagina": 2, "fecha": "2025-01-21", "clase": "CELULAR",
+      "empleado": { "numero": "2351", "nombre": "ALFARO PEÑA ROBERTO GERARDO", "area": "COMPRAS", "supervisor": "" },
+      "equipo": { "tipo": "CELULAR", "marca": "MOTOROLA", "modelo": "XT2335 G53 5G", "serie": "PAWR0044MX",
+        "detalles": { "imei": "352295696669548", "numero": "6642489816", "plan": "1.5 PLAN TELCEL PLUS EMPRESARIAL CONSUMO CONTROLADO 4.50GB", "descripcion": "TELEFONO CELULAR MOTOROLA 5G XT2335", "condicion": "USADO", "accesorios": "PROTECTOR DE PLASTICO" } },
+      "firmado": true, "vigente": true,
+      "revisar": "Serie PAWR0044MX repetida en 3 celulares distintos del lote. En el documento el supervisor dice 'SUPERVISOR NO DEFINIDO'."
+    },
+    {
+      "archivo": "2351.pdf", "pagina": 1, "fecha": "2025-01-22", "clase": "OTROS",
+      "empleado": { "numero": "2351", "nombre": "ALFARO PEÑA ROBERTO GERARDO", "area": "COMPRAS", "supervisor": "" },
+      "equipo": { "tipo": "RADIO", "marca": "TXPRO", "modelo": "TX-320", "serie": "2312A05335",
+        "detalles": { "nombre_equipo": "SPKRAD335", "descripcion": "RADIO", "accesorios": "ANTENA, CARGADOR" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2411.pdf", "pagina": 1, "fecha": "2026-01-05", "clase": "COMPUTO",
+      "empleado": { "numero": "2411", "nombre": "LANDERO VILCHIS CESAR ARMANDO", "area": "CONTABILIDAD", "supervisor": "MONSERRAT ESCOBAR" },
+      "equipo": { "tipo": "COMPUTO", "marca": "DELL", "modelo": "VOSTRO 3470", "serie": "F9Q10T2",
+        "detalles": { "nombre_computadora": "SPK-CONTAP-W", "descripcion": "Intel Core i3-8100 Microsoft Windows 11 Pro", "procesador": "i3-8100", "sistema_operativo": "Windows 11 Pro", "accesorios": "EQUIPO NUEVO", "monitor": "DELL P2425H SERIE CN-068H0D-QDC00-56H-0DCL" } },
+      "firmado": true, "vigente": true
+    },
+    {
+      "archivo": "2412.pdf", "pagina": 1, "fecha": "2026-01-05", "clase": "COMPUTO",
+      "empleado": { "numero": "2412", "nombre": "CASTAÑEDA NORIEGA CARLOS FABIAN", "area": "CONTABILIDAD", "supervisor": "MONSERRAT ESCOBAR" },
+      "equipo": { "tipo": "COMPUTO", "marca": "DELL", "modelo": "PRO SLIM", "serie": "2881ND4",
+        "detalles": { "nombre_computadora": "SPK-FINAN-W", "descripcion": "Intel Core i5-14500 Microsoft Windows 11 Pro", "procesador": "i5-14500", "sistema_operativo": "Windows 11 Pro", "accesorios": "EQUIPO NUEVO", "monitor": "DELL P2425H SERIE CN-068H0D-QDC00-56H-0D6L" } },
+      "firmado": true, "vigente": true,
+      "revisar": "En el documento la Marca dice 'DEL' (falta la L). Se normalizó a DELL."
+    },
+    {
+      "archivo": "2414.pdf", "pagina": 1, "fecha": "2026-04-14", "clase": "COMPUTO",
+      "empleado": { "numero": "2414", "nombre": "RIZZO REBOLLEDO DANIEL LUIS", "area": "PRODUCCION", "supervisor": "ARMANDO HERNANDEZ HERNANDEZ" },
+      "equipo": { "tipo": "COMPUTO", "marca": "Dell", "modelo": "Latitude 3410", "serie": "7363C63",
+        "detalles": { "nombre_computadora": "SPK-PROD1-L", "descripcion": "Intel Core i5-10210 1TB HDD Microsoft Windows 10 Pro", "procesador": "i5-10210", "hd": "1 TB", "sistema_operativo": "Windows 10 Pro", "accesorios": "CARGADOR LA45NM140" } },
+      "firmado": true, "vigente": true,
+      "revisar": "CAMPOS CORRIDOS en el documento: Modelo traía 'SPK-PROD1-L Dell', Serie traía 'Latitud3410' y la serie real (7363C63) venía dentro de la Descripción. Se reacomodaron; confirmar."
+    },
+    {
+      "archivo": "2422.pdf", "pagina": 1, "fecha": "2026-02-16", "clase": "CELULAR",
+      "empleado": { "numero": "2422", "nombre": "GONZALEZ DIAZ MONTSERRAT", "area": "IMPORT EXPORT", "supervisor": "MARLEN CABADA RAMIREZ" },
+      "equipo": { "tipo": "CELULAR", "marca": "MOTOROLA", "modelo": "XT2335 G53 5G", "serie": "PAWR0044MX",
+        "detalles": { "imei": "352295696494400", "numero": "6631277238", "plan": "1.5 PLAN TELCEL PLUS EMPRESARIAL CONSUMO CONTROLADO 11 GB", "descripcion": "MOTOROLA 5G XT2335 1 G53", "pin": "1920", "accesorios": "CASE TRANSPARENTE" } },
+      "firmado": true, "vigente": true,
+      "revisar": "Serie PAWR0044MX repetida en 3 celulares distintos del lote."
+    },
+    {
+      "archivo": "2437.pdf", "pagina": 1, "fecha": "2026-04-06", "clase": "CELULAR",
+      "empleado": { "numero": "2437", "nombre": "NOVOA BURQUEZ ALESSA", "area": "RECURSOS HUMANOS", "supervisor": "" },
+      "equipo": { "tipo": "CELULAR", "marca": "APPLE", "modelo": "IPHONE 14 MPUD3E/A", "serie": "QF3C2FX9L6",
+        "detalles": { "imei": "357504149886798", "imei2": "357504149577017", "numero": "6644137597", "plan": "5 PLAN TELCEL PLUS EMPRESARIAL CONSUMO CONTROLADO 15.5 GB", "descripcion": "IPHONE 14 128GB", "condicion": "REEMPLAZO", "accesorios": "SOLO TELEFONO / CASE" } },
+      "firmado": true, "vigente": true,
+      "revisar": "La línea 6644137597 la traía antes el empleado 2130 (Xiaomi, 2024): el equipo anterior debe quedar cerrado. El jefe directo viene como '0' en el documento."
+    },
+    {
+      "archivo": "2437.pdf", "pagina": 2, "fecha": "2026-04-06", "clase": "COMPUTO",
+      "empleado": { "numero": "2437", "nombre": "NOVOA BURQUEZ ALESSA", "area": "RECURSOS HUMANOS", "supervisor": "" },
+      "equipo": { "tipo": "COMPUTO", "marca": "Dell", "modelo": "Vostro 3710", "serie": "71W8QR3",
+        "detalles": { "nombre_computadora": "SPKW8QR3", "descripcion": "Intel Core i5-12400 500 GB SSD Microsoft Windows 11 Pro", "procesador": "i5-12400", "hd": "500 GB SSD", "sistema_operativo": "Windows 11 Pro" } },
+      "firmado": true, "vigente": true,
+      "revisar": "CAMPOS CORRIDOS en el documento: Modelo traía 'SPKWW8QR3 Dell', Serie traía 'Vostro 3710' y la serie real (71W8QR3) venía dentro de la Descripción. Se reacomodaron; confirmar la serie y el nombre del equipo."
+    }
+  ],
+  "descartados": [
+    {
+      "archivo": "2123.pdf",
+      "motivo": "Escaneo incompleto (solo el encabezado, sin firmas) del mismo documento que 2123_20260804205607.pdf: mismo empleado 2123, misma fecha 2024-09-04 y misma serie 2312A05338."
+    }
+  ]
+}

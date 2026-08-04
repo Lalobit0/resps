@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/responsivas", etiqueta: "Responsivas" },
   { href: "/mantenimientos", etiqueta: "Mantenimientos" },
   { href: "/bitacora", etiqueta: "Bitácora" },
+  { href: "/firmas", etiqueta: "Firmas" },
   { href: "/plantillas", etiqueta: "Plantillas y datos" },
   { href: "/respaldos", etiqueta: "Respaldos" },
 ];

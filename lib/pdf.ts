@@ -88,22 +88,17 @@ export async function generarCarta(datos: DatosCarta): Promise<Uint8Array> {
       logo = null;
     }
   }
-  let firmaImg: PDFImage | null = null;
-  if (datos.firma) {
+  // Las firmas capturadas en pantalla son PNG; las cargadas pueden venir en JPG.
+  const embeberFirma = async (dataUrl: string | null | undefined): Promise<PDFImage | null> => {
+    if (!dataUrl) return null;
     try {
-      firmaImg = await doc.embedPng(datos.firma);
+      return /^data:image\/jpe?g/i.test(dataUrl) ? await doc.embedJpg(dataUrl) : await doc.embedPng(dataUrl);
     } catch {
-      firmaImg = null;
+      return null;
     }
-  }
-  let firmaDerImg: PDFImage | null = null;
-  if (datos.firmaDer) {
-    try {
-      firmaDerImg = await doc.embedPng(datos.firmaDer);
-    } catch {
-      firmaDerImg = null;
-    }
-  }
+  };
+  const firmaImg = await embeberFirma(datos.firma);
+  const firmaDerImg = await embeberFirma(datos.firmaDer);
 
   // Recorre todo el contenido con un factor de escala k. Si page es null solo mide
   // (para saber si desborda); si no, dibuja.
@@ -229,7 +224,13 @@ export async function generarCarta(datos: DatosCarta): Promise<Uint8Array> {
     };
     etiqueta(datos.etiquetaIzq, xIzq);
     etiqueta(datos.etiquetaDer, xDer);
-    y = yLinea - 28 * k;
+    // La leyenda "por ausencia" ocupa varios renglones: se reserva el alto real.
+    const lineasEtiqueta = Math.max(
+      envolver(datos.etiquetaIzq, font, etSize, anchoBloque).length,
+      envolver(datos.etiquetaDer, font, etSize, anchoBloque).length,
+      1
+    );
+    y = yLinea - (11 * k + lineasEtiqueta * 9.5 * k + 8 * k);
 
     if (datos.sustituye) {
       texto("Esta carta responsiva sustituye a anteriores.", M, y - 8 * k, 8 * k, bold);

@@ -1,6 +1,7 @@
 import { db } from "../../lib/db";
 import type { EquipoConAsignado } from "../../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constants";
+import { detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
 import InventarioClient from "../../components/InventarioClient";
 import ExportarBotones from "../../components/ExportarBotones";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
@@ -17,6 +18,7 @@ export default async function PaginaInventario({
   const tipo = typeof sp.tipo === "string" ? sp.tipo : "";
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const orden = typeof sp.orden === "string" ? sp.orden : "codigo";
+  const soloDup = sp.dup === "1";
 
   const ORDENES: Record<string, string> = {
     codigo: "CASE e.estado WHEN 'BAJA' THEN 1 ELSE 0 END, e.codigo ASC",
@@ -46,7 +48,7 @@ export default async function PaginaInventario({
   }
   const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
 
-  const equipos = db
+  const encontrados = db
     .prepare(
       `SELECT e.*, em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero
        FROM equipos e
@@ -58,6 +60,13 @@ export default async function PaginaInventario({
 
   const total = (db.prepare("SELECT COUNT(*) AS c FROM equipos").get() as { c: number }).c;
 
+  // Los duplicados se buscan contra TODO el inventario, no solo contra lo filtrado.
+  const duplicados = detectarDuplicados(
+    db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[]
+  );
+  const totalDuplicados = Object.keys(duplicados).length;
+  const equipos = soloDup ? encontrados.filter((e) => duplicados[e.id]) : encontrados;
+
   return (
     <>
       <PageHeader eyebrow="Activos de TI" title="Inventario de equipo">
@@ -66,7 +75,20 @@ export default async function PaginaInventario({
         </span>
       </PageHeader>
 
+      {totalDuplicados > 0 ? (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span>
+            ⚠️ Se detectaron <b>{totalDuplicados}</b> equipo(s) con datos repetidos (serie, IMEI, línea, no. de activo o
+            nombre de la computadora). Revísalos y corrige el que sobre.
+          </span>
+          <a href={soloDup ? "/inventario" : "/inventario?dup=1"} className={btnGhost}>
+            {soloDup ? "Ver todo el inventario" : "Ver solo duplicados"}
+          </a>
+        </div>
+      ) : null}
+
       <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
+        {soloDup ? <input type="hidden" name="dup" value="1" /> : null}
         <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, asignado…" className={`${inputCls} max-w-xs`} />
         <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[190px]`}>
           <option value="">Todos los tipos</option>
@@ -99,7 +121,7 @@ export default async function PaginaInventario({
         </div>
       </form>
 
-      <InventarioClient equipos={equipos} />
+      <InventarioClient equipos={equipos} duplicados={duplicados} />
     </>
   );
 }

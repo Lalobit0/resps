@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "../../lib/db";
 import { CAMPOS_DETALLE, TIPO_DEFAULTS, TIPOS_EQUIPO, type TipoEquipo } from "../../lib/constants";
 import { importarDeExcel, type Mapeo } from "../../lib/importar";
+import { CAMPOS_BLOQUEANTES, conflictosContra, detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -86,20 +87,26 @@ export async function guardarEquipo(datos: {
       }
     }
 
-    // Duplicados: misma serie o mismo IMEI en otro equipo.
+    // El IMEI 2 no puede repetir al IMEI del mismo equipo.
+    if (detalles.imei && detalles.imei2 && detalles.imei === detalles.imei2) {
+      return { ok: false, error: "El IMEI y el IMEI 2 no pueden ser el mismo número." };
+    }
+
+    // Duplicados contra el resto del inventario (serie, IMEI y línea).
     const serieTrim = datos.numero_serie.trim();
     const idActual = datos.id ?? -1;
-    if (serieTrim) {
-      const dupSerie = db
-        .prepare("SELECT codigo FROM equipos WHERE numero_serie = ? AND id != ?")
-        .get(serieTrim, idActual) as { codigo: string } | undefined;
-      if (dupSerie) return { ok: false, error: `La serie ${serieTrim} ya está registrada en el equipo ${dupSerie.codigo}.` };
-    }
-    if (detalles.imei) {
-      const dupImei = db
-        .prepare("SELECT codigo FROM equipos WHERE json_extract(detalles, '$.imei') = ? AND id != ?")
-        .get(detalles.imei, idActual) as { codigo: string } | undefined;
-      if (dupImei) return { ok: false, error: `El IMEI ${detalles.imei} ya está registrado en el equipo ${dupImei.codigo}.` };
+    const otros = db
+      .prepare("SELECT id, codigo, numero_serie, detalles FROM equipos WHERE id != ?")
+      .all(idActual) as EquipoRevisable[];
+    const conflictos = conflictosContra({ numeroSerie: serieTrim, detalles }, otros).filter((c) =>
+      CAMPOS_BLOQUEANTES.includes(c.campo)
+    );
+    if (conflictos.length) {
+      const c = conflictos[0];
+      return {
+        ok: false,
+        error: `El ${c.etiqueta} ${c.valor} ya está registrado en ${c.otros.length > 1 ? "los equipos" : "el equipo"} ${c.otros.join(", ")}.`,
+      };
     }
 
     const specs = componerSpecs(tipo, detalles);
@@ -345,21 +352,12 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
     const partes = [`${nuevos} nuevos`, `${actualizados} actualizados`, `${vinculados} ligados a empleado`];
     if (omitidos) partes.push(`${omitidos} omitidos`);
 
-    // Aviso de posibles duplicados (misma serie o mismo IMEI en más de un equipo).
-    const dupSerie = (db
-      .prepare(
-        "SELECT COUNT(*) AS c FROM (SELECT numero_serie FROM equipos WHERE numero_serie IS NOT NULL AND numero_serie != '' GROUP BY numero_serie HAVING COUNT(*) > 1)"
-      )
-      .get() as { c: number }).c;
-    const dupImei = (db
-      .prepare(
-        "SELECT COUNT(*) AS c FROM (SELECT json_extract(detalles,'$.imei') AS im FROM equipos WHERE im IS NOT NULL AND im != '' GROUP BY im HAVING COUNT(*) > 1)"
-      )
-      .get() as { c: number }).c;
-    const avisos: string[] = [];
-    if (dupSerie) avisos.push(`${dupSerie} serie(s) repetida(s)`);
-    if (dupImei) avisos.push(`${dupImei} IMEI repetido(s)`);
-    const aviso = avisos.length ? ` ⚠️ Revisa: ${avisos.join(" y ")}.` : "";
+    // Aviso de datos repetidos en todo el inventario tras la importación.
+    const todos = db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[];
+    const conDuplicados = Object.keys(detectarDuplicados(todos)).length;
+    const aviso = conDuplicados
+      ? ` ⚠️ Hay ${conDuplicados} equipo(s) con datos repetidos: revísalos con el filtro “Solo duplicados”.`
+      : "";
     return { ok: true, mensaje: `Importación lista: ${partes.join(", ")}.${aviso}` };
   } catch (e) {
     console.error(e);

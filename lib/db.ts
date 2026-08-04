@@ -87,6 +87,16 @@ CREATE TABLE IF NOT EXISTS plantillas (
   contenido TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS firmas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL,
+  puesto TEXT NOT NULL DEFAULT '',
+  rol TEXT NOT NULL DEFAULT 'OTRO',
+  imagen TEXT NOT NULL,
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS config (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL
@@ -198,7 +208,16 @@ function migrar(db: Database.Database) {
   agregarColumna(db, "equipos", "detalles", "TEXT");
   agregarColumna(db, "responsivas", "clase", "TEXT NOT NULL DEFAULT 'COMPUTO'");
   agregarColumna(db, "responsivas", "origen", "TEXT NOT NULL DEFAULT 'SISTEMA'");
+  // Firmas y datos guardados para poder regenerar el PDF cuando la autoridad
+  // (jefe de sistemas / RH) firma digitalmente después.
   agregarColumna(db, "responsivas", "firma_autoridad", "TEXT");
+  agregarColumna(db, "responsivas", "firma_empleado", "TEXT");
+  agregarColumna(db, "responsivas", "concepto", "TEXT");
+  agregarColumna(db, "responsivas", "monto", "REAL");
+  // Quién firmó del lado de la empresa (y si lo hizo por ausencia del titular).
+  agregarColumna(db, "responsivas", "firma_autoridad_nombre", "TEXT");
+  agregarColumna(db, "responsivas", "firma_autoridad_puesto", "TEXT");
+  agregarColumna(db, "responsivas", "firma_autoridad_ausencia", "INTEGER NOT NULL DEFAULT 0");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
 }

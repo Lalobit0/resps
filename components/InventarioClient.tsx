@@ -5,6 +5,7 @@ import { useRef, useState, useTransition } from "react";
 import type { EquipoConAsignado } from "../lib/types";
 import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
+import type { Conflicto } from "../lib/duplicados";
 import { eliminarEquipo, guardarEquipo, importarInventario } from "../app/inventario/actions";
 import SelectConOtro from "./SelectConOtro";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
@@ -55,7 +56,18 @@ const IMPORTABLES: { tipo: TipoEquipo; etiqueta: string }[] = [
   { tipo: "RADIO", etiqueta: "Radios" },
 ];
 
-export default function InventarioClient({ equipos }: { equipos: EquipoConAsignado[] }) {
+/** Resumen legible de por qué un equipo está marcado como duplicado. */
+function textoConflictos(conflictos: Conflicto[]): string {
+  return conflictos.map((c) => `Mismo ${c.etiqueta} (${c.valor}) que ${c.otros.join(", ")}`).join("\n");
+}
+
+export default function InventarioClient({
+  equipos,
+  duplicados = {},
+}: {
+  equipos: EquipoConAsignado[];
+  duplicados?: Record<number, Conflicto[]>;
+}) {
   const [form, setForm] = useState<Formulario | null>(null);
   const [verEq, setVerEq] = useState<EquipoConAsignado | null>(null);
   const [error, setError] = useState("");
@@ -232,9 +244,9 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
         <Card className="p-0">
           <table className="w-full table-fixed border-collapse">
             <colgroup>
-              <col className="w-[8%]" />
+              <col className="w-[11%]" />
               <col className="w-[9%]" />
-              <col className="w-[20%]" />
+              <col className="w-[18%]" />
               <col className="w-[11%]" />
               <col className="w-[9%]" />
               <col className="w-[16%]" />
@@ -256,7 +268,22 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
             <tbody>
               {equipos.map((e) => (
                 <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
-                  <td className={`${tdc} mono truncate text-xs font-semibold`}>{e.codigo}</td>
+                  <td className={`${tdc} text-xs font-semibold`}>
+                    <div className="flex items-center gap-1">
+                      <span className="mono truncate" title={e.codigo}>
+                        {e.codigo}
+                      </span>
+                      {duplicados[e.id] ? (
+                        <span
+                          className="shrink-0 cursor-help text-amber-600"
+                          title={textoConflictos(duplicados[e.id])}
+                          aria-label="Datos repetidos"
+                        >
+                          ⚠️
+                        </span>
+                      ) : null}
+                    </div>
+                  </td>
                   <td className={`${tdc} truncate text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
                   <td className={`${tdc} truncate`} title={`${e.marca} ${e.modelo}${e.specs ? " · " + e.specs : ""}`}>
                     <div className="truncate font-medium">
@@ -333,7 +360,9 @@ export default function InventarioClient({ equipos }: { equipos: EquipoConAsigna
         </Card>
       )}
 
-      {verEq ? <DetalleEquipo equipo={verEq} onCerrar={() => setVerEq(null)} /> : null}
+      {verEq ? (
+        <DetalleEquipo equipo={verEq} conflictos={duplicados[verEq.id] ?? []} onCerrar={() => setVerEq(null)} />
+      ) : null}
     </div>
   );
 }
@@ -350,7 +379,15 @@ function etiquetaDetalle(tipo: string, clave: string): string {
 }
 
 /** Modal con TODOS los campos del equipo (básicos + detalles por tipo). */
-function DetalleEquipo({ equipo: e, onCerrar }: { equipo: EquipoConAsignado; onCerrar: () => void }) {
+function DetalleEquipo({
+  equipo: e,
+  conflictos,
+  onCerrar,
+}: {
+  equipo: EquipoConAsignado;
+  conflictos: Conflicto[];
+  onCerrar: () => void;
+}) {
   const detalles = parseDetalles(e.detalles);
   const dato = (etiqueta: string, valor: React.ReactNode) => (
     <div key={etiqueta}>
@@ -375,6 +412,18 @@ function DetalleEquipo({ equipo: e, onCerrar }: { equipo: EquipoConAsignado; onC
             ✕ Cerrar
           </button>
         </div>
+        {conflictos.length ? (
+          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="font-semibold">⚠️ Datos repetidos en el inventario</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {conflictos.map((c) => (
+                <li key={`${c.campo}-${c.valor}`}>
+                  Mismo {c.etiqueta} <span className="mono">{c.valor}</span> que {c.otros.join(", ")}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {dato("Tipo", ETIQUETA_TIPO[e.tipo] ?? e.tipo)}
           {dato("Categoría", e.categoria)}

@@ -34,6 +34,12 @@ function tieneResponsivaVigente(equipoId: number): boolean {
   return r.c > 0;
 }
 
+/** Serie comparable: sin espacios ni signos y en mayúsculas. Vacía si es relleno. */
+function normalizarSerie(v: string): string {
+  const s = (v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return s.length > 2 && !["NA", "NA/", "SIN", "SINSERIE", "NINGUNO"].includes(s) ? s : "";
+}
+
 function componerSpecs(tipo: TipoEquipo, d: Record<string, string>): string {
   const j = (arr: (string | undefined)[]) => arr.filter((x) => x && x.trim()).join(" · ");
   if (tipo === "COMPUTO") return j([d.procesador, d.ram, d.hd, d.sistema_operativo]);
@@ -298,7 +304,37 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
 
     const proceso = db.transaction(() => {
       const buscarEmp = db.prepare("SELECT id FROM empleados WHERE numero_empleado = ?");
-      const buscarPorSerie = db.prepare("SELECT id, codigo FROM equipos WHERE numero_serie = ? AND numero_serie IS NOT NULL");
+      // El equipo se identifica por IMEI y, si no hay, por serie normalizada.
+      // Buscar solo por serie exacta duplicaba equipos: los teléfonos cuya
+      // "serie" es en realidad el código de modelo se guardan sin serie, y una
+      // serie con distinto formato tampoco casaba.
+      const catalogo = db
+        .prepare("SELECT id, codigo, numero_serie, detalles FROM equipos")
+        .all() as { id: number; codigo: string; numero_serie: string | null; detalles: string | null }[];
+      const imeiDe = (raw: string | null) => {
+        try {
+          const d = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+          return { imei: String(d.imei ?? "").replace(/\D/g, ""), imei2: String(d.imei2 ?? "").replace(/\D/g, "") };
+        } catch {
+          return { imei: "", imei2: "" };
+        }
+      };
+      const buscarExistente = (serie: string, imei: string) => {
+        if (imei) {
+          const porImei = catalogo.find((c) => {
+            const d = imeiDe(c.detalles);
+            return d.imei === imei || d.imei2 === imei;
+          });
+          if (porImei) return porImei;
+        }
+        const s = normalizarSerie(serie);
+        if (!s) return undefined;
+        return catalogo.find((c) => {
+          if (normalizarSerie(c.numero_serie ?? "") !== s) return false;
+          const otro = imeiDe(c.detalles).imei;
+          return !(imei && otro && imei !== otro); // misma "serie", distinto teléfono
+        });
+      };
 
       for (const f of filas) {
         const marca = naVacio(f.marca || "");
@@ -331,7 +367,7 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
         const specs = componerSpecs(tipo, detalles);
         const detallesJson = Object.keys(detalles).length ? JSON.stringify(detalles) : null;
 
-        const existente = serie ? (buscarPorSerie.get(serie) as { id: number } | undefined) : undefined;
+        const existente = buscarExistente(serie, (detalles.imei ?? "").replace(/\D/g, ""));
         if (existente) {
           db.prepare(
             "UPDATE equipos SET tipo=?, marca=?, modelo=?, specs=?, detalles=?, estado=?, asignado_a=? WHERE id=?"
@@ -342,6 +378,8 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
           db.prepare(
             "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, estado, asignado_a) VALUES (?,?,?,?,?,?,?,?,?,?)"
           ).run(codigo, tipo, TIPO_DEFAULTS[tipo].categoria, marca, modelo, serie || null, specs || null, detallesJson, estado, asignado);
+          const nuevoId = db.prepare("SELECT id FROM equipos WHERE codigo = ?").get(codigo) as { id: number };
+          catalogo.push({ id: nuevoId.id, codigo, numero_serie: serie || null, detalles: detallesJson });
           nuevos++;
         }
       }

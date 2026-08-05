@@ -241,14 +241,15 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <Card className="p-0">
           <table className="w-full table-fixed border-collapse">
             <colgroup>
-              <col className="w-[7%]" />
-              <col className="w-[21%]" />
-              <col className="w-[16%]" />
-              <col className="w-[15%]" />
+              <col className="w-[6%]" />
+              <col className="w-[19%]" />
+              <col className="w-[14%]" />
+              <col className="w-[14%]" />
               <col className="w-[12%]" />
               <col className="w-[5%]" />
               <col className="w-[8%]" />
-              <col className="w-[16%]" />
+              <col className="w-[8%]" />
+              <col className="w-[14%]" />
             </colgroup>
             <thead className="border-b border-line bg-paper/70">
               <tr>
@@ -258,7 +259,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                 <th className={thc}>Depto / Área</th>
                 <th className={thc}>Jefe directo</th>
                 <th className={`${thc} text-center`}>Eq.</th>
-                <th className={`${thc} text-center`}>Falta resp.</th>
+                <th className={`${thc} text-center`} title="Equipos entregados sin carta responsiva">Sin resp.</th>
                 <th className={thc}>Estado</th>
                 <th className={thc}>Acciones</th>
               </tr>

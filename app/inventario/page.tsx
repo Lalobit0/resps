@@ -1,7 +1,7 @@
 import { db } from "../../lib/db";
 import type { EquipoConAsignado } from "../../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constants";
-import { detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
+import { detectarDuplicados, CAMPOS_BLOQUEANTES, type EquipoRevisable } from "../../lib/duplicados";
 import { idsSinResponsiva } from "../../lib/pendientes";
 import InventarioClient from "../../components/InventarioClient";
 import ExportarBotones from "../../components/ExportarBotones";
@@ -67,6 +67,17 @@ export default async function PaginaInventario({
     db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[]
   );
   const totalDuplicados = Object.keys(duplicados).length;
+  // Desglose por campo: no es lo mismo una serie repetida (error que impide
+  // guardar) que un nombre de computadora repetido (solo aviso).
+  const porCampoDup = new Map<string, { etiqueta: string; n: number; bloqueante: boolean }>();
+  for (const conflictos of Object.values(duplicados)) {
+    for (const c of conflictos) {
+      const actual = porCampoDup.get(c.campo) ?? { etiqueta: c.etiqueta, n: 0, bloqueante: CAMPOS_BLOQUEANTES.includes(c.campo) };
+      actual.n += 1;
+      porCampoDup.set(c.campo, actual);
+    }
+  }
+  const desglose = [...porCampoDup.values()].sort((a, b) => b.n - a.n);
 
   // Equipos entregados que todavía no tienen su carta responsiva firmada.
   const sinResponsiva = idsSinResponsiva();
@@ -99,8 +110,15 @@ export default async function PaginaInventario({
       {totalDuplicados > 0 ? (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <span>
-            ⚠️ Se detectaron <b>{totalDuplicados}</b> equipo(s) con datos repetidos (serie, IMEI, línea, no. de activo o
-            nombre de la computadora). Revísalos y corrige el que sobre.
+            ⚠️ Se detectaron <b>{totalDuplicados}</b> equipo(s) con datos repetidos:{" "}
+            {desglose.map((d, i) => (
+              <span key={d.etiqueta}>
+                {i > 0 ? ", " : ""}
+                <b>{d.n}</b> por {d.etiqueta}
+                {d.bloqueante ? "" : " (solo aviso)"}
+              </span>
+            ))}
+            . Los de serie, IMEI y línea impiden guardar; los demás solo se señalan.
           </span>
           <a href={soloDup ? "/inventario" : "/inventario?dup=1"} className={btnGhost}>
             {soloDup ? "Ver todo el inventario" : "Ver solo duplicados"}

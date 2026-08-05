@@ -247,7 +247,7 @@ export default function InventarioClient({
         <Card className="p-0">
           <table className="w-full table-fixed border-collapse">
             <colgroup>
-              <col className="w-[11%]" />
+              <col className="w-[10%]" />
               <col className="w-[9%]" />
               <col className="w-[18%]" />
               <col className="w-[11%]" />

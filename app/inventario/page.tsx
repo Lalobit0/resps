@@ -3,7 +3,7 @@ import type { EquipoConAsignado } from "../../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constants";
 import { detectarDuplicados, CAMPOS_BLOQUEANTES, type EquipoRevisable } from "../../lib/duplicados";
 import { idsSinResponsiva } from "../../lib/pendientes";
-import InventarioClient from "../../components/InventarioClient";
+import InventarioClient, { type ResponsivaDeEquipo } from "../../components/InventarioClient";
 import AvisoDuplicados from "../../components/AvisoDuplicados";
 import ExportarBotones from "../../components/ExportarBotones";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
@@ -88,6 +88,21 @@ export default async function PaginaInventario({
   if (soloDup) equipos = equipos.filter((e) => duplicados[e.id]);
   if (soloSinResp) equipos = equipos.filter((e) => sinResponsiva.has(e.id));
 
+  // Cartas responsivas de cada equipo, para consultarlas desde el inventario.
+  const filas = db
+    .prepare(
+      `SELECT ri.equipo_id, r.id, r.folio, r.tipo, r.clase, r.fecha, r.estado, r.pdf_path,
+              em.numero_empleado AS empleado_numero, em.nombre AS empleado_nombre
+       FROM responsiva_items ri
+       JOIN responsivas r ON r.id = ri.responsiva_id
+       JOIN empleados em ON em.id = r.empleado_id
+       WHERE r.estado != 'ELIMINADA'
+       ORDER BY r.fecha DESC, r.id DESC`
+    )
+    .all() as (ResponsivaDeEquipo & { equipo_id: number })[];
+  const responsivas: Record<number, ResponsivaDeEquipo[]> = {};
+  for (const { equipo_id, ...r } of filas) (responsivas[equipo_id] ??= []).push(r);
+
   return (
     <>
       <PageHeader eyebrow="Activos de TI" title="Inventario de equipo">
@@ -145,7 +160,12 @@ export default async function PaginaInventario({
         </div>
       </form>
 
-      <InventarioClient equipos={equipos} duplicados={duplicados} sinResponsiva={[...sinResponsiva]} />
+      <InventarioClient
+        equipos={equipos}
+        duplicados={duplicados}
+        sinResponsiva={[...sinResponsiva]}
+        responsivas={responsivas}
+      />
     </>
   );
 }

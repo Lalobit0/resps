@@ -96,6 +96,11 @@ echo   COMO QUEDO
 echo ==========================================================
 call node scripts\revisar-duplicados.mjs
 echo.
+echo ----------------------------------------------------------
+echo   TELEFONOS: comparacion contra el listado oficial
+echo ----------------------------------------------------------
+call node scripts\revisar-celulares.mjs
+echo.
 echo ==========================================================
 echo   LISTO
 echo ==========================================================

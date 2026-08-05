@@ -61,14 +61,28 @@ function textoConflictos(conflictos: Conflicto[]): string {
   return conflictos.map((c) => `Mismo ${c.etiqueta} (${c.valor}) que ${c.otros.join(", ")}`).join("\n");
 }
 
+export type ResponsivaDeEquipo = {
+  id: number;
+  folio: string;
+  tipo: string;
+  clase: string;
+  fecha: string;
+  estado: string;
+  pdf_path: string | null;
+  empleado_numero: string;
+  empleado_nombre: string;
+};
+
 export default function InventarioClient({
   equipos,
   duplicados = {},
   sinResponsiva = [],
+  responsivas = {},
 }: {
   equipos: EquipoConAsignado[];
   duplicados?: Record<number, Conflicto[]>;
   sinResponsiva?: number[];
+  responsivas?: Record<number, ResponsivaDeEquipo[]>;
 }) {
   const faltaResponsiva = new Set(sinResponsiva);
   const [form, setForm] = useState<Formulario | null>(null);
@@ -247,14 +261,15 @@ export default function InventarioClient({
         <Card className="p-0">
           <table className="w-full table-fixed border-collapse">
             <colgroup>
-              <col className="w-[10%]" />
               <col className="w-[9%]" />
-              <col className="w-[18%]" />
-              <col className="w-[11%]" />
-              <col className="w-[9%]" />
-              <col className="w-[16%]" />
               <col className="w-[8%]" />
-              <col className="w-[19%]" />
+              <col className="w-[16%]" />
+              <col className="w-[10%]" />
+              <col className="w-[8%]" />
+              <col className="w-[15%]" />
+              <col className="w-[12%]" />
+              <col className="w-[7%]" />
+              <col className="w-[15%]" />
             </colgroup>
             <thead className="border-b border-line bg-paper/70">
               <tr>
@@ -264,6 +279,7 @@ export default function InventarioClient({
                 <th className={thc}>Serie</th>
                 <th className={thc}>Estado</th>
                 <th className={thc}>Asignado a</th>
+                <th className={thc}>Responsivas</th>
                 <th className={thc}>Compra</th>
                 <th className={thc}>Acciones</th>
               </tr>
@@ -310,6 +326,31 @@ export default function InventarioClient({
                       </>
                     ) : (
                       <span className="text-soft">—</span>
+                    )}
+                  </td>
+                  <td className={tdc}>
+                    {(responsivas[e.id] ?? []).length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {(responsivas[e.id] ?? []).map((r) =>
+                          r.pdf_path ? (
+                            <a
+                              key={r.id}
+                              href={`/api/pdf/${r.id}`}
+                              target="_blank"
+                              className="mono rounded border border-line bg-white px-1.5 py-0.5 text-[11px] text-kraft-dark hover:bg-paper"
+                              title={`${r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} · ${fechaCorta(r.fecha)} · abrir PDF`}
+                            >
+                              {r.folio}
+                            </a>
+                          ) : (
+                            <span key={r.id} className="mono text-[11px] text-soft" title="Sin archivo PDF">
+                              {r.folio}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-soft">—</span>
                     )}
                   </td>
                   <td className={`${tdc} whitespace-nowrap text-xs text-soft`}>
@@ -378,7 +419,12 @@ export default function InventarioClient({
       )}
 
       {verEq ? (
-        <DetalleEquipo equipo={verEq} conflictos={duplicados[verEq.id] ?? []} onCerrar={() => setVerEq(null)} />
+        <DetalleEquipo
+          equipo={verEq}
+          conflictos={duplicados[verEq.id] ?? []}
+          cartas={responsivas[verEq.id] ?? []}
+          onCerrar={() => setVerEq(null)}
+        />
       ) : null}
     </div>
   );
@@ -399,10 +445,12 @@ function etiquetaDetalle(tipo: string, clave: string): string {
 function DetalleEquipo({
   equipo: e,
   conflictos,
+  cartas,
   onCerrar,
 }: {
   equipo: EquipoConAsignado;
   conflictos: Conflicto[];
+  cartas: ResponsivaDeEquipo[];
   onCerrar: () => void;
 }) {
   const detalles = parseDetalles(e.detalles);
@@ -467,6 +515,37 @@ function DetalleEquipo({
             <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink">{e.notas}</p>
           </div>
         ) : null}
+
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-soft">Cartas responsivas</p>
+          {cartas.length === 0 ? (
+            <p className="text-sm text-soft">Este equipo no tiene carta responsiva registrada.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {cartas.map((r) => (
+                <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-paper/40 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="mono text-xs font-semibold text-kraft-dark">{r.folio}</p>
+                    <p className="text-xs text-soft">
+                      {r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} · {fechaCorta(r.fecha)} ·{" "}
+                      <span className="mono">{r.empleado_numero}</span> {r.empleado_nombre}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {r.estado === "VIGENTE" ? <Badge tono="verde">Vigente</Badge> : <Badge tono="gris">Cerrada</Badge>}
+                    {r.pdf_path ? (
+                      <a href={`/api/pdf/${r.id}`} target="_blank" className={mini}>
+                        Abrir PDF
+                      </a>
+                    ) : (
+                      <span className="text-xs text-soft">sin archivo</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

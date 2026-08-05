@@ -64,10 +64,13 @@ function textoConflictos(conflictos: Conflicto[]): string {
 export default function InventarioClient({
   equipos,
   duplicados = {},
+  sinResponsiva = [],
 }: {
   equipos: EquipoConAsignado[];
   duplicados?: Record<number, Conflicto[]>;
+  sinResponsiva?: number[];
 }) {
+  const faltaResponsiva = new Set(sinResponsiva);
   const [form, setForm] = useState<Formulario | null>(null);
   const [verEq, setVerEq] = useState<EquipoConAsignado | null>(null);
   const [error, setError] = useState("");
@@ -294,6 +297,11 @@ export default function InventarioClient({
                   <td className={`${tdc} mono truncate text-xs`} title={e.numero_serie ?? ""}>{e.numero_serie ?? "—"}</td>
                   <td className={tdc}>
                     <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>
+                    {faltaResponsiva.has(e.id) ? (
+                      <div className="mt-1">
+                        <Badge tono="petrol">Sin responsiva</Badge>
+                      </div>
+                    ) : null}
                   </td>
                   <td className={`${tdc} truncate text-xs`} title={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : ""}>
                     {e.asignado_nombre ? (
@@ -333,6 +341,15 @@ export default function InventarioClient({
                       >
                         Editar
                       </button>
+                      {faltaResponsiva.has(e.id) ? (
+                        <Link
+                          className="rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                          href={`/responsivas/nueva?equipo=${e.id}`}
+                          title="Generar la carta responsiva para que el empleado la firme"
+                        >
+                          + Responsiva
+                        </Link>
+                      ) : null}
                       <Link className={mini} href={`/mantenimientos?equipo=${e.id}`}>
                         Historial
                       </Link>

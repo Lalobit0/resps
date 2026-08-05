@@ -3,6 +3,7 @@ import { db } from "../lib/db";
 import type { MantenimientoConEquipo, ResponsivaLista } from "../lib/types";
 import { diasPara, dinero, fechaCorta } from "../lib/helpers";
 import { ETIQUETA_TIPO, TIPOS_EQUIPO } from "../lib/constants";
+import { totalSinResponsiva } from "../lib/pendientes";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary } from "../components/ui";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,8 @@ export default async function PaginaInicio() {
     )
     .all() as { precio: string | null }[];
   const costoLineas = lineas.reduce((s, l) => s + (Number((l.precio ?? "").replace(/[^\d.]/g, "")) || 0), 0);
+
+  const faltanResponsiva = totalSinResponsiva();
 
   const vigentes = (db
     .prepare("SELECT COUNT(*) AS c FROM responsivas WHERE tipo='ASIGNACION' AND estado='VIGENTE'")
@@ -81,6 +84,19 @@ export default async function PaginaInicio() {
           + Nueva responsiva
         </Link>
       </PageHeader>
+
+      {faltanResponsiva > 0 ? (
+        <Link
+          href="/inventario?sinresp=1"
+          className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 hover:bg-sky-100"
+        >
+          <span>
+            📄 <b>{faltanResponsiva}</b> equipo(s) entregados <b>sin carta responsiva</b>. Genéralas para que los
+            empleados las firmen.
+          </span>
+          <span className="font-semibold underline">Ver cuáles →</span>
+        </Link>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {tarjetas.map((t) => (

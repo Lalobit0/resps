@@ -5,9 +5,12 @@
  *   node scripts/sincronizar-celulares.mjs            # simulación
  *   node scripts/sincronizar-celulares.mjs --aplicar  # ejecuta
  *
- *  - Los teléfonos que no estén en el listado se dan de baja: se eliminan si no
- *    tienen historial y, si lo tienen, pasan a estado BAJA para no romper las
- *    responsivas que los mencionan.
+ *  - Todo teléfono cuyo IMEI no esté en el listado se ELIMINA del inventario,
+ *    junto con sus cartas responsivas. El PDF no se pierde: se conserva en
+ *    storage/responsivas_eliminadas y queda constancia en la bitácora.
+ *  - Si el mismo IMEI quedó cargado varias veces, primero se fusionan los
+ *    registros (el más completo se queda con el historial) y, si aun así sobra
+ *    alguno, se conserva el que tenga carta responsiva y el resto se elimina.
  *  - Los que ya existen se actualizan (línea, plan, IMEI 2, PIN, iCloud, MAC).
  *  - Los que faltan se crean y quedan asignados a su empleado.
  *  - El teléfono se identifica por IMEI, nunca por la serie: en los Motorola la
@@ -24,6 +27,7 @@ import { fusionarInventario, leerDetalles } from "../lib/fusionar.mjs";
 const APLICAR = process.argv.includes("--aplicar");
 const RAIZ = process.cwd();
 const DB_PATH = path.join(RAIZ, "data", "app.db");
+const DIR_ELIMINADAS = path.join(RAIZ, "storage", "responsivas_eliminadas");
 
 const dig = (v) => (v ?? "").toString().replace(/\D/g, "");
 const limpio = (v) => (v ?? "").toString().trim();
@@ -71,7 +75,7 @@ if (APLICAR) {
 const db = new Database(DB_PATH);
 db.pragma("foreign_keys = ON");
 
-const rep = { unidos: [], bajas: [], eliminados: [], actualizados: [], creados: [], empleados: [], cerradas: [], avisos: [] };
+const rep = { unidos: [], eliminados: [], duplicados: [], responsivas: [], actualizados: [], creados: [], empleados: [], cerradas: [], avisos: [] };
 
 // El mismo teléfono puede estar capturado dos veces (importaciones repetidas).
 // Primero se unen esas copias; si no, solo se actualizaría una y la otra
@@ -91,20 +95,100 @@ const enSistema = db
 
 const oficialPorImei = new Map(celulares.map((c) => [c.imei, c]));
 
-// ---------- 1. Fuera lo que no está en el listado ----------
-for (const e of enSistema) {
-  if (e.imei && oficialPorImei.has(e.imei)) continue;
-  const usos = db.prepare("SELECT COUNT(*) AS c FROM responsiva_items WHERE equipo_id = ?").get(e.id).c
-    + db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id = ?").get(e.id).c;
-  const etiqueta = `${e.codigo}  ${limpio(e.modelo) || "(sin modelo)"}  IMEI ${e.imei || "(vacío)"}`;
-  if (usos > 0) {
-    rep.bajas.push(`${etiqueta}  — tiene ${usos} registro(s) de historial, pasa a BAJA`);
-    if (APLICAR) db.prepare("UPDATE equipos SET estado='BAJA', asignado_a=NULL WHERE id=?").run(e.id);
-  } else {
-    rep.eliminados.push(etiqueta);
-    if (APLICAR) db.prepare("DELETE FROM equipos WHERE id=?").run(e.id);
-  }
+// ---------- Borrado de un teléfono junto con sus cartas ----------
+
+/** Cartas responsivas (no eliminadas) en las que aparece el equipo. */
+function responsivasDe(equipoId) {
+  return db
+    .prepare(
+      `SELECT r.id, r.folio, r.pdf_path,
+              (SELECT COUNT(*) FROM responsiva_items ri2 WHERE ri2.responsiva_id = r.id) AS items
+       FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+       WHERE ri.equipo_id = ? AND r.estado != 'ELIMINADA'`
+    )
+    .all(equipoId);
 }
+
+/** El PDF de una carta eliminada se conserva en la carpeta de eliminadas. */
+function moverPdf(rel) {
+  if (!rel) return null;
+  const abs = path.isAbsolute(rel) ? rel : path.join(RAIZ, rel);
+  const destino = path.join(DIR_ELIMINADAS, path.basename(abs));
+  if (!APLICAR) return path.relative(RAIZ, destino);
+  fs.mkdirSync(DIR_ELIMINADAS, { recursive: true });
+  if (fs.existsSync(abs) && abs !== destino) fs.renameSync(abs, destino);
+  return path.relative(RAIZ, destino);
+}
+
+function bitacora(descripcion, snapshot) {
+  if (!APLICAR) return;
+  db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)")
+    .run("SINCRONIZAR_CELULARES", descripcion, snapshot ? JSON.stringify(snapshot) : null);
+}
+
+/**
+ * Quita el teléfono del inventario. Sus cartas responsivas se eliminan también;
+ * si una carta amparaba más equipos, solo se le quita este renglón.
+ */
+function eliminarTelefono(e, motivo) {
+  for (const r of responsivasDe(e.id)) {
+    if (r.items <= 1) {
+      const nuevoPdf = moverPdf(r.pdf_path);
+      rep.responsivas.push(`${r.folio}  (de ${e.codigo})  — el PDF queda en ${nuevoPdf ?? "sin archivo"}`);
+      if (APLICAR) {
+        db.prepare("DELETE FROM responsiva_items WHERE responsiva_id = ?").run(r.id);
+        db.prepare("UPDATE responsivas SET responsiva_origen_id = NULL WHERE responsiva_origen_id = ?").run(r.id);
+        db.prepare("DELETE FROM responsivas WHERE id = ?").run(r.id);
+      }
+      bitacora(`Se eliminó la responsiva ${r.folio} junto con el teléfono ${e.codigo} (${motivo})`, { folio: r.folio, pdf: nuevoPdf, equipo: e.codigo });
+    } else {
+      rep.responsivas.push(`${r.folio}  — se le quita solo el renglón de ${e.codigo} (ampara ${r.items} equipos)`);
+      if (APLICAR) db.prepare("DELETE FROM responsiva_items WHERE responsiva_id = ? AND equipo_id = ?").run(r.id, e.id);
+    }
+  }
+  if (APLICAR) {
+    db.prepare("DELETE FROM responsiva_items WHERE equipo_id = ?").run(e.id);
+    db.prepare("DELETE FROM mantenimientos WHERE equipo_id = ?").run(e.id);
+    db.prepare("DELETE FROM equipos WHERE id = ?").run(e.id);
+  }
+  bitacora(`Se eliminó del inventario el teléfono ${e.codigo} IMEI ${e.imei || "(vacío)"} (${motivo})`, { codigo: e.codigo, imei: e.imei, motivo });
+}
+
+/** Registros que sobreviven la limpieza, uno por IMEI del listado. */
+const vivos = [];
+
+const limpieza = db.transaction(() => {
+  // ---------- 1. Fuera lo que no está en el listado ----------
+  for (const e of enSistema) {
+    if (e.imei && oficialPorImei.has(e.imei)) continue;
+    rep.eliminados.push(`${e.codigo}  ${limpio(e.modelo) || "(sin modelo)"}  IMEI ${e.imei || "(vacío)"}`);
+    eliminarTelefono(e, "no está en el listado vigente de telefonía");
+  }
+
+  // ---------- 2. Un solo registro por IMEI ----------
+  // La fusión de arriba ya une la mayoría; esto es la red de seguridad para lo
+  // que haya quedado repetido, conservando el registro que trae la responsiva.
+  const porImei = new Map();
+  for (const e of enSistema) {
+    if (!e.imei || !oficialPorImei.has(e.imei)) continue;
+    if (!porImei.has(e.imei)) porImei.set(e.imei, []);
+    porImei.get(e.imei).push(e);
+  }
+  for (const [imei, lista] of porImei) {
+    if (lista.length > 1) {
+      const puntos = (e) => responsivasDe(e.id).length * 100 - e.id / 1e6;
+      const [conserva, ...sobran] = [...lista].sort((a, b) => puntos(b) - puntos(a));
+      rep.duplicados.push(
+        `IMEI ${imei}: estaba ${lista.length} veces — se conserva ${conserva.codigo}` +
+          `${responsivasDe(conserva.id).length ? " (tiene responsiva)" : ""}, se eliminan ${sobran.map((s) => s.codigo).join(", ")}`
+      );
+      for (const e of sobran) eliminarTelefono(e, `duplicado del IMEI ${imei}, ya está en ${conserva.codigo}`);
+      porImei.set(imei, [conserva]);
+    }
+    vivos.push(porImei.get(imei)[0]);
+  }
+});
+limpieza();
 
 // ---------- 2. Empleado de cada teléfono ----------
 function empleadoDe(c) {
@@ -157,7 +241,7 @@ const sync = db.transaction(() => {
     if (serieReal === null && !vacio(c.serie)) det.descripcion = `${limpio(c.modelo)} (código ${limpio(c.serie)})`;
     const specs = [det.numero, det.plan, det.imei].filter(Boolean).join(" · ");
 
-    const ex = enSistema.find((e) => e.imei && e.imei === c.imei);
+    const ex = vivos.find((e) => e.imei === c.imei);
     if (ex) {
       rep.actualizados.push(`${ex.codigo}  ${limpio(c.modelo)}  IMEI ${c.imei}  -> ${c.num || "sin empleado"} ${c.usuario}`);
       if (APLICAR)
@@ -226,8 +310,9 @@ rep.avisos.push(...lineasQuitadas);
 const bloque = (t, l) => { console.log(`\n### ${t}: ${l.length}`); l.forEach((x) => console.log("  - " + x)); };
 console.log(APLICAR ? "=== SINCRONIZACIÓN APLICADA ===" : "=== SIMULACIÓN (no se escribió nada) ===");
 bloque("Registros duplicados unidos", rep.unidos);
-bloque("Eliminados (sin historial)", rep.eliminados);
-bloque("Dados de baja (con historial)", rep.bajas);
+bloque("Eliminados (no están en el listado)", rep.eliminados);
+bloque("Duplicados resueltos", rep.duplicados);
+bloque("Cartas responsivas eliminadas", rep.responsivas);
 bloque("Actualizados", rep.actualizados);
 bloque("Creados", rep.creados);
 bloque("Empleados nuevos", rep.empleados);

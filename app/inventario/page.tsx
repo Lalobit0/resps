@@ -24,6 +24,8 @@ export default async function PaginaInventario({
   const orden = typeof sp.orden === "string" ? sp.orden : "codigo";
   const soloDup = sp.dup === "1";
   const soloSinResp = sp.sinresp === "1";
+  // ?editar=<id> abre directo el formulario de ese equipo (se usa desde la ficha del empleado).
+  const editarId = typeof sp.editar === "string" && Number(sp.editar) > 0 ? Number(sp.editar) : null;
 
   const ORDENES: Record<string, string> = {
     codigo: "CASE e.estado WHEN 'BAJA' THEN 1 ELSE 0 END, e.codigo ASC",
@@ -180,6 +182,7 @@ export default async function PaginaInventario({
         duplicados={duplicados}
         sinResponsiva={[...sinResponsiva]}
         responsivas={responsivas}
+        editarId={editarId}
       />
     </>
   );

@@ -73,19 +73,43 @@ export type ResponsivaDeEquipo = {
   empleado_nombre: string;
 };
 
+/** Datos de un equipo pasados al formulario de edición. */
+function formDeEquipo(e: EquipoConAsignado): Formulario {
+  return {
+    id: e.id,
+    tipo: ((TIPOS_EQUIPO as readonly string[]).includes(e.tipo) ? e.tipo : "OTRO") as TipoEquipo,
+    codigo: e.codigo,
+    marca: e.marca,
+    modelo: e.modelo,
+    numero_serie: e.numero_serie ?? "",
+    fecha_compra: e.fecha_compra ?? "",
+    costo: e.costo !== null ? String(e.costo) : "",
+    estado: e.estado,
+    notas: e.notas ?? "",
+    detalles: parseDetalles(e.detalles),
+  };
+}
+
 export default function InventarioClient({
   equipos,
   duplicados = {},
   sinResponsiva = [],
   responsivas = {},
+  editarId = null,
 }: {
   equipos: EquipoConAsignado[];
   duplicados?: Record<number, Conflicto[]>;
   sinResponsiva?: number[];
   responsivas?: Record<number, ResponsivaDeEquipo[]>;
+  editarId?: number | null;
 }) {
   const faltaResponsiva = new Set(sinResponsiva);
-  const [form, setForm] = useState<Formulario | null>(null);
+  // Con ?editar=<id> el formulario se abre solo: así se puede editar un equipo
+  // desde la ficha del empleado sin tener que buscarlo aquí.
+  const [form, setForm] = useState<Formulario | null>(() => {
+    const e = editarId ? equipos.find((x) => x.id === editarId) : undefined;
+    return e ? formDeEquipo(e) : null;
+  });
   const [verEq, setVerEq] = useState<EquipoConAsignado | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
@@ -365,19 +389,7 @@ export default function InventarioClient({
                       <button
                         className={mini}
                         onClick={() =>
-                          setForm({
-                            id: e.id,
-                            tipo: ((TIPOS_EQUIPO as readonly string[]).includes(e.tipo) ? e.tipo : "OTRO") as TipoEquipo,
-                            codigo: e.codigo,
-                            marca: e.marca,
-                            modelo: e.modelo,
-                            numero_serie: e.numero_serie ?? "",
-                            fecha_compra: e.fecha_compra ?? "",
-                            costo: e.costo !== null ? String(e.costo) : "",
-                            estado: e.estado,
-                            notas: e.notas ?? "",
-                            detalles: parseDetalles(e.detalles),
-                          })
+                          setForm(formDeEquipo(e))
                         }
                       >
                         Editar

@@ -3,8 +3,10 @@ import { db } from "../../../lib/db";
 import type { Empleado, Equipo, MantenimientoConEquipo, Responsiva } from "../../../lib/types";
 import { ETIQUETA_TIPO, ETIQUETA_ESTADO, ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENIMIENTO } from "../../../lib/constants";
 import { dinero, fechaCorta } from "../../../lib/helpers";
-import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "../../../components/ui";
+import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls } from "../../../components/ui";
 import ResponsivasEmpleado from "../../../components/ResponsivasEmpleado";
+import EquiposEmpleado from "../../../components/EquiposEmpleado";
+import type { ResponsivaDeEquipo } from "../../../components/InventarioClient";
 import { idsSinResponsiva } from "../../../lib/pendientes";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +56,23 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
   // Equipos que este empleado tiene sin una carta responsiva que los respalde.
   const sinResp = idsSinResponsiva();
   const faltantes = equipos.filter((e) => sinResp.has(e.id));
+
+  // Cartas responsivas de cada equipo, para consultarlas desde la misma tabla.
+  const filasResp = equipos.length
+    ? (db
+        .prepare(
+          `SELECT ri.equipo_id, r.id, r.folio, r.tipo, r.clase, r.fecha, r.estado, r.pdf_path,
+                  em.numero_empleado AS empleado_numero, em.nombre AS empleado_nombre
+           FROM responsiva_items ri
+           JOIN responsivas r ON r.id = ri.responsiva_id
+           JOIN empleados em ON em.id = r.empleado_id
+           WHERE r.estado != 'ELIMINADA' AND ri.equipo_id IN (${equipos.map(() => "?").join(",")})
+           ORDER BY r.fecha DESC, r.id DESC`
+        )
+        .all(...equipos.map((e) => e.id)) as (ResponsivaDeEquipo & { equipo_id: number })[])
+    : [];
+  const responsivasPorEquipo: Record<number, ResponsivaDeEquipo[]> = {};
+  for (const { equipo_id, ...r } of filasResp) (responsivasPorEquipo[equipo_id] ??= []).push(r);
 
   const cuenta = (t: string) => equipos.filter((e) => e.tipo === t).length;
   const tiles = [
@@ -131,43 +150,12 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
       {equipos.length === 0 ? (
         <Empty>Este empleado no tiene equipos asignados.</Empty>
       ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[720px] border-collapse">
-            <thead className="border-b border-line bg-paper/70">
-              <tr>
-                <th className={thCls}>Código</th>
-                <th className={thCls}>Tipo</th>
-                <th className={thCls}>Equipo</th>
-                <th className={thCls}>Serie</th>
-                <th className={thCls}>Detalle</th>
-                <th className={thCls}>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {equipos.map((e) => (
-                <tr key={e.id} className="border-b border-line/60 last:border-0">
-                  <td className={`${tdCls} mono text-xs font-semibold`}>{e.codigo}</td>
-                  <td className={`${tdCls} text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
-                  <td className={tdCls}>
-                    {e.marca} {e.modelo}
-                  </td>
-                  <td className={`${tdCls} mono text-xs`}>{e.numero_serie ?? "—"}</td>
-                  <td className={`${tdCls} text-xs text-soft`}>{e.specs ?? "—"}</td>
-                  <td className={tdCls}>
-                    <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>
-                    {sinResp.has(e.id) ? (
-                      <div className="mt-1">
-                        <Link href={`/responsivas/nueva?equipo=${e.id}`} className="text-xs font-semibold text-sky-700 underline">
-                          Sin responsiva · generar
-                        </Link>
-                      </div>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <EquiposEmpleado
+          empleadoId={empleado.id}
+          equipos={equipos}
+          responsivas={responsivasPorEquipo}
+          sinResponsiva={equipos.filter((e) => sinResp.has(e.id)).map((e) => e.id)}
+        />
       )}
 
       <h2 className="mb-2 mt-6 text-base font-bold text-ink">Responsivas</h2>

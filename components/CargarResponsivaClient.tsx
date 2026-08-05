@@ -19,13 +19,32 @@ function claseATipo(clase: string | null): TipoEquipo {
   return "COMPUTO";
 }
 
-export default function CargarResponsivaClient({ empleados, equipos }: { empleados: Empleado[]; equipos: Equipo[] }) {
+/** Clase de carta que le toca a un equipo por su tipo. */
+function tipoAClase(tipo: string | undefined): ClaseCarta {
+  if (tipo === "CELULAR") return "CELULAR";
+  if (tipo === "COMPUTO") return "COMPUTO";
+  return "OTROS";
+}
+
+export default function CargarResponsivaClient({
+  empleados,
+  equipos,
+  empleadoInicial = null,
+  equipoInicial = null,
+}: {
+  empleados: Empleado[];
+  equipos: Equipo[];
+  empleadoInicial?: number | null;
+  equipoInicial?: number | null;
+}) {
   const router = useRouter();
-  const [clase, setClase] = useState<ClaseCarta>("COMPUTO");
-  const [empleadoId, setEmpleadoId] = useState<number | null>(null);
-  const [modoEquipo, setModoEquipo] = useState<"nuevo" | "existente">("nuevo");
+  // Si se llega desde la ficha del empleado, el empleado y el equipo ya vienen elegidos.
+  const equipoPrevio = equipoInicial ? equipos.find((e) => e.id === equipoInicial) : undefined;
+  const [clase, setClase] = useState<ClaseCarta>(equipoPrevio ? tipoAClase(equipoPrevio.tipo) : "COMPUTO");
+  const [empleadoId, setEmpleadoId] = useState<number | null>(empleadoInicial);
+  const [modoEquipo, setModoEquipo] = useState<"nuevo" | "existente">(equipoPrevio ? "existente" : "nuevo");
   const [nuevoEq, setNuevoEq] = useState<NuevoEq>({ tipo: "COMPUTO", marca: "", modelo: "", numero_serie: "", detalles: {} });
-  const [seleccion, setSeleccion] = useState<number[]>([]);
+  const [seleccion, setSeleccion] = useState<number[]>(equipoPrevio ? [equipoPrevio.id] : []);
   const [filtro, setFiltro] = useState("");
   const [folio, setFolio] = useState("");
   const [fecha, setFecha] = useState("");

@@ -29,6 +29,34 @@ const vacio = (v) => !limpio(v) || /^(na|n\/a|#n\/a|-|0)$/i.test(limpio(v));
 if (!fs.existsSync(DB_PATH)) { console.error(`No encuentro ${DB_PATH}. Corre el script desde la carpeta del proyecto.`); process.exit(1); }
 const { celulares } = JSON.parse(fs.readFileSync(path.join(RAIZ, "scripts", "celulares-oficial.json"), "utf8"));
 
+/**
+ * Una línea telefónica solo puede estar activa en un equipo. Cuando el listado
+ * la trae repetida, se queda en el teléfono mejor documentado (el que tiene
+ * IMEI 2, PIN, iCloud, MAC o condición), que es el que está realmente en uso;
+ * a los demás se les quita la línea y se deja constancia.
+ */
+const lineasQuitadas = [];
+{
+  const datos = (c) => ["imei2", "pin", "icloud", "mac", "cond"].filter((k) => c[k] && !/^(na|n\/a|-|0)$/i.test(String(c[k]).trim())).length;
+  const porLinea = new Map();
+  for (const c of celulares) {
+    if (!c.linea) continue;
+    if (!porLinea.has(c.linea)) porLinea.set(c.linea, []);
+    porLinea.get(c.linea).push(c);
+  }
+  for (const [linea, lista] of porLinea) {
+    if (lista.length < 2) continue;
+    const [conserva, ...resto] = [...lista].sort((a, b) => datos(b) - datos(a));
+    for (const c of resto) {
+      c.linea = "";
+      lineasQuitadas.push(
+        `La línea ${linea} estaba en ${lista.length} equipos: se deja en ${conserva.modelo} (IMEI ${conserva.imei}, mejor documentado) ` +
+          `y se quita de ${c.modelo} (IMEI ${c.imei}), que se registra sin línea.`
+      );
+    }
+  }
+}
+
 if (APLICAR) {
   const dir = path.join(RAIZ, "data", "backups");
   fs.mkdirSync(dir, { recursive: true });
@@ -135,11 +163,8 @@ const sync = db.transaction(() => {
 sync();
 db.close();
 
-// Avisos de datos inconsistentes del propio listado
-const porLinea = new Map();
-celulares.forEach((c) => { if (c.linea) (porLinea.get(c.linea) ?? porLinea.set(c.linea, []).get(c.linea)).push(c); });
-[...porLinea.entries()].filter(([, l]) => l.length > 1).forEach(([linea, l]) =>
-  rep.avisos.push(`La línea ${linea} está en ${l.length} teléfonos: ${l.map((c) => `${c.modelo} (IMEI ${c.imei})`).join(" y ")}. Solo uno puede tenerla activa.`));
+// Lo que se resolvió solo queda registrado, no como pendiente del usuario.
+rep.avisos.push(...lineasQuitadas);
 
 const bloque = (t, l) => { console.log(`\n### ${t}: ${l.length}`); l.forEach((x) => console.log("  - " + x)); };
 console.log(APLICAR ? "=== SINCRONIZACIÓN APLICADA ===" : "=== SIMULACIÓN (no se escribió nada) ===");

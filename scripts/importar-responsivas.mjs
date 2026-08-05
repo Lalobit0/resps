@@ -210,6 +210,14 @@ const importar = db.transaction(() => {
       if (ya) { reporte.omitidas.push(`${etiqueta} (ya estaba importada)`); continue; }
     }
 
+    // Si el equipo hoy lo trae otro empleado, esta responsiva es histórica: se
+    // guarda como CERRADA y no se toca la asignación vigente del inventario.
+    const dueñoActual = APLICAR
+      ? db.prepare("SELECT asignado_a, estado FROM equipos WHERE id = ?").get(equipoId)
+      : null;
+    const esHistorica =
+      !!dueñoActual && dueñoActual.estado === "ASIGNADO" && dueñoActual.asignado_a && dueñoActual.asignado_a !== empleadoId;
+
     const pdf = copiarPdf(r.archivo);
     const folio = siguienteFolio(r.fecha.slice(0, 4));
     const descripcion = `${r.equipo.marca} ${r.equipo.modelo}`.trim();
@@ -222,9 +230,18 @@ const importar = db.transaction(() => {
       .prepare(
         "INSERT INTO responsivas (folio, tipo, clase, origen, empleado_id, fecha, estado, observaciones, pdf_path) VALUES (?,?,?,?,?,?,?,?,?)"
       )
-      .run(folio, "ASIGNACION", r.clase, "CARGADA", empleadoId, r.fecha, "VIGENTE", observaciones, pdf);
+      .run(folio, "ASIGNACION", r.clase, "CARGADA", empleadoId, r.fecha, esHistorica ? "CERRADA" : "VIGENTE", observaciones, pdf);
     const rid = Number(info.lastInsertRowid);
     db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion) VALUES (?,?,?)").run(rid, equipoId, descripcion);
+
+    if (esHistorica) {
+      const actual = db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(dueñoActual.asignado_a);
+      reporte.avisos.push(
+        `${folio}: ${descripcion} lo firmó ${r.empleado.numero} ${r.empleado.nombre}, pero hoy lo trae ` +
+          `${actual ? actual.numero_empleado + " " + actual.nombre : "otro empleado"}. Se guarda como histórica; la asignación no se toca.`
+      );
+      continue;
+    }
 
     // La entrega anterior del MISMO equipo se cierra: la nueva la sustituye.
     db.prepare(

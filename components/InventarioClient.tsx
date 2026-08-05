@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
-import type { EquipoConAsignado } from "../lib/types";
+import type { Empleado, EquipoConAsignado } from "../lib/types";
 import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
 import type { Conflicto } from "../lib/duplicados";
-import { eliminarEquipo, guardarEquipo, importarInventario } from "../app/inventario/actions";
+import { eliminarEquipo, guardarEquipo, importarInventario, ligarConSuResponsiva } from "../app/inventario/actions";
 import SelectConOtro from "./SelectConOtro";
+import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
 
 const tdc = "px-2 py-1.5 text-sm text-ink align-middle";
@@ -17,6 +18,7 @@ const miniDanger = "rounded border border-red-200 bg-white px-2 py-0.5 text-xs f
 
 type Formulario = {
   id?: number;
+  asignado_a: number | null;
   tipo: TipoEquipo;
   codigo: string;
   marca: string;
@@ -30,6 +32,7 @@ type Formulario = {
 };
 
 const FORM_VACIO: Formulario = {
+  asignado_a: null,
   tipo: "COMPUTO",
   codigo: "",
   marca: "",
@@ -77,6 +80,7 @@ export type ResponsivaDeEquipo = {
 function formDeEquipo(e: EquipoConAsignado): Formulario {
   return {
     id: e.id,
+    asignado_a: e.asignado_a,
     tipo: ((TIPOS_EQUIPO as readonly string[]).includes(e.tipo) ? e.tipo : "OTRO") as TipoEquipo,
     codigo: e.codigo,
     marca: e.marca,
@@ -96,12 +100,17 @@ export default function InventarioClient({
   sinResponsiva = [],
   responsivas = {},
   editarId = null,
+  empleados = [],
+  porLigar = {},
 }: {
   equipos: EquipoConAsignado[];
   duplicados?: Record<number, Conflicto[]>;
   sinResponsiva?: number[];
   responsivas?: Record<number, ResponsivaDeEquipo[]>;
   editarId?: number | null;
+  empleados?: Empleado[];
+  /** Equipos con responsiva vigente pero sin empleado: se pueden ligar de un clic. */
+  porLigar?: Record<number, { empleado_numero: string; empleado_nombre: string; folio: string }>;
 }) {
   const faltaResponsiva = new Set(sinResponsiva);
   // Con ?editar=<id> el formulario se abre solo: así se puede editar un equipo
@@ -216,12 +225,26 @@ export default function InventarioClient({
             </div>
             <div>
               <Label>Estado</Label>
-              <select className={inputCls} value={form.estado} onChange={setC("estado")}>
+              <select className={inputCls} value={form.estado} onChange={setC("estado")} disabled={form.asignado_a !== null}>
                 <option value="DISPONIBLE">Disponible</option>
                 <option value="MANTENIMIENTO">En mantenimiento</option>
                 <option value="BAJA">Baja</option>
-                {form.estado === "ASIGNADO" ? <option value="ASIGNADO">Asignado (cámbialo a Disponible para liberar)</option> : null}
+                {form.estado === "ASIGNADO" ? <option value="ASIGNADO">Asignado</option> : null}
               </select>
+              {form.asignado_a !== null ? (
+                <p className="mt-1 text-xs text-soft">Con empleado asignado el estado es “Asignado”.</p>
+              ) : null}
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Asignado a</Label>
+              <BuscadorEmpleado
+                empleados={empleados}
+                value={form.asignado_a}
+                onChange={(id) => setForm((f) => (f ? { ...f, asignado_a: id } : f))}
+              />
+              <p className="mt-1 text-xs text-soft">
+                Déjalo vacío si el equipo está libre. Al asignarlo aparecerá como pendiente de responsiva.
+              </p>
             </div>
             <div>
               <Label>Marca</Label>
@@ -402,6 +425,24 @@ export default function InventarioClient({
                         >
                           + Responsiva
                         </Link>
+                      ) : null}
+                      {porLigar[e.id] ? (
+                        <button
+                          className="rounded border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-800 hover:bg-violet-100"
+                          disabled={pendiente}
+                          title={`Su responsiva ${porLigar[e.id].folio} está a nombre de ${porLigar[e.id].empleado_numero} ${porLigar[e.id].empleado_nombre}`}
+                          onClick={() => {
+                            setError("");
+                            setMensaje("");
+                            iniciar(async () => {
+                              const res = await ligarConSuResponsiva(e.id);
+                              if (res.ok) setMensaje(res.mensaje ?? "Equipo ligado.");
+                              else setError(res.error ?? "No se pudo ligar.");
+                            });
+                          }}
+                        >
+                          🔗 Ligar a {porLigar[e.id].empleado_numero}
+                        </button>
                       ) : null}
                       <Link className={mini} href={`/mantenimientos?equipo=${e.id}`}>
                         Historial

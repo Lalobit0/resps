@@ -8,6 +8,7 @@ import { CAMPOS_DETALLE, TIPO_DEFAULTS, TIPOS_EQUIPO, type TipoEquipo } from "..
 import { importarDeExcel, type Mapeo } from "../../lib/importar";
 import { CAMPOS_BLOQUEANTES, conflictosContra, detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
 import { fusionarInventario } from "../../lib/fusionar.mjs";
+import { equiposPorLigar } from "../../lib/pendientes";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -25,6 +26,19 @@ function generarCodigo(prefijo: string): string {
     codigo = `SP-${prefijo}-${String(n).padStart(3, "0")}`;
   }
   return codigo;
+}
+
+/** Carta de asignación vigente del equipo, si la tiene. */
+function responsivaVigenteDe(equipoId: number): { folio: string; empleado_id: number } | null {
+  return (
+    (db
+      .prepare(
+        `SELECT r.folio, r.empleado_id FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+         WHERE ri.equipo_id = ? AND r.tipo='ASIGNACION' AND r.estado='VIGENTE'
+         ORDER BY r.id DESC LIMIT 1`
+      )
+      .get(equipoId) as { folio: string; empleado_id: number } | undefined) ?? null
+  );
 }
 
 function tieneResponsivaVigente(equipoId: number): boolean {
@@ -72,6 +86,8 @@ export async function guardarEquipo(datos: {
   estado: string;
   notas: string;
   detalles: Record<string, string>;
+  /** Empleado al que se le entrega. null = queda libre. */
+  asignado_a?: number | null;
 }): Promise<ResultadoAccion> {
   try {
     const tipo = (TIPOS_EQUIPO as readonly string[]).includes(datos.tipo) ? (datos.tipo as TipoEquipo) : "OTRO";
@@ -128,17 +144,34 @@ export async function guardarEquipo(datos: {
       if (!actual) return { ok: false, error: "El equipo ya no existe." };
       if (!codigo) codigo = actual.codigo;
 
-      const vigente = tieneResponsivaVigente(datos.id);
-      // Responsiva vigente => lo controla el flujo de devolución.
-      // Asignación importada (sin responsiva) => se conserva si no la cambian.
+      // A quién se le entrega. Si el formulario no manda el dato (llamadas
+      // antiguas), se conserva lo que ya tenía.
+      const pedido = datos.asignado_a === undefined ? actual.asignado_a : datos.asignado_a;
+      const vigente = responsivaVigenteDe(datos.id);
       let estadoFinal: string;
       let asignadoFinal: number | null;
       if (vigente) {
+        // Con carta vigente manda el documento: cambiar de dueño exige devolución.
+        if (pedido !== null && pedido !== vigente.empleado_id) {
+          const otro = db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(vigente.empleado_id) as
+            | { numero_empleado: string; nombre: string }
+            | undefined;
+          return {
+            ok: false,
+            error:
+              `Este equipo tiene la responsiva ${vigente.folio} vigente a nombre de ` +
+              `${otro ? `${otro.numero_empleado} ${otro.nombre}` : "otro empleado"}. ` +
+              `Registra primero su devolución para poder cambiarlo de empleado.`,
+          };
+        }
         estadoFinal = "ASIGNADO";
-        asignadoFinal = actual.asignado_a;
-      } else if (datos.estado === "ASIGNADO" && actual.asignado_a) {
+        asignadoFinal = vigente.empleado_id;
+      } else if (pedido !== null) {
+        if (!db.prepare("SELECT 1 FROM empleados WHERE id = ?").get(pedido)) {
+          return { ok: false, error: "El empleado seleccionado ya no existe." };
+        }
         estadoFinal = "ASIGNADO";
-        asignadoFinal = actual.asignado_a;
+        asignadoFinal = pedido;
       } else {
         estadoFinal = estadoLibre;
         asignadoFinal = null;
@@ -171,9 +204,13 @@ export async function guardarEquipo(datos: {
       if (!codigo) codigo = generarCodigo(TIPO_DEFAULTS[tipo].prefijo);
       const dup = db.prepare("SELECT id FROM equipos WHERE codigo = ?").get(codigo);
       if (dup) return { ok: false, error: `Ya existe un equipo con el código ${codigo}.` };
+      const nuevoAsignado = datos.asignado_a ?? null;
+      if (nuevoAsignado && !db.prepare("SELECT 1 FROM empleados WHERE id = ?").get(nuevoAsignado)) {
+        return { ok: false, error: "El empleado seleccionado ya no existe." };
+      }
       const info = db
         .prepare(
-          "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, estado, notas) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, estado, notas, asignado_a) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
         )
         .run(
           codigo,
@@ -186,8 +223,9 @@ export async function guardarEquipo(datos: {
           detallesJson,
           datos.fecha_compra || null,
           costo,
-          estadoLibre,
-          datos.notas.trim() || null
+          nuevoAsignado ? "ASIGNADO" : estadoLibre,
+          datos.notas.trim() || null,
+          nuevoAsignado
         );
       revalidar();
       return { ok: true, id: Number(info.lastInsertRowid) };
@@ -454,5 +492,47 @@ export async function unirDuplicados(): Promise<ResultadoAccion> {
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudieron unir los duplicados. La base quedó igual que antes." };
+  }
+}
+
+/**
+ * Liga al empleado los equipos que tienen carta responsiva vigente pero
+ * aparecen sin asignar en el inventario (típico de las responsivas escaneadas
+ * que se cargaron después). El empleado sale del propio documento, así que no
+ * hay nada que elegir a mano.
+ *
+ *   ligarConSuResponsiva()      -> todos los que estén así
+ *   ligarConSuResponsiva(id)    -> solo ese equipo
+ */
+export async function ligarConSuResponsiva(equipoId?: number): Promise<ResultadoAccion> {
+  try {
+    const pendientes = equiposPorLigar().filter((p) => !equipoId || p.equipo_id === equipoId);
+    if (!pendientes.length) {
+      return { ok: true, mensaje: "No hay equipos con responsiva vigente pendientes de ligar." };
+    }
+
+    const ligar = db.transaction(() => {
+      for (const p of pendientes) {
+        db.prepare("UPDATE equipos SET estado = 'ASIGNADO', asignado_a = ? WHERE id = ?").run(p.empleado_id, p.equipo_id);
+        db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+          "LIGAR_POR_RESPONSIVA",
+          `${p.codigo} se ligó a ${p.empleado_numero} ${p.empleado_nombre} según la responsiva ${p.folio}`,
+          JSON.stringify({ equipo: p.codigo, folio: p.folio, empleado: p.empleado_numero })
+        );
+      }
+    });
+    ligar();
+
+    revalidar();
+    revalidatePath("/empleados");
+
+    if (pendientes.length === 1) {
+      const p = pendientes[0];
+      return { ok: true, mensaje: `${p.codigo} quedó a nombre de ${p.empleado_numero} ${p.empleado_nombre} (responsiva ${p.folio}).` };
+    }
+    return { ok: true, mensaje: `Se ligaron ${pendientes.length} equipos con el empleado que firmó su responsiva.` };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudieron ligar los equipos." };
   }
 }

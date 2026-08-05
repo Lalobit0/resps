@@ -6,6 +6,7 @@ import { dinero, fechaCorta } from "../../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls } from "../../../components/ui";
 import ResponsivasEmpleado from "../../../components/ResponsivasEmpleado";
 import EquiposEmpleado from "../../../components/EquiposEmpleado";
+import AsignarEquipoBtn from "../../../components/AsignarEquipoBtn";
 import type { ResponsivaDeEquipo } from "../../../components/InventarioClient";
 import { idsSinResponsiva } from "../../../lib/pendientes";
 
@@ -36,6 +37,11 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
   const equipos = db
     .prepare("SELECT * FROM equipos WHERE asignado_a = ? ORDER BY tipo ASC, codigo ASC")
     .all(empleado.id) as Equipo[];
+
+  // Equipos libres, para poder entregarle uno desde aquí mismo.
+  const disponibles = db
+    .prepare("SELECT * FROM equipos WHERE estado = 'DISPONIBLE' AND asignado_a IS NULL ORDER BY tipo ASC, codigo ASC")
+    .all() as Equipo[];
 
   const responsivas = db
     .prepare(
@@ -146,9 +152,12 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
         </Card>
       ) : null}
 
-      <h2 className="mb-2 mt-6 text-base font-bold text-ink">Equipos asignados</h2>
+      <div className="mb-2 mt-6 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-bold text-ink">Equipos asignados</h2>
+        <AsignarEquipoBtn empleadoId={empleado.id} disponibles={disponibles} />
+      </div>
       {equipos.length === 0 ? (
-        <Empty>Este empleado no tiene equipos asignados.</Empty>
+        <Empty>Este empleado no tiene equipos asignados. Usa “Asignar equipo” para entregarle uno.</Empty>
       ) : (
         <EquiposEmpleado
           empleadoId={empleado.id}

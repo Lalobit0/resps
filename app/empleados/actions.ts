@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { db } from "../../lib/db";
 import { importarDeExcel, serialExcelAISO, type Mapeo } from "../../lib/importar";
-import type { ResultadoAccion } from "../../lib/types";
+import { guardarEquipo } from "../inventario/actions";
+import type { Equipo, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
   revalidatePath("/empleados");
@@ -200,4 +201,74 @@ export async function eliminarEmpleado(id: number): Promise<ResultadoAccion> {
     console.error(e);
     return { ok: false, error: "No se pudo eliminar el empleado." };
   }
+}
+
+/**
+ * Entrega a este empleado un equipo que ya está en el inventario.
+ * Queda ASIGNADO, y como todavía no tiene carta firmada el sistema lo
+ * mostrará de inmediato en "Le faltan N responsivas" para generarla.
+ */
+export async function asignarEquipo(empleadoId: number, equipoId: number): Promise<ResultadoAccion> {
+  try {
+    const emp = db.prepare("SELECT id, numero_empleado, nombre FROM empleados WHERE id = ?").get(empleadoId) as
+      | { id: number; numero_empleado: string; nombre: string }
+      | undefined;
+    if (!emp) return { ok: false, error: "El empleado ya no existe." };
+
+    const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(equipoId) as Equipo | undefined;
+    if (!eq) return { ok: false, error: "El equipo ya no existe." };
+    if (eq.estado === "BAJA") return { ok: false, error: `${eq.codigo} está dado de baja: no se puede entregar.` };
+    if (eq.asignado_a && eq.asignado_a !== empleadoId) {
+      const otro = db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(eq.asignado_a) as
+        | { numero_empleado: string; nombre: string }
+        | undefined;
+      return {
+        ok: false,
+        error: `${eq.codigo} ya lo tiene ${otro ? `${otro.numero_empleado} ${otro.nombre}` : "otro empleado"}. Registra primero su devolución.`,
+      };
+    }
+
+    db.prepare("UPDATE equipos SET estado = 'ASIGNADO', asignado_a = ? WHERE id = ?").run(empleadoId, equipoId);
+    db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+      "ASIGNAR_EQUIPO",
+      `${eq.codigo} (${eq.marca} ${eq.modelo}) se asignó a ${emp.numero_empleado} ${emp.nombre}`,
+      JSON.stringify({ equipo: eq.codigo, empleado: emp.numero_empleado, estado_anterior: eq.estado })
+    );
+
+    revalidar();
+    revalidatePath("/inventario");
+    revalidatePath(`/empleados/${empleadoId}`);
+    return {
+      ok: true,
+      id: equipoId,
+      mensaje: `${eq.codigo} ${eq.marca} ${eq.modelo} quedó asignado a ${emp.nombre}. Falta su carta responsiva.`,
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo asignar el equipo." };
+  }
+}
+
+/**
+ * Da de alta un equipo que no estaba en el inventario y se lo entrega al
+ * empleado en un solo paso. Usa el mismo alta del inventario, así que valida
+ * igual los duplicados de serie, IMEI y línea.
+ */
+export async function altaYAsignarEquipo(
+  empleadoId: number,
+  datos: {
+    tipo: string;
+    codigo: string;
+    marca: string;
+    modelo: string;
+    numero_serie: string;
+    fecha_compra: string;
+    costo: string;
+    notas: string;
+    detalles: Record<string, string>;
+  }
+): Promise<ResultadoAccion> {
+  const alta = await guardarEquipo({ ...datos, estado: "DISPONIBLE" });
+  if (!alta.ok || !alta.id) return alta;
+  return asignarEquipo(empleadoId, alta.id);
 }

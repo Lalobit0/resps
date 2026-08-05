@@ -4,6 +4,7 @@ import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constant
 import { detectarDuplicados, CAMPOS_BLOQUEANTES, type EquipoRevisable } from "../../lib/duplicados";
 import { idsSinResponsiva } from "../../lib/pendientes";
 import InventarioClient from "../../components/InventarioClient";
+import AvisoDuplicados from "../../components/AvisoDuplicados";
 import ExportarBotones from "../../components/ExportarBotones";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
 
@@ -107,24 +108,7 @@ export default async function PaginaInventario({
         </div>
       ) : null}
 
-      {totalDuplicados > 0 ? (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <span>
-            ⚠️ Se detectaron <b>{totalDuplicados}</b> equipo(s) con datos repetidos:{" "}
-            {desglose.map((d, i) => (
-              <span key={d.etiqueta}>
-                {i > 0 ? ", " : ""}
-                <b>{d.n}</b> por {d.etiqueta}
-                {d.bloqueante ? "" : " (solo aviso)"}
-              </span>
-            ))}
-            . Los de serie, IMEI y línea impiden guardar; los demás solo se señalan.
-          </span>
-          <a href={soloDup ? "/inventario" : "/inventario?dup=1"} className={btnGhost}>
-            {soloDup ? "Ver todo el inventario" : "Ver solo duplicados"}
-          </a>
-        </div>
-      ) : null}
+      <AvisoDuplicados total={totalDuplicados} desglose={desglose} soloDup={soloDup} />
 
       <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
         {soloDup ? <input type="hidden" name="dup" value="1" /> : null}

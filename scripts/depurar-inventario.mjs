@@ -7,16 +7,18 @@
  *
  * Qué hace:
  *  1. Duplicados: cuando dos registros son el mismo equipo (misma serie o mismo
- *     IMEI), conserva el que tiene más datos y elimina el otro. Si el sobrante
- *     tiene historial no se borra: pasa a BAJA para no romper las responsivas.
+ *     IMEI) se FUSIONAN en uno solo. El registro que se queda es el más
+ *     completo y hereda las responsivas y el historial del otro; el sobrante
+ *     desaparece. Así el aviso de "datos repetidos" sí se va: dar de baja el
+ *     sobrante no servía, porque el registro seguía ahí.
  *  2. Dañados: los equipos de la lista DANADOS pasan a BAJA, se libera al
  *     empleado y se cierra la responsiva vigente si la tuviera.
- *  3. Nunca borra un equipo que tenga una responsiva vigente.
  */
 
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import { fusionarInventario } from "../lib/fusionar.mjs";
 
 const APLICAR = process.argv.includes("--aplicar");
 const RAIZ = process.cwd();
@@ -44,79 +46,16 @@ if (APLICAR) {
 
 const db = new Database(DB_PATH);
 db.pragma("foreign_keys = ON");
-const rep = { eliminados: [], bajasDup: [], bajasDanados: [], liberados: [], cerradas: [], avisos: [] };
+const rep = { unidos: [], bajasDanados: [], liberados: [], cerradas: [], avisos: [] };
 
-const detalles = (raw) => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
-const equipos = db.prepare("SELECT * FROM equipos").all().map((e) => {
-  const d = detalles(e.detalles);
-  return { ...e, det: d, imei: dig(d.imei), riqueza: Object.values(d).filter(Boolean).length + (e.numero_serie ? 1 : 0) + (e.marca ? 1 : 0) };
-});
-const historial = (id) =>
-  db.prepare("SELECT COUNT(*) AS c FROM responsiva_items WHERE equipo_id = ?").get(id).c +
-  db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id = ?").get(id).c;
-const tieneVigente = (id) =>
-  db.prepare(
-    `SELECT COUNT(*) AS c FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
-     WHERE ri.equipo_id = ? AND r.tipo='ASIGNACION' AND r.estado='VIGENTE'`
-  ).get(id).c > 0;
+// ---------- 1. Duplicados: se fusionan en un solo registro ----------
+const fusion = fusionarInventario(db, { aplicar: APLICAR });
+rep.unidos.push(...fusion.unidos);
+rep.avisos.push(...fusion.avisos);
+
+const equipos = db.prepare("SELECT * FROM equipos").all();
 
 const depurar = db.transaction(() => {
-  // ---------- 1. Duplicados ----------
-  // Se agrupa por serie y también por IMEI, porque el registro repetido suele
-  // venir incompleto (con serie pero sin IMEI) y sin unir ambas pistas no se
-  // detectaría. Dentro de cada grupo, dos IMEI distintos son dos equipos
-  // distintos aunque compartan "serie": hay series que son código de modelo.
-  const candidatos = new Map();
-  const agrega = (clave, e) => {
-    if (!clave) return;
-    if (!candidatos.has(clave)) candidatos.set(clave, []);
-    candidatos.get(clave).push(e);
-  };
-  for (const e of equipos) {
-    if (e.numero_serie && N(e.numero_serie).length > 2) agrega(`S${N(e.numero_serie)}`, e);
-    if (e.imei) agrega(`I${e.imei}`, e);
-  }
-
-  const yaTratados = new Set();
-  const grupos = new Map();
-  for (const [clave, lista] of candidatos) {
-    if (lista.length < 2) continue;
-    const imeis = new Set(lista.map((e) => e.imei).filter(Boolean));
-    if (imeis.size > 1) {
-      // Misma "serie" con IMEI distintos: son equipos diferentes, no duplicados.
-      rep.avisos.push(
-        `${clave.slice(1)} la comparten ${lista.length} equipos con IMEI distintos (${lista.map((e) => e.codigo).join(", ")}): ` +
-          `es código de modelo, no número de serie. No se tocan.`
-      );
-      continue;
-    }
-    const unicos = lista.filter((e) => !yaTratados.has(e.id));
-    if (unicos.length < 2) continue;
-    unicos.forEach((e) => yaTratados.add(e.id));
-    grupos.set(clave, unicos);
-  }
-
-  for (const [clave, lista] of grupos) {
-    if (lista.length < 2) continue;
-    // Se conserva el registro con más información (y, a igualdad, el más antiguo).
-    const orden = [...lista].sort((a, b) => b.riqueza - a.riqueza || a.id - b.id);
-    const conservar = orden[0];
-    for (const sobra of orden.slice(1)) {
-      if (tieneVigente(sobra.id)) {
-        rep.avisos.push(`${sobra.codigo} parece duplicado de ${conservar.codigo} pero tiene una responsiva VIGENTE: se deja intacto.`);
-        continue;
-      }
-      const etiqueta = `${sobra.codigo} (${sobra.marca} ${sobra.modelo}) duplicado de ${conservar.codigo} por ${clave.startsWith("I") ? "IMEI" : "serie"}`;
-      if (historial(sobra.id) > 0) {
-        rep.bajasDup.push(`${etiqueta} — con historial, pasa a BAJA`);
-        if (APLICAR) db.prepare("UPDATE equipos SET estado='BAJA', asignado_a=NULL WHERE id=?").run(sobra.id);
-      } else {
-        rep.eliminados.push(etiqueta);
-        if (APLICAR) db.prepare("DELETE FROM equipos WHERE id=?").run(sobra.id);
-      }
-    }
-  }
-
   // ---------- 2. Equipos dañados ----------
   const clavesDanadas = new Set(DANADOS.map(NL));
   for (const e of equipos) {
@@ -145,8 +84,7 @@ db.close();
 
 const bloque = (t, l) => { console.log(`\n### ${t}: ${l.length}`); l.forEach((x) => console.log("  - " + x)); };
 console.log(APLICAR ? "=== DEPURACIÓN APLICADA ===" : "=== SIMULACIÓN (no se escribió nada) ===");
-bloque("Duplicados eliminados", rep.eliminados);
-bloque("Duplicados dados de baja (tenían historial)", rep.bajasDup);
+bloque("Duplicados unidos en un solo registro", rep.unidos);
 bloque("Equipos dañados dados de baja", rep.bajasDanados);
 bloque("Empleados liberados", rep.liberados);
 bloque("Responsivas cerradas", rep.cerradas);

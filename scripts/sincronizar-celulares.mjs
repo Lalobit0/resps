@@ -12,11 +12,14 @@
  *  - Los que faltan se crean y quedan asignados a su empleado.
  *  - El teléfono se identifica por IMEI, nunca por la serie: en los Motorola la
  *    "serie" del listado es el código de modelo y se repite entre equipos.
+ *  - Las responsivas de teléfono solo se conservan vigentes si el equipo está en
+ *    el listado y sigue con el mismo empleado del listado. Las demás se cierran.
  */
 
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import { fusionarInventario, leerDetalles } from "../lib/fusionar.mjs";
 
 const APLICAR = process.argv.includes("--aplicar");
 const RAIZ = process.cwd();
@@ -68,11 +71,22 @@ if (APLICAR) {
 const db = new Database(DB_PATH);
 db.pragma("foreign_keys = ON");
 
-const rep = { bajas: [], eliminados: [], actualizados: [], creados: [], empleados: [], avisos: [] };
+const rep = { unidos: [], bajas: [], eliminados: [], actualizados: [], creados: [], empleados: [], cerradas: [], avisos: [] };
 
+// El mismo teléfono puede estar capturado dos veces (importaciones repetidas).
+// Primero se unen esas copias; si no, solo se actualizaría una y la otra
+// quedaría para siempre marcada como dato repetido.
+const fusion = fusionarInventario(db, { aplicar: APLICAR });
+rep.unidos.push(...fusion.unidos);
+rep.avisos.push(...fusion.avisos);
+
+// En simulación la fusión no escribió: se ignoran aquí los registros que se
+// unirían, para que lo que se muestra sea lo que realmente va a pasar.
+const fusionados = new Set(fusion.eliminados);
 const enSistema = db
   .prepare("SELECT id, codigo, marca, modelo, numero_serie, detalles, estado, asignado_a FROM equipos WHERE tipo = 'CELULAR'")
   .all()
+  .filter((e) => !fusionados.has(e.id))
   .map((e) => { let d = {}; try { d = e.detalles ? JSON.parse(e.detalles) : {}; } catch {} return { ...e, det: d, imei: dig(d.imei) }; });
 
 const oficialPorImei = new Map(celulares.map((c) => [c.imei, c]));
@@ -161,6 +175,49 @@ const sync = db.transaction(() => {
   }
 });
 sync();
+
+// ---------- 4. Responsivas de teléfono ----------
+// Solo se conservan vigentes las que corresponden al listado: el equipo debe
+// seguir en él y estar a nombre del mismo empleado. Las demás se cierran (no se
+// borran: el papel firmado se queda como historial).
+const revisarResponsivas = db.transaction(() => {
+  const vigentes = db
+    .prepare(
+      `SELECT r.id, r.folio, em.numero_empleado, em.nombre
+       FROM responsivas r JOIN empleados em ON em.id = r.empleado_id
+       WHERE r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE'`
+    )
+    .all();
+  for (const r of vigentes) {
+    const items = db
+      .prepare(
+        `SELECT e.codigo, e.tipo, e.detalles FROM responsiva_items ri
+         JOIN equipos e ON e.id = ri.equipo_id WHERE ri.responsiva_id = ?`
+      )
+      .all(r.id);
+    // Solo se juzgan las responsivas que son únicamente de teléfono.
+    if (!items.length || !items.every((i) => i.tipo === "CELULAR")) continue;
+
+    let motivo = "";
+    for (const i of items) {
+      const imei = dig(leerDetalles(i.detalles).imei);
+      const oficial = oficialPorImei.get(imei);
+      if (!oficial) {
+        motivo = `${i.codigo} ya no está en el listado de telefonía`;
+        break;
+      }
+      if (limpio(oficial.num) !== limpio(r.numero_empleado)) {
+        motivo = `${i.codigo} ahora es de ${oficial.num} ${oficial.usuario}`;
+        break;
+      }
+    }
+    if (!motivo) continue;
+    rep.cerradas.push(`${r.folio} (${r.numero_empleado} ${r.nombre}) — ${motivo}`);
+    if (APLICAR) db.prepare("UPDATE responsivas SET estado = 'CERRADA' WHERE id = ?").run(r.id);
+  }
+});
+revisarResponsivas();
+
 db.close();
 
 // Lo que se resolvió solo queda registrado, no como pendiente del usuario.
@@ -168,11 +225,13 @@ rep.avisos.push(...lineasQuitadas);
 
 const bloque = (t, l) => { console.log(`\n### ${t}: ${l.length}`); l.forEach((x) => console.log("  - " + x)); };
 console.log(APLICAR ? "=== SINCRONIZACIÓN APLICADA ===" : "=== SIMULACIÓN (no se escribió nada) ===");
+bloque("Registros duplicados unidos", rep.unidos);
 bloque("Eliminados (sin historial)", rep.eliminados);
 bloque("Dados de baja (con historial)", rep.bajas);
 bloque("Actualizados", rep.actualizados);
 bloque("Creados", rep.creados);
 bloque("Empleados nuevos", rep.empleados);
+bloque("Responsivas cerradas (no corresponden al listado)", rep.cerradas);
 bloque("Avisos", rep.avisos);
 console.log(`\nTotal de celulares que deben quedar: ${celulares.length}`);
 if (!APLICAR) console.log("Revisa la lista y vuelve a correr con --aplicar");

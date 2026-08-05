@@ -48,16 +48,21 @@ export default function NuevaResponsivaClient({
   empleados,
   equipos,
   firmas,
+  precargado = null,
 }: {
   empleados: Empleado[];
   equipos: Equipo[];
   firmas: FirmaGuardada[];
+  precargado?: { equipoId: number; empleadoId: number | null } | null;
 }) {
+  // Cuando se entra desde "+ Responsiva" del inventario, el equipo y el
+  // empleado ya vienen dados: solo falta capturar las firmas.
+  const equipoPre = precargado ? equipos.find((e) => e.id === precargado.equipoId) : undefined;
   const router = useRouter();
-  const [clase, setClase] = useState<ClaseCarta>("COMPUTO");
-  const [empleadoId, setEmpleadoId] = useState<number | null>(null);
-  const [equipoId, setEquipoId] = useState<number | null>(null);
-  const [tipoFiltro, setTipoFiltro] = useState<TipoEquipo | "TODOS">("COMPUTO");
+  const [clase, setClase] = useState<ClaseCarta>(equipoPre ? claseDeTipo(equipoPre.tipo) : "COMPUTO");
+  const [empleadoId, setEmpleadoId] = useState<number | null>(precargado?.empleadoId ?? null);
+  const [equipoId, setEquipoId] = useState<number | null>(precargado?.equipoId ?? null);
+  const [tipoFiltro, setTipoFiltro] = useState<TipoEquipo | "TODOS">(equipoPre ? (equipoPre.tipo as TipoEquipo) : "COMPUTO");
   const [filtro, setFiltro] = useState("");
   const [formEquipo, setFormEquipo] = useState<NuevoEquipoForm | null>(null);
   const [errorEquipo, setErrorEquipo] = useState("");

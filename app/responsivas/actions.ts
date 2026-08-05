@@ -161,7 +161,11 @@ export async function crearResponsiva(datos: {
     if (requiereEquipo) {
       if (!datos.equipoId) return { ok: false, error: "Selecciona el equipo a asignar." };
       equipo = db.prepare("SELECT * FROM equipos WHERE id = ?").get(datos.equipoId) as Equipo | undefined;
-      if (!equipo || equipo.estado !== "DISPONIBLE") {
+      if (!equipo) return { ok: false, error: "El equipo seleccionado ya no existe." };
+      // Se admite un equipo ya entregado a ESE mismo empleado: es el caso de
+      // regularizar la carta que le faltaba. Con otro empleado, no.
+      const regularizando = equipo.estado === "ASIGNADO" && equipo.asignado_a === empleado.id;
+      if (equipo.estado !== "DISPONIBLE" && !regularizando) {
         return { ok: false, error: "El equipo seleccionado ya no está disponible." };
       }
       if (!config.tiposEquipo.includes(equipo.tipo as TipoEquipo)) {

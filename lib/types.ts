@@ -16,6 +16,8 @@ export interface Empleado {
 
 export interface EmpleadoConEquipos extends Empleado {
   equipos_asignados: number;
+  /** Equipos entregados a este empleado que no tienen carta responsiva vigente. */
+  sin_responsiva?: number;
 }
 
 export interface Equipo {

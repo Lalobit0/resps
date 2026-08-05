@@ -2,6 +2,7 @@ import { db } from "../../lib/db";
 import type { EquipoConAsignado } from "../../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constants";
 import { detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
+import { idsSinResponsiva } from "../../lib/pendientes";
 import InventarioClient from "../../components/InventarioClient";
 import ExportarBotones from "../../components/ExportarBotones";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
@@ -19,6 +20,7 @@ export default async function PaginaInventario({
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const orden = typeof sp.orden === "string" ? sp.orden : "codigo";
   const soloDup = sp.dup === "1";
+  const soloSinResp = sp.sinresp === "1";
 
   const ORDENES: Record<string, string> = {
     codigo: "CASE e.estado WHEN 'BAJA' THEN 1 ELSE 0 END, e.codigo ASC",
@@ -65,7 +67,14 @@ export default async function PaginaInventario({
     db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[]
   );
   const totalDuplicados = Object.keys(duplicados).length;
-  const equipos = soloDup ? encontrados.filter((e) => duplicados[e.id]) : encontrados;
+
+  // Equipos entregados que todavía no tienen su carta responsiva firmada.
+  const sinResponsiva = idsSinResponsiva();
+  const totalSinResp = sinResponsiva.size;
+
+  let equipos = encontrados;
+  if (soloDup) equipos = equipos.filter((e) => duplicados[e.id]);
+  if (soloSinResp) equipos = equipos.filter((e) => sinResponsiva.has(e.id));
 
   return (
     <>
@@ -74,6 +83,18 @@ export default async function PaginaInventario({
           {equipos.length} de {total} equipos
         </span>
       </PageHeader>
+
+      {totalSinResp > 0 ? (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          <span>
+            📄 Hay <b>{totalSinResp}</b> equipo(s) entregados <b>sin carta responsiva</b>. Genera la responsiva para que el
+            empleado la firme.
+          </span>
+          <a href={soloSinResp ? "/inventario" : "/inventario?sinresp=1"} className={btnGhost}>
+            {soloSinResp ? "Ver todo el inventario" : "Ver los que faltan"}
+          </a>
+        </div>
+      ) : null}
 
       {totalDuplicados > 0 ? (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -89,6 +110,7 @@ export default async function PaginaInventario({
 
       <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
         {soloDup ? <input type="hidden" name="dup" value="1" /> : null}
+        {soloSinResp ? <input type="hidden" name="sinresp" value="1" /> : null}
         <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, asignado…" className={`${inputCls} max-w-xs`} />
         <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[190px]`}>
           <option value="">Todos los tipos</option>
@@ -121,7 +143,7 @@ export default async function PaginaInventario({
         </div>
       </form>
 
-      <InventarioClient equipos={equipos} duplicados={duplicados} />
+      <InventarioClient equipos={equipos} duplicados={duplicados} sinResponsiva={[...sinResponsiva]} />
     </>
   );
 }

@@ -258,6 +258,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                 <th className={thc}>Depto / Área</th>
                 <th className={thc}>Jefe directo</th>
                 <th className={`${thc} text-center`}>Eq.</th>
+                <th className={`${thc} text-center`}>Falta resp.</th>
                 <th className={thc}>Estado</th>
                 <th className={thc}>Acciones</th>
               </tr>
@@ -288,6 +289,19 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                       </Link>
                     ) : (
                       <span className="text-soft">—</span>
+                    )}
+                  </td>
+                  <td className={`${celda} text-center`}>
+                    {(e.sin_responsiva ?? 0) > 0 ? (
+                      <Link
+                        href={`/empleados/${e.id}`}
+                        className="inline-block rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
+                        title="Tiene equipos sin carta responsiva: entra para generarlas"
+                      >
+                        {e.sin_responsiva}
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-soft">—</span>
                     )}
                   </td>
                   <td className={celda}>

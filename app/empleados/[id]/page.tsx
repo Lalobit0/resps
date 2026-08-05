@@ -5,6 +5,7 @@ import { ETIQUETA_TIPO, ETIQUETA_ESTADO, ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENI
 import { dinero, fechaCorta } from "../../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "../../../components/ui";
 import ResponsivasEmpleado from "../../../components/ResponsivasEmpleado";
+import { idsSinResponsiva } from "../../../lib/pendientes";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,10 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
        WHERE e.asignado_a = ? ORDER BY m.fecha_programada DESC`
     )
     .all(empleado.id) as MantenimientoConEquipo[];
+
+  // Equipos que este empleado tiene sin una carta responsiva que los respalde.
+  const sinResp = idsSinResponsiva();
+  const faltantes = equipos.filter((e) => sinResp.has(e.id));
 
   const cuenta = (t: string) => equipos.filter((e) => e.tipo === t).length;
   const tiles = [
@@ -96,6 +101,32 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
         ))}
       </div>
 
+      {faltantes.length > 0 ? (
+        <Card className="mt-6 border-sky-200 bg-sky-50">
+          <h2 className="text-base font-bold text-sky-900">
+            📄 Le faltan {faltantes.length} responsiva{faltantes.length > 1 ? "s" : ""}
+          </h2>
+          <p className="mb-3 mt-1 text-sm text-sky-800">
+            Estos equipos están entregados pero no tienen carta firmada. Genera cada una y pásala a firmar.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {faltantes.map((e) => (
+              <Link
+                key={e.id}
+                href={`/responsivas/nueva?equipo=${e.id}`}
+                className="inline-flex items-center gap-2 rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-medium text-sky-900 hover:bg-sky-100"
+              >
+                <span className="mono text-xs font-semibold">{e.codigo}</span>
+                <span>
+                  {e.marca} {e.modelo}
+                </span>
+                <span className="rounded bg-sky-600 px-1.5 py-0.5 text-xs font-semibold text-white">+ Responsiva</span>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       <h2 className="mb-2 mt-6 text-base font-bold text-ink">Equipos asignados</h2>
       {equipos.length === 0 ? (
         <Empty>Este empleado no tiene equipos asignados.</Empty>
@@ -124,6 +155,13 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
                   <td className={`${tdCls} text-xs text-soft`}>{e.specs ?? "—"}</td>
                   <td className={tdCls}>
                     <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>
+                    {sinResp.has(e.id) ? (
+                      <div className="mt-1">
+                        <Link href={`/responsivas/nueva?equipo=${e.id}`} className="text-xs font-semibold text-sky-700 underline">
+                          Sin responsiva · generar
+                        </Link>
+                      </div>
+                    ) : null}
                   </td>
                 </tr>
               ))}

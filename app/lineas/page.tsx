@@ -3,6 +3,8 @@ import { db } from "../../lib/db";
 import { dinero } from "../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, tdCls, thCls, tonoEstadoEquipo } from "../../components/ui";
 import ExportarBotones from "../../components/ExportarBotones";
+import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
+import { revisarCelulares } from "../../lib/celulares";
 import { ETIQUETA_ESTADO } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +63,8 @@ export default async function PaginaLineas({
     .all(...val) as Linea[];
 
   const totalMensual = lineas.reduce((s, l) => s + precioANumero(l.precio), 0);
+  // El listado de telefonía manda: si falta alguno, se avisa y se puede dar de alta.
+  const revision = revisarCelulares();
   const asignadas = lineas.filter((l) => l.asignado_nombre).length;
 
   return (
@@ -68,6 +72,8 @@ export default async function PaginaLineas({
       <PageHeader eyebrow="Telefonía" title="Líneas telefónicas">
         <ExportarBotones tabla="inventario" params={{ tipo: "CELULAR" }} />
       </PageHeader>
+
+      <AvisoCelularesFaltantes faltan={revision.faltan} total={revision.total} />
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>

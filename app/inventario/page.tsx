@@ -5,6 +5,8 @@ import { detectarDuplicados, CAMPOS_BLOQUEANTES, type EquipoRevisable } from "..
 import { idsSinResponsiva } from "../../lib/pendientes";
 import InventarioClient, { type ResponsivaDeEquipo } from "../../components/InventarioClient";
 import AvisoDuplicados from "../../components/AvisoDuplicados";
+import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
+import { revisarCelulares } from "../../lib/celulares";
 import ExportarBotones from "../../components/ExportarBotones";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
 
@@ -80,6 +82,9 @@ export default async function PaginaInventario({
   }
   const desglose = [...porCampoDup.values()].sort((a, b) => b.n - a.n);
 
+  // Teléfonos del listado de telefonía que no están dados de alta.
+  const revisionCel = revisarCelulares();
+
   // Equipos entregados que todavía no tienen su carta responsiva firmada.
   const sinResponsiva = idsSinResponsiva();
   const totalSinResp = sinResponsiva.size;
@@ -110,6 +115,8 @@ export default async function PaginaInventario({
           {equipos.length} de {total} equipos
         </span>
       </PageHeader>
+
+      <AvisoCelularesFaltantes faltan={revisionCel.faltan} total={revisionCel.total} />
 
       {totalSinResp > 0 ? (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">

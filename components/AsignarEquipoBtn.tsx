@@ -12,11 +12,13 @@ import {
   TIPOS_EQUIPO,
   type TipoEquipo,
 } from "../lib/constants";
-import { asignarEquipo, altaYAsignarEquipo } from "../app/empleados/actions";
+import { asignarEquipo, guardarYAsignarEquipo } from "../app/empleados/actions";
 import SelectConOtro from "./SelectConOtro";
 import { Card, Label, btnGhost, btnPrimary, inputCls } from "./ui";
 
 type Nuevo = {
+  /** Con id se está corrigiendo un equipo que ya existe; sin id es un alta. */
+  id?: number;
   tipo: TipoEquipo;
   codigo: string;
   marca: string;
@@ -39,6 +41,28 @@ const NUEVO_VACIO: Nuevo = {
   notas: "",
   detalles: {},
 };
+
+/** Pasa un equipo del inventario al formulario para corregirlo. */
+function aFormulario(e: Equipo): Nuevo {
+  let detalles: Record<string, string> = {};
+  try {
+    detalles = e.detalles ? (JSON.parse(e.detalles) as Record<string, string>) : {};
+  } catch {
+    detalles = {};
+  }
+  return {
+    id: e.id,
+    tipo: ((TIPOS_EQUIPO as readonly string[]).includes(e.tipo) ? e.tipo : "OTRO") as TipoEquipo,
+    codigo: e.codigo,
+    marca: e.marca,
+    modelo: e.modelo,
+    numero_serie: e.numero_serie ?? "",
+    fecha_compra: e.fecha_compra ?? "",
+    costo: e.costo !== null ? String(e.costo) : "",
+    notas: e.notas ?? "",
+    detalles,
+  };
+}
 
 /**
  * Entrega un equipo al empleado sin salir de su ficha: puede ser uno que ya
@@ -100,7 +124,7 @@ export default function AsignarEquipoBtn({
           ? elegido
             ? await asignarEquipo(empleadoId, elegido)
             : { ok: false, error: "Elige el equipo que se le entrega." }
-          : await altaYAsignarEquipo(empleadoId, nuevo);
+          : await guardarYAsignarEquipo(empleadoId, nuevo);
       if (res.ok && res.id) {
         setListo({ equipoId: res.id, mensaje: res.mensaje ?? "Equipo asignado." });
         router.refresh();
@@ -149,13 +173,17 @@ export default function AsignarEquipoBtn({
               {(
                 [
                   ["existente", "Ya está en el inventario"],
-                  ["nuevo", "Es un equipo nuevo"],
+                  ["nuevo", nuevo.id ? `Corrigiendo ${nuevo.codigo}` : "Es un equipo nuevo"],
                 ] as const
               ).map(([valor, etiqueta]) => (
                 <button
                   key={valor}
                   type="button"
-                  onClick={() => setModo(valor)}
+                  onClick={() => {
+                    // Al volver a "equipo nuevo" desde una corrección se limpia el formulario.
+                    if (valor === "nuevo" && modo === "existente" && nuevo.id) setNuevo(NUEVO_VACIO);
+                    setModo(valor);
+                  }}
                   className={`rounded-md border px-3 py-1.5 ${
                     modo === valor ? "border-kraft bg-orange-50 font-semibold text-kraft-dark" : "border-line bg-white"
                   }`}
@@ -167,6 +195,13 @@ export default function AsignarEquipoBtn({
 
             {error ? (
               <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+            ) : null}
+
+            {modo === "nuevo" && nuevo.id ? (
+              <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                Estás corrigiendo <b className="mono">{nuevo.codigo}</b>, que ya está en el inventario. Al guardar se
+                actualizan sus datos y queda asignado a este empleado.
+              </div>
             ) : null}
 
             {modo === "existente" ? (
@@ -184,24 +219,41 @@ export default function AsignarEquipoBtn({
                   />
                   <div className="max-h-[45vh] space-y-1.5 overflow-y-auto pr-1">
                     {filtrados.map((e) => (
-                      <button
+                      <div
                         key={e.id}
-                        type="button"
-                        onClick={() => setElegido(e.id)}
-                        className={`block w-full rounded-md border px-3 py-2 text-left text-sm ${
-                          elegido === e.id ? "border-kraft bg-orange-50/70" : "border-line bg-white hover:bg-paper/60"
+                        className={`flex items-center gap-2 rounded-md border px-3 py-2 ${
+                          elegido === e.id ? "border-kraft bg-orange-50/70" : "border-line bg-white"
                         }`}
                       >
-                        <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
-                        <span className="font-medium">
-                          {e.marca} {e.modelo}
-                        </span>
-                        <div className="text-xs text-soft">
-                          {ETIQUETA_TIPO[e.tipo] ?? e.tipo}
-                          {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
-                          {e.specs ? ` · ${e.specs}` : ""}
-                        </div>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => setElegido(e.id)}
+                          className="flex-1 text-left text-sm"
+                        >
+                          <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
+                          <span className="font-medium">
+                            {e.marca} {e.modelo}
+                          </span>
+                          <div className="text-xs text-soft">
+                            {ETIQUETA_TIPO[e.tipo] ?? e.tipo}
+                            {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
+                            {e.specs ? ` · ${e.specs}` : ""}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          title="Corregir los datos de este equipo antes de asignarlo"
+                          onClick={() => {
+                            setNuevo(aFormulario(e));
+                            setElegido(e.id);
+                            setError("");
+                            setModo("nuevo");
+                          }}
+                          className="shrink-0 rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper"
+                        >
+                          Editar
+                        </button>
+                      </div>
                     ))}
                     {filtrados.length === 0 ? <p className="px-1 py-3 text-sm text-soft">Nada coincide con el filtro.</p> : null}
                   </div>
@@ -320,7 +372,13 @@ export default function AsignarEquipoBtn({
 
             <div className="mt-4 flex gap-2">
               <button className={btnPrimary} onClick={guardar} disabled={pendiente}>
-                {pendiente ? "Asignando…" : modo === "existente" ? "Asignar al empleado" : "Dar de alta y asignar"}
+                {pendiente
+                  ? "Asignando…"
+                  : modo === "existente"
+                    ? "Asignar al empleado"
+                    : nuevo.id
+                      ? "Guardar cambios y asignar"
+                      : "Dar de alta y asignar"}
               </button>
               <button className={btnGhost} onClick={cerrar} disabled={pendiente}>
                 Cancelar

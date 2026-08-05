@@ -250,13 +250,17 @@ export async function asignarEquipo(empleadoId: number, equipoId: number): Promi
 }
 
 /**
- * Da de alta un equipo que no estaba en el inventario y se lo entrega al
- * empleado en un solo paso. Usa el mismo alta del inventario, así que valida
+ * Guarda el equipo y se lo entrega al empleado en un solo paso.
+ *
+ * Sin `id` es un alta: el equipo no estaba en el inventario. Con `id` es una
+ * corrección: se arreglan los datos del equipo que ya estaba y se asigna. En
+ * los dos casos pasa por el mismo guardado del inventario, así que valida
  * igual los duplicados de serie, IMEI y línea.
  */
-export async function altaYAsignarEquipo(
+export async function guardarYAsignarEquipo(
   empleadoId: number,
   datos: {
+    id?: number;
     tipo: string;
     codigo: string;
     marca: string;
@@ -268,9 +272,9 @@ export async function altaYAsignarEquipo(
     detalles: Record<string, string>;
   }
 ): Promise<ResultadoAccion> {
-  const alta = await guardarEquipo({ ...datos, estado: "DISPONIBLE" });
-  if (!alta.ok || !alta.id) return alta;
-  return asignarEquipo(empleadoId, alta.id);
+  const guardado = await guardarEquipo({ ...datos, estado: "DISPONIBLE" });
+  if (!guardado.ok || !guardado.id) return guardado;
+  return asignarEquipo(empleadoId, guardado.id);
 }
 
 /**

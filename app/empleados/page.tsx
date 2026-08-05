@@ -9,6 +9,7 @@ export default async function PaginaEmpleados() {
   const empleados = db
     .prepare(
       `SELECT e.*, (SELECT COUNT(*) FROM equipos q WHERE q.asignado_a = e.id) AS equipos_asignados,
+         (SELECT COUNT(*) FROM equipos qc WHERE qc.asignado_a = e.id AND qc.tipo = 'COMPUTO') AS computo,
          (SELECT COUNT(*) FROM equipos q2
             WHERE q2.asignado_a = e.id AND q2.estado = 'ASIGNADO'
               AND NOT EXISTS (

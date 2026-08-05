@@ -15,6 +15,7 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
   const q = (sp.get("q") || "").trim();
   const depto = sp.get("depto") || "";
   const clase = sp.get("clase") || "";
+  const computo = sp.get("computo") || "";
   const estado = sp.get("estado") || "";
   const cond: string[] = [];
   const val: (string | number)[] = [];
@@ -28,6 +29,9 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
     cond.push("COALESCE(e.clase,'') = ?");
     val.push(clase);
   }
+  const CON_COMPUTO = "(SELECT COUNT(*) FROM equipos qc WHERE qc.asignado_a = e.id AND qc.tipo = 'COMPUTO')";
+  if (computo === "con") cond.push(`${CON_COMPUTO} > 0`);
+  if (computo === "sin") cond.push(`${CON_COMPUTO} = 0`);
   if (q) {
     cond.push(
       "(e.nombre LIKE ? OR e.numero_empleado LIKE ? OR e.puesto LIKE ? OR e.departamento LIKE ? OR COALESCE(e.area,'') LIKE ? OR COALESCE(e.supervisor,'') LIKE ? OR COALESCE(e.clase,'') LIKE ?)"
@@ -37,15 +41,16 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
   const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
   const rows = db
     .prepare(
-      `SELECT e.*, (SELECT COUNT(*) FROM equipos q WHERE q.asignado_a = e.id) AS eq
+      `SELECT e.*, (SELECT COUNT(*) FROM equipos q WHERE q.asignado_a = e.id) AS eq,
+              (SELECT COUNT(*) FROM equipos qc WHERE qc.asignado_a = e.id AND qc.tipo = 'COMPUTO') AS computo
        FROM empleados e ${where}
        ORDER BY CAST(e.numero_empleado AS INTEGER) ASC, e.numero_empleado ASC`
     )
     .all(...val) as Record<string, unknown>[];
   return {
     titulo: "Empleados",
-    columnas: ["No.", "Nombre", "Clase", "Puesto", "Departamento", "Área", "Jefe directo", "Alta", "Correo", "Teléfono", "Eq.", "Estado"],
-    pesos: [5, 16, 8, 12, 11, 9, 12, 7, 14, 8, 3, 6],
+    columnas: ["No.", "Nombre", "Clase", "Puesto", "Departamento", "Área", "Jefe directo", "Alta", "Correo", "Teléfono", "Cómputo", "Eq.", "Estado"],
+    pesos: [5, 15, 8, 11, 10, 8, 11, 7, 13, 8, 6, 3, 6],
     filas: rows.map((e) => [
       e.numero_empleado as string,
       e.nombre as string,
@@ -57,6 +62,7 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
       fechaCorta(e.fecha_alta as string | null),
       (e.correo as string) ?? "",
       (e.telefono as string) ?? "",
+      (e.computo as number) > 0 ? `Sí (${e.computo as number})` : "Sin PC",
       e.eq as number,
       e.activo ? "Activo" : "Inactivo",
     ]),

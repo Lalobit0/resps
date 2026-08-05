@@ -44,6 +44,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
   const [form, setForm] = useState<Formulario | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [filtroDepto, setFiltroDepto] = useState("");
+  const [filtroClase, setFiltroClase] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
@@ -56,15 +57,21 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
     [empleados]
   );
 
+  const clases = useMemo(
+    () => Array.from(new Set(empleados.map((e) => e.clase ?? "").filter(Boolean))).sort(),
+    [empleados]
+  );
+
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     return empleados.filter((e) => {
       if (filtroEstado === "activos" && !e.activo) return false;
       if (filtroEstado === "inactivos" && e.activo) return false;
       if (filtroDepto && e.departamento !== filtroDepto) return false;
+      if (filtroClase && (e.clase ?? "") !== filtroClase) return false;
       if (
         q &&
-        ![e.nombre, e.numero_empleado, e.puesto, e.departamento, e.area ?? "", e.supervisor ?? ""]
+        ![e.nombre, e.numero_empleado, e.puesto, e.departamento, e.area ?? "", e.supervisor ?? "", e.clase ?? ""]
           .join(" ")
           .toLowerCase()
           .includes(q)
@@ -72,7 +79,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         return false;
       return true;
     });
-  }, [empleados, busqueda, filtroDepto, filtroEstado]);
+  }, [empleados, busqueda, filtroDepto, filtroClase, filtroEstado]);
 
   const set = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
@@ -149,6 +156,14 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
             </option>
           ))}
         </select>
+        <select className={`${inputCls} max-w-[190px]`} value={filtroClase} onChange={(e) => setFiltroClase(e.target.value)}>
+          <option value="">Todas las clases</option>
+          {clases.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
         <select className={`${inputCls} max-w-[150px]`} value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}>
           <option value="">Todos</option>
           <option value="activos">Activos</option>
@@ -174,7 +189,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <p className="text-xs text-soft">
           {filtrados.length} de {empleados.length} empleados · haz clic en un nombre para ver su histórico.
         </p>
-        <ExportarBotones tabla="empleados" params={{ q: busqueda, depto: filtroDepto, estado: filtroEstado }} />
+        <ExportarBotones tabla="empleados" params={{ q: busqueda, depto: filtroDepto, clase: filtroClase, estado: filtroEstado }} />
       </div>
 
       {form ? (
@@ -241,20 +256,22 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <Card className="p-0">
           <table className="w-full table-fixed border-collapse">
             <colgroup>
-              <col className="w-[6%]" />
-              <col className="w-[19%]" />
-              <col className="w-[14%]" />
-              <col className="w-[14%]" />
-              <col className="w-[12%]" />
               <col className="w-[5%]" />
-              <col className="w-[8%]" />
-              <col className="w-[8%]" />
+              <col className="w-[17%]" />
+              <col className="w-[11%]" />
+              <col className="w-[12%]" />
+              <col className="w-[13%]" />
+              <col className="w-[11%]" />
+              <col className="w-[4%]" />
+              <col className="w-[6%]" />
+              <col className="w-[7%]" />
               <col className="w-[14%]" />
             </colgroup>
             <thead className="border-b border-line bg-paper/70">
               <tr>
                 <th className={thc}>No.</th>
                 <th className={thc}>Nombre</th>
+                <th className={thc}>Clase</th>
                 <th className={thc}>Puesto</th>
                 <th className={thc}>Depto / Área</th>
                 <th className={thc}>Jefe directo</th>
@@ -272,6 +289,9 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                     <Link href={`/empleados/${e.id}`} className="font-medium text-ink hover:text-kraft hover:underline">
                       {e.nombre}
                     </Link>
+                  </td>
+                  <td className={`${celda} truncate text-xs`} title={e.clase ?? ""}>
+                    {e.clase ? <span className="text-ink">{e.clase}</span> : <span className="text-soft">—</span>}
                   </td>
                   <td className={`${celda} truncate text-xs`} title={e.puesto}>
                     {e.puesto}

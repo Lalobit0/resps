@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { Equipo } from "../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
 import type { ResponsivaDeEquipo } from "./InventarioClient";
+import { quitarEquipoAEmpleado } from "../app/empleados/actions";
+import { eliminarEquipo } from "../app/inventario/actions";
 import { Badge, Card, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "./ui";
 
 const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
 const miniAzul = "rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 hover:bg-sky-100";
+const miniRojo = "rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50";
 
 /**
  * Equipos que tiene el empleado, con todo lo que se necesita hacer desde aquí:
@@ -28,10 +32,35 @@ export default function EquiposEmpleado({
   sinResponsiva: number[];
 }) {
   const falta = new Set(sinResponsiva);
+  const router = useRouter();
   const [ver, setVer] = useState<ResponsivaDeEquipo | null>(null);
+  const [error, setError] = useState("");
+  const [mensaje, setMensaje] = useState("");
+  const [pendiente, iniciar] = useTransition();
+
+  /** Corre la acción y deja a la vista lo que pasó. */
+  const correr = (accion: () => Promise<{ ok: boolean; error?: string; mensaje?: string }>) => {
+    setError("");
+    setMensaje("");
+    iniciar(async () => {
+      const res = await accion();
+      if (res.ok) {
+        setMensaje(res.mensaje ?? "Listo.");
+        router.refresh();
+      } else {
+        setError(res.error ?? "No se pudo.");
+      }
+    });
+  };
 
   return (
     <>
+      {mensaje ? (
+        <div className="mb-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">{mensaje}</div>
+      ) : null}
+      {error ? (
+        <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">{error}</div>
+      ) : null}
       <Card className="overflow-x-auto p-0">
         <table className="w-full min-w-[900px] border-collapse">
           <thead className="border-b border-line bg-paper/70">
@@ -110,6 +139,30 @@ export default function EquiposEmpleado({
                           + Responsiva
                         </Link>
                       ) : null}
+                      <button
+                        className={mini}
+                        disabled={pendiente}
+                        title="Se lo quita al empleado y el equipo vuelve al inventario como disponible"
+                        onClick={() => {
+                          if (confirm(`¿Quitarle ${e.codigo} a este empleado? El equipo vuelve al inventario como disponible.`)) {
+                            correr(() => quitarEquipoAEmpleado(e.id));
+                          }
+                        }}
+                      >
+                        Quitar
+                      </button>
+                      <button
+                        className={miniRojo}
+                        disabled={pendiente}
+                        title="Borra el equipo del inventario (solo si no tiene responsivas ni historial)"
+                        onClick={() => {
+                          if (confirm(`¿Eliminar del inventario el equipo ${e.codigo}? Esto no se puede deshacer.`)) {
+                            correr(() => eliminarEquipo(e.id));
+                          }
+                        }}
+                      >
+                        Eliminar
+                      </button>
                     </div>
                   </td>
                 </tr>

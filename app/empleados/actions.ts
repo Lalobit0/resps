@@ -272,3 +272,42 @@ export async function altaYAsignarEquipo(
   if (!alta.ok || !alta.id) return alta;
   return asignarEquipo(empleadoId, alta.id);
 }
+
+/**
+ * Le quita el equipo al empleado sin borrarlo: vuelve al inventario como
+ * disponible. Es lo que se usa cuando la asignación estaba mal.
+ */
+export async function quitarEquipoAEmpleado(equipoId: number): Promise<ResultadoAccion> {
+  try {
+    const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(equipoId) as Equipo | undefined;
+    if (!eq) return { ok: false, error: "El equipo ya no existe." };
+
+    const vigente = db
+      .prepare(
+        `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+         WHERE ri.equipo_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE' LIMIT 1`
+      )
+      .get(equipoId) as { folio: string } | undefined;
+    if (vigente) {
+      return {
+        ok: false,
+        error: `Este equipo tiene la responsiva ${vigente.folio} vigente. Registra su devolución para poder quitárselo.`,
+      };
+    }
+
+    db.prepare("UPDATE equipos SET estado = 'DISPONIBLE', asignado_a = NULL WHERE id = ?").run(equipoId);
+    db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+      "QUITAR_EQUIPO",
+      `${eq.codigo} (${eq.marca} ${eq.modelo}) se quitó del empleado y volvió al inventario como disponible`,
+      JSON.stringify({ equipo: eq.codigo, empleado_anterior: eq.asignado_a })
+    );
+
+    revalidar();
+    revalidatePath("/inventario");
+    if (eq.asignado_a) revalidatePath(`/empleados/${eq.asignado_a}`);
+    return { ok: true, mensaje: `${eq.codigo} volvió al inventario como disponible.` };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo quitar el equipo." };
+  }
+}

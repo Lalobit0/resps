@@ -1,38 +1,37 @@
 @echo off
-REM --- Carga las responsivas escaneadas y depura el inventario ---
+REM --- Depura el inventario y carga las responsivas escaneadas ---
 cd /d "%~dp0"
 setlocal
 
+set HAYLOTE=0
+if exist "lote\*.pdf" set HAYLOTE=1
+
 echo ==========================================================
-echo   PONER AL DIA EL INVENTARIO Y LAS RESPONSIVAS
+echo   PONER AL DIA EL INVENTARIO
 echo ==========================================================
 echo.
-echo Este proceso hace tres cosas, en este orden:
-echo   1) Depura: quita registros duplicados y da de baja los danados
+echo   1) Depurar: quita duplicados y da de baja los danados
 echo   2) Telefonia: deja el inventario con los celulares vigentes
-echo   3) Responsivas: carga los PDF escaneados y los asigna
+if "%HAYLOTE%"=="1" (
+  echo   3) Responsivas: carga los PDF de la carpeta "lote"
+) else (
+  echo   3) Responsivas: SE OMITE ^(no hay PDF en la carpeta "lote"^)
+)
 echo.
 echo Primero se hace una SIMULACION: no se escribe nada y te muestra
 echo exactamente que va a pasar. Al final decides si se aplica.
 echo.
-
-if not exist "lote\" (
-  echo ----------------------------------------------------------
-  echo   FALTA LA CARPETA CON LOS PDF
-  echo ----------------------------------------------------------
+if "%HAYLOTE%"=="0" (
+  echo NOTA: si tambien quieres cargar responsivas escaneadas, cierra esto,
+  echo       crea una carpeta llamada  lote  aqui mismo, copia dentro los PDF
+  echo       y vuelve a ejecutar. Sin eso solo se hace la limpieza.
   echo.
-  echo Crea una carpeta llamada  lote  aqui mismo:
-  echo   %CD%\lote
-  echo.
-  echo Copia dentro TODOS los PDF de las responsivas escaneadas
-  echo ^(1780.pdf, 1916.pdf, 2107.pdf, etc.^) y vuelve a ejecutar.
-  echo.
-  pause
-  exit /b 1
 )
+pause
 
+echo.
 echo ==========================================================
-echo   SIMULACION 1 de 3 - DEPURAR INVENTARIO
+echo   SIMULACION - DEPURAR INVENTARIO
 echo ==========================================================
 call node scripts\depurar-inventario.mjs
 if errorlevel 1 goto :error
@@ -41,20 +40,22 @@ pause
 
 echo.
 echo ==========================================================
-echo   SIMULACION 2 de 3 - CELULARES
+echo   SIMULACION - CELULARES
 echo ==========================================================
 call node scripts\sincronizar-celulares.mjs
 if errorlevel 1 goto :error
 echo.
 pause
 
-echo.
-echo ==========================================================
-echo   SIMULACION 3 de 3 - RESPONSIVAS
-echo ==========================================================
-call node scripts\importar-responsivas.mjs --pdfs .\lote
-if errorlevel 1 goto :error
-echo.
+if "%HAYLOTE%"=="1" (
+  echo.
+  echo ==========================================================
+  echo   SIMULACION - RESPONSIVAS
+  echo ==========================================================
+  call node scripts\importar-responsivas.mjs --pdfs .\lote
+  if errorlevel 1 goto :error
+  echo.
+)
 
 echo ==========================================================
 echo   REVISA LO DE ARRIBA
@@ -82,16 +83,23 @@ call node scripts\depurar-inventario.mjs --aplicar
 if errorlevel 1 goto :error
 call node scripts\sincronizar-celulares.mjs --aplicar
 if errorlevel 1 goto :error
-call node scripts\importar-responsivas.mjs --pdfs .\lote --aplicar
-if errorlevel 1 goto :error
+if "%HAYLOTE%"=="1" (
+  call node scripts\importar-responsivas.mjs --pdfs .\lote --aplicar
+  if errorlevel 1 goto :error
+)
 
+echo.
+echo ==========================================================
+echo   COMO QUEDO
+echo ==========================================================
+call node scripts\revisar-duplicados.mjs
 echo.
 echo ==========================================================
 echo   LISTO
 echo ==========================================================
 echo.
-echo Ya puedes abrir el sistema. En Empleados vas a ver la columna
-echo "Falta resp." con quien tiene equipo sin carta firmada.
+echo Abre el sistema con  iniciar.bat  . En Empleados veras la columna
+echo "Sin resp." con quien tiene equipo sin carta firmada.
 echo.
 pause
 exit /b 0

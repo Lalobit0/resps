@@ -45,38 +45,59 @@ de la base de datos, pero después las actualizaciones son instantáneas.
 
 ---
 
-# Cargar las responsivas escaneadas y depurar el inventario
+# Poner al día el inventario (depurar y cargar responsivas)
 
-Esto se hace **una sola vez** por lote de escaneos. Todo pasa en tu computadora;
-nada sale de la empresa.
+Todo pasa en tu computadora; nada sale de la empresa.
+
+## Lo importante primero
+
+`actualizar.bat` **solo baja la última versión del programa**. No limpia nada ni
+carga responsivas. Para eso está `poner-al-dia.bat`.
 
 ## Paso a paso
 
-1. **Baja la última versión**: doble clic en `actualizar.bat`. Cuando diga
-   `Ready`, ciérralo con `Ctrl + C`.
+1. **Doble clic en `actualizar.bat`.** Cuando diga `Ready`, ciérralo con
+   `Ctrl + C`.
 
-2. **Crea una carpeta llamada `lote`** dentro de la carpeta del proyecto
-   (junto a `iniciar.bat`) y copia ahí **todos los PDF** de las responsivas
-   escaneadas: `1780.pdf`, `1916.pdf`, `2107.pdf`, etc.
+2. **Doble clic en `poner-al-dia.bat`.** Eso hace todo: depurar duplicados,
+   dejar la telefonía al día y, si hay PDF, cargar las responsivas.
 
-3. **Doble clic en `poner-al-dia.bat`.**
+   Primero hace una **simulación**: no escribe nada y te muestra qué va a pasar.
+   Ve leyendo y presiona una tecla para avanzar.
 
-   Primero hace una **simulación**: no escribe nada y te muestra en pantalla qué
-   equipos va a dar de baja, cuáles va a crear y qué responsivas va a cargar.
-   Ve leyendo y presiona una tecla para pasar a la siguiente parte.
-
-4. Al final pregunta **¿Aplicar los cambios? (S/N)**.
+3. Al final pregunta **¿Aplicar los cambios? (S/N)**.
    - `N` → no se toca nada.
-   - `S` → **respalda la base** en `data\backups` y aplica los tres pasos.
+   - `S` → **respalda la base** en `data\backups` y aplica todo. Al terminar te
+     muestra cómo quedó el inventario de duplicados.
 
-5. **Doble clic en `iniciar.bat`** y abre el sistema. En **Empleados** verás la
-   columna *Falta resp.* con quién tiene equipo sin carta firmada.
+4. **Doble clic en `iniciar.bat`** y abre el sistema.
+
+## Si además quieres cargar responsivas escaneadas
+
+Antes del paso 2, crea una carpeta llamada `lote` junto a `iniciar.bat` y copia
+dentro los PDF (`1780.pdf`, `1916.pdf`, `2107.pdf`, etc.). El proceso los detecta
+solo. **Si no existe esa carpeta, simplemente hace la limpieza y omite ese paso.**
 
 ## Si algo sale mal
 
 En `data\backups` queda una copia de la base con la fecha y hora, tomada justo
 antes de aplicar. Para volver atrás: cierra el sistema, entra a `data\backups`,
 copia el archivo `.db` más reciente a la carpeta `data` y renómbralo `app.db`.
+
+## Ver qué está repetido, sin cambiar nada
+
+```
+node scripts\revisar-duplicados.mjs
+```
+
+Lista equipo por equipo qué dato se repite y con cuáles. Solo lee.
+
+Ten en cuenta que hay dos clases de repetidos:
+
+| Campo repetido | ¿Se limpia solo? |
+|---|---|
+| Serie, IMEI, línea | **Sí**, con `poner-al-dia.bat` |
+| No. de activo, nombre de la computadora | **No**: son solo aviso, porque únicamente tú sabes cuál es el correcto. Se corrigen editando el equipo. |
 
 ## Correrlo por partes
 
@@ -93,5 +114,4 @@ node scripts\importar-responsivas.mjs --pdfs .\lote          (simulación)
 node scripts\importar-responsivas.mjs --pdfs .\lote --aplicar
 ```
 
-Sin `--aplicar` **nunca** escriben: siempre puedes correrlos para ver cómo está
-la situación. Y se pueden repetir las veces que haga falta sin duplicar nada.
+Sin `--aplicar` **nunca** escriben, y se pueden repetir sin duplicar nada.

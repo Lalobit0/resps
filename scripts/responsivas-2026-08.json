@@ -1,5 +1,5 @@
 {
-  "_nota": "Lote 2026-08: 33 PDF leidos. Los celulares se limitan al inventario vigente de telefonia (celulares-oficial.json); las responsivas de telefonos que ya no estan en ese inventario quedan descartadas.",
+  "_nota": "Lote 2026-08 (33 PDF). Los celulares se limitan al inventario vigente de telefonia: se conserva la responsiva de todo telefono que siga en ese inventario (cerrada si hoy lo trae otro empleado) y se descarta la de los equipos que ya no existen.",
   "responsivas": [
     {
       "archivo": "2186.pdf",
@@ -57,6 +57,62 @@
       },
       "firmado": true,
       "revisar": "Confirmado contra el inventario: 91W8QR3 es SP-PC-048 y 71W8QR3 es SP-PC-043, son equipos distintos."
+    },
+    {
+      "archivo": "39.pdf",
+      "pagina": 1,
+      "fecha": "2024-01-08",
+      "clase": "CELULAR",
+      "empleado": {
+        "numero": "39",
+        "nombre": "RAMOS IBARRA VICTORIA ILIANA",
+        "area": "OPERACIONES",
+        "supervisor": "JUAN CARLOS MARTINEZ"
+      },
+      "equipo": {
+        "tipo": "CELULAR",
+        "marca": "APPLE",
+        "modelo": "IPHONE 14 A2881",
+        "serie": "Q67NY0XHNY",
+        "detalles": {
+          "imei": "350542608913676",
+          "numero": "6644366703",
+          "plan": "PLUS EMPRESARIAL CONTROLADO 4 - 11GB",
+          "descripcion": "IPHONE 14 MIDNIGHT 128GB",
+          "condicion": "NUEVO",
+          "accesorios": "Cable de datos"
+        }
+      },
+      "firmado": true,
+      "revisar": "Historica: el equipo sigue en el inventario pero hoy es del empleado 2454. Se carga cerrada y no reasigna."
+    },
+    {
+      "archivo": "1.pdf",
+      "pagina": 1,
+      "fecha": "2024-01-15",
+      "clase": "CELULAR",
+      "empleado": {
+        "numero": "1",
+        "nombre": "VALDEZ RUIZ JUAN SEBASTIAN",
+        "area": "VENTAS",
+        "supervisor": "JUAN CARLOS MARTINEZ"
+      },
+      "equipo": {
+        "tipo": "CELULAR",
+        "marca": "APPLE",
+        "modelo": "IPHONE 14 A2881",
+        "serie": "YPQ2K70774",
+        "detalles": {
+          "imei": "350542609001182",
+          "numero": "6643769994",
+          "plan": "PLUS EMPRESARIAL CONTROLADO 4 - 11GB",
+          "descripcion": "IPHONE 14 MIDNIGHT 128GB",
+          "condicion": "NUEVO",
+          "accesorios": "Cable de datos"
+        }
+      },
+      "firmado": true,
+      "revisar": "Historica: el equipo sigue en el inventario pero hoy es del empleado 2448. Se carga cerrada y no reasigna."
     },
     {
       "archivo": "1447.pdf",
@@ -1023,16 +1079,6 @@
       "archivo": "1406.pdf",
       "pagina": 1,
       "motivo": "Celular fuera del inventario vigente de telefonia (IMEI 352295696494525, MOTOROLA XT2335 G53 5G, empleado 1406)."
-    },
-    {
-      "archivo": "39.pdf",
-      "pagina": 1,
-      "motivo": "El telefono (IMEI 350542608913676) sigue en el inventario pero hoy es del empleado 2454; esta responsiva es del 39 (entrega anterior)."
-    },
-    {
-      "archivo": "1.pdf",
-      "pagina": 1,
-      "motivo": "El telefono (IMEI 350542609001182) sigue en el inventario pero hoy es del empleado 2448; esta responsiva es del 1 (entrega anterior)."
     },
     {
       "archivo": "149.pdf",

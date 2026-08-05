@@ -51,8 +51,10 @@ for (const g of [...grupos.values()].sort((a, b) => b.ids.size - a.ids.size)) {
 
 console.log(`
 ----------------------------------------------------------------
-Los de serie e IMEI los resuelve  node scripts/depurar-inventario.mjs
+Lo mas facil: abre el sistema, entra a Inventario y pulsa el boton
+"Unir duplicados" del aviso amarillo. Hace justo esto y guarda un
+respaldo antes. Lo mismo hace  node scripts/depurar-inventario.mjs
 Los de no. de activo y nombre de computadora son informativos: se
-corrigen editando el equipo, porque solo tú sabes cuál es el bueno.
+corrigen editando el equipo, porque solo tu sabes cual es el bueno.
 ----------------------------------------------------------------`);
 db.close();

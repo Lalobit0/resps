@@ -10,8 +10,10 @@ echo ==========================================================
 echo   PONER AL DIA EL INVENTARIO
 echo ==========================================================
 echo.
-echo   1) Depurar: quita duplicados y da de baja los danados
-echo   2) Telefonia: deja el inventario con los celulares vigentes
+echo   1) Depurar: UNE los registros repetidos (el mas completo se queda
+echo      con la informacion y las responsivas) y da de baja los danados
+echo   2) Telefonia: deja solo los celulares del listado vigente y cierra
+echo      las responsivas que ya no corresponden a ese listado
 if "%HAYLOTE%"=="1" (
   echo   3) Responsivas: carga los PDF de la carpeta "lote"
 ) else (
@@ -100,6 +102,9 @@ echo ==========================================================
 echo.
 echo Abre el sistema con  iniciar.bat  . En Empleados veras la columna
 echo "Sin resp." con quien tiene equipo sin carta firmada.
+echo.
+echo Si mas adelante vuelve a salir el aviso amarillo de datos repetidos,
+echo no necesitas esta ventana: en Inventario pulsa "Unir duplicados".
 echo.
 pause
 exit /b 0

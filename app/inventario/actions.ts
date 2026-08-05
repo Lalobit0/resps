@@ -1,10 +1,13 @@
 "use server";
 
+import fs from "fs";
+import path from "path";
 import { revalidatePath } from "next/cache";
-import { db } from "../../lib/db";
+import { db, BACKUP_DIR } from "../../lib/db";
 import { CAMPOS_DETALLE, TIPO_DEFAULTS, TIPOS_EQUIPO, type TipoEquipo } from "../../lib/constants";
 import { importarDeExcel, type Mapeo } from "../../lib/importar";
 import { CAMPOS_BLOQUEANTES, conflictosContra, detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
+import { fusionarInventario } from "../../lib/fusionar.mjs";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -400,5 +403,56 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo leer el archivo. Asegúrate de que sea un Excel (.xlsx) válido." };
+  }
+}
+
+/**
+ * Une los registros duplicados del inventario en uno solo.
+ *
+ * Descargar la actualización no limpia lo que ya estaba capturado: esto es lo
+ * que sí lo limpia. Antes de tocar nada se guarda un respaldo en data/backups,
+ * así que siempre se puede volver atrás desde la pantalla de Respaldos.
+ */
+export async function unirDuplicados(): Promise<ResultadoAccion> {
+  try {
+    const antes = Object.keys(
+      detectarDuplicados(db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[])
+    ).length;
+    if (antes === 0) return { ok: true, mensaje: "No hay datos repetidos en el inventario." };
+
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    const nombre = `app-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.db`;
+    await db.backup(path.join(BACKUP_DIR, nombre));
+
+    const res = fusionarInventario(db);
+
+    const quedan = Object.keys(
+      detectarDuplicados(db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[])
+    ).length;
+
+    revalidar();
+    revalidatePath("/empleados");
+
+    if (res.equipos === 0 && quedan > 0) {
+      return {
+        ok: true,
+        mensaje:
+          `No se unió ningún registro: los ${quedan} equipos señalados no son copias del mismo aparato ` +
+          `(comparten un dato pero tienen IMEI distintos). Corrige el dato repetido a mano desde “Editar”.`,
+      };
+    }
+
+    const detalle = quedan > 0 ? ` Quedan ${quedan} por revisar a mano.` : " El inventario quedó sin datos repetidos.";
+    return {
+      ok: true,
+      mensaje:
+        `Se unieron ${res.equipos} registro(s) repetido(s) con el equipo que ya existía` +
+        ` (de ${antes} señalados).${detalle} Respaldo: ${nombre}`,
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudieron unir los duplicados. La base quedó igual que antes." };
   }
 }

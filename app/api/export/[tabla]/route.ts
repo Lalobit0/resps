@@ -14,6 +14,7 @@ function like(v: string) {
 function reporteEmpleados(sp: URLSearchParams): Reporte {
   const q = (sp.get("q") || "").trim();
   const depto = sp.get("depto") || "";
+  const clase = sp.get("clase") || "";
   const estado = sp.get("estado") || "";
   const cond: string[] = [];
   const val: (string | number)[] = [];
@@ -23,11 +24,15 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
     cond.push("e.departamento = ?");
     val.push(depto);
   }
+  if (clase) {
+    cond.push("COALESCE(e.clase,'') = ?");
+    val.push(clase);
+  }
   if (q) {
     cond.push(
-      "(e.nombre LIKE ? OR e.numero_empleado LIKE ? OR e.puesto LIKE ? OR e.departamento LIKE ? OR COALESCE(e.area,'') LIKE ? OR COALESCE(e.supervisor,'') LIKE ?)"
+      "(e.nombre LIKE ? OR e.numero_empleado LIKE ? OR e.puesto LIKE ? OR e.departamento LIKE ? OR COALESCE(e.area,'') LIKE ? OR COALESCE(e.supervisor,'') LIKE ? OR COALESCE(e.clase,'') LIKE ?)"
     );
-    for (let i = 0; i < 6; i++) val.push(like(q));
+    for (let i = 0; i < 7; i++) val.push(like(q));
   }
   const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
   const rows = db
@@ -39,16 +44,16 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
     .all(...val) as Record<string, unknown>[];
   return {
     titulo: "Empleados",
-    columnas: ["No.", "Nombre", "Puesto", "Departamento", "Área", "Jefe directo", "Clase", "Alta", "Correo", "Teléfono", "Eq.", "Estado"],
-    pesos: [5, 16, 12, 11, 9, 12, 8, 7, 14, 8, 3, 6],
+    columnas: ["No.", "Nombre", "Clase", "Puesto", "Departamento", "Área", "Jefe directo", "Alta", "Correo", "Teléfono", "Eq.", "Estado"],
+    pesos: [5, 16, 8, 12, 11, 9, 12, 7, 14, 8, 3, 6],
     filas: rows.map((e) => [
       e.numero_empleado as string,
       e.nombre as string,
+      (e.clase as string) ?? "",
       e.puesto as string,
       e.departamento as string,
       (e.area as string) ?? "",
       (e.supervisor as string) ?? "",
-      (e.clase as string) ?? "",
       fechaCorta(e.fecha_alta as string | null),
       (e.correo as string) ?? "",
       (e.telefono as string) ?? "",

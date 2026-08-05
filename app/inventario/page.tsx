@@ -1,11 +1,12 @@
 import { db } from "../../lib/db";
-import type { EquipoConAsignado } from "../../lib/types";
+import type { Empleado, EquipoConAsignado } from "../../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constants";
 import { detectarDuplicados, CAMPOS_BLOQUEANTES, type EquipoRevisable } from "../../lib/duplicados";
-import { idsSinResponsiva } from "../../lib/pendientes";
+import { idsSinResponsiva, equiposPorLigar } from "../../lib/pendientes";
 import InventarioClient, { type ResponsivaDeEquipo } from "../../components/InventarioClient";
 import AvisoDuplicados from "../../components/AvisoDuplicados";
 import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
+import AvisoPorLigar from "../../components/AvisoPorLigar";
 import { revisarCelulares } from "../../lib/celulares";
 import ExportarBotones from "../../components/ExportarBotones";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
@@ -75,6 +76,9 @@ export default async function PaginaInventario({
 
   const total = (db.prepare("SELECT COUNT(*) AS c FROM equipos").get() as { c: number }).c;
 
+  // Para poder elegir a quién se le entrega el equipo desde el formulario.
+  const empleados = db.prepare("SELECT * FROM empleados WHERE activo = 1 ORDER BY nombre ASC").all() as Empleado[];
+
   // Los duplicados se buscan contra TODO el inventario, no solo contra lo filtrado.
   const duplicados = detectarDuplicados(
     db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[]
@@ -94,6 +98,12 @@ export default async function PaginaInventario({
 
   // Teléfonos del listado de telefonía que no están dados de alta.
   const revisionCel = revisarCelulares();
+
+  // Equipos con responsiva firmada a los que les falta el empleado en el inventario.
+  const porLigar = equiposPorLigar();
+  const porLigarPorEquipo: Record<number, { empleado_numero: string; empleado_nombre: string; folio: string }> = {};
+  for (const p of porLigar)
+    porLigarPorEquipo[p.equipo_id] = { empleado_numero: p.empleado_numero, empleado_nombre: p.empleado_nombre, folio: p.folio };
 
   // Equipos entregados que todavía no tienen su carta responsiva firmada.
   const sinResponsiva = idsSinResponsiva();
@@ -140,6 +150,8 @@ export default async function PaginaInventario({
         </div>
       ) : null}
 
+      <AvisoPorLigar pendientes={porLigar} />
+
       <AvisoDuplicados total={totalDuplicados} desglose={desglose} soloDup={soloDup} />
 
       <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
@@ -183,6 +195,8 @@ export default async function PaginaInventario({
         sinResponsiva={[...sinResponsiva]}
         responsivas={responsivas}
         editarId={editarId}
+        empleados={empleados}
+        porLigar={porLigarPorEquipo}
       />
     </>
   );

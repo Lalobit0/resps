@@ -16,6 +16,8 @@ export interface Empleado {
 
 export interface EmpleadoConEquipos extends Empleado {
   equipos_asignados: number;
+  /** Equipos de cómputo asignados: se revisa aparte porque es el dato que más se consulta. */
+  computo?: number;
   /** Equipos entregados a este empleado que no tienen carta responsiva vigente. */
   sin_responsiva?: number;
 }

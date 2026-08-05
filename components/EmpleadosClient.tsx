@@ -45,6 +45,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
   const [busqueda, setBusqueda] = useState("");
   const [filtroDepto, setFiltroDepto] = useState("");
   const [filtroClase, setFiltroClase] = useState("");
+  const [filtroComputo, setFiltroComputo] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
@@ -69,6 +70,8 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       if (filtroEstado === "inactivos" && e.activo) return false;
       if (filtroDepto && e.departamento !== filtroDepto) return false;
       if (filtroClase && (e.clase ?? "") !== filtroClase) return false;
+      if (filtroComputo === "con" && (e.computo ?? 0) === 0) return false;
+      if (filtroComputo === "sin" && (e.computo ?? 0) > 0) return false;
       if (
         q &&
         ![e.nombre, e.numero_empleado, e.puesto, e.departamento, e.area ?? "", e.supervisor ?? "", e.clase ?? ""]
@@ -79,7 +82,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         return false;
       return true;
     });
-  }, [empleados, busqueda, filtroDepto, filtroClase, filtroEstado]);
+  }, [empleados, busqueda, filtroDepto, filtroClase, filtroComputo, filtroEstado]);
 
   const set = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
@@ -164,6 +167,11 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
             </option>
           ))}
         </select>
+        <select className={`${inputCls} max-w-[210px]`} value={filtroComputo} onChange={(e) => setFiltroComputo(e.target.value)}>
+          <option value="">Con y sin cómputo</option>
+          <option value="con">Con equipo de cómputo</option>
+          <option value="sin">Sin equipo de cómputo</option>
+        </select>
         <select className={`${inputCls} max-w-[150px]`} value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value)}>
           <option value="">Todos</option>
           <option value="activos">Activos</option>
@@ -189,7 +197,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <p className="text-xs text-soft">
           {filtrados.length} de {empleados.length} empleados · haz clic en un nombre para ver su histórico.
         </p>
-        <ExportarBotones tabla="empleados" params={{ q: busqueda, depto: filtroDepto, clase: filtroClase, estado: filtroEstado }} />
+        <ExportarBotones tabla="empleados" params={{ q: busqueda, depto: filtroDepto, clase: filtroClase, computo: filtroComputo, estado: filtroEstado }} />
       </div>
 
       {form ? (
@@ -257,15 +265,16 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
           <table className="w-full table-fixed border-collapse">
             <colgroup>
               <col className="w-[5%]" />
-              <col className="w-[17%]" />
+              <col className="w-[16%]" />
+              <col className="w-[10%]" />
               <col className="w-[11%]" />
               <col className="w-[12%]" />
-              <col className="w-[13%]" />
-              <col className="w-[11%]" />
+              <col className="w-[10%]" />
+              <col className="w-[9%]" />
               <col className="w-[4%]" />
               <col className="w-[6%]" />
-              <col className="w-[7%]" />
-              <col className="w-[14%]" />
+              <col className="w-[5%]" />
+              <col className="w-[12%]" />
             </colgroup>
             <thead className="border-b border-line bg-paper/70">
               <tr>
@@ -275,6 +284,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                 <th className={thc}>Puesto</th>
                 <th className={thc}>Depto / Área</th>
                 <th className={thc}>Jefe directo</th>
+                <th className={`${thc} text-center`} title="Equipo de cómputo asignado">Cómputo</th>
                 <th className={`${thc} text-center`}>Eq.</th>
                 <th className={`${thc} text-center`} title="Equipos entregados sin carta responsiva">Sin resp.</th>
                 <th className={thc}>Estado</th>
@@ -302,6 +312,20 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                   </td>
                   <td className={`${celda} truncate text-xs text-soft`} title={e.supervisor ?? ""}>
                     {e.supervisor ?? "—"}
+                  </td>
+                  <td className={`${celda} text-center`}>
+                    {(e.computo ?? 0) > 0 ? (
+                      <Link href={`/empleados/${e.id}`} title="Tiene equipo de cómputo asignado">
+                        <Badge tono="verde">💻 {e.computo}</Badge>
+                      </Link>
+                    ) : (
+                      <span
+                        className="inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                        title="No tiene equipo de cómputo asignado"
+                      >
+                        Sin PC
+                      </span>
+                    )}
                   </td>
                   <td className={`${celda} text-center`}>
                     {e.equipos_asignados > 0 ? (

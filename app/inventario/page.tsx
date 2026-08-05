@@ -45,11 +45,19 @@ export default async function PaginaInventario({
     valores.push(tipo);
   }
   if (q) {
+    // También se busca por IMEI y número de línea: son los datos con los que
+    // normalmente se identifica un teléfono.
     condiciones.push(
-      "(e.codigo LIKE ? OR e.marca LIKE ? OR e.modelo LIKE ? OR e.numero_serie LIKE ? OR em.nombre LIKE ? OR em.numero_empleado LIKE ?)"
+      `(e.codigo LIKE ? OR e.marca LIKE ? OR e.modelo LIKE ? OR e.numero_serie LIKE ?
+        OR em.nombre LIKE ? OR em.numero_empleado LIKE ?
+        OR COALESCE(json_extract(e.detalles,'$.imei'),'') LIKE ?
+        OR COALESCE(json_extract(e.detalles,'$.imei2'),'') LIKE ?
+        OR REPLACE(COALESCE(json_extract(e.detalles,'$.numero'),''),' ','') LIKE ?
+        OR COALESCE(e.specs,'') LIKE ?)`
     );
     const like = `%${q}%`;
-    valores.push(like, like, like, like, like, like);
+    const likeNum = `%${q.replace(/\s/g, "")}%`;
+    valores.push(like, like, like, like, like, like, like, like, likeNum, like);
   }
   const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
 
@@ -135,7 +143,7 @@ export default async function PaginaInventario({
       <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
         {soloDup ? <input type="hidden" name="dup" value="1" /> : null}
         {soloSinResp ? <input type="hidden" name="sinresp" value="1" /> : null}
-        <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, asignado…" className={`${inputCls} max-w-xs`} />
+        <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, IMEI, línea, asignado…" className={`${inputCls} max-w-xs`} />
         <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[190px]`}>
           <option value="">Todos los tipos</option>
           {TIPOS_EQUIPO.map((t) => (

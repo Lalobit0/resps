@@ -18,7 +18,15 @@ export default function PlantillasClient({
   config,
 }: {
   plantillas: Plantilla[];
-  config: { empresa: string; ciudad: string; entrega_default: string; direccion: string };
+  config: {
+    empresa: string;
+    ciudad: string;
+    entrega_default: string;
+    direccion: string;
+    firma_empleado: string;
+    firma_sistemas: string;
+    firma_rh: string;
+  };
 }) {
   const [conf, setConf] = useState(config);
   const [textos, setTextos] = useState<Record<string, string>>(
@@ -95,6 +103,39 @@ export default function PlantillasClient({
               value={conf.direccion}
               onChange={(e) => setConf((c) => ({ ...c, direccion: e.target.value }))}
             />
+          </div>
+        </div>
+
+        <div className="mt-5 border-t border-line pt-4">
+          <h3 className="mb-1 text-sm font-bold text-ink">Textos bajo las líneas de firma</h3>
+          <p className="mb-3 text-xs text-soft">
+            Es lo que aparece impreso debajo de cada línea de firma en el PDF de la carta.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <Label>Firma del empleado</Label>
+              <input
+                className={inputCls}
+                value={conf.firma_empleado}
+                onChange={(e) => setConf((c) => ({ ...c, firma_empleado: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Firma de sistemas</Label>
+              <input
+                className={inputCls}
+                value={conf.firma_sistemas}
+                onChange={(e) => setConf((c) => ({ ...c, firma_sistemas: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>Firma de RH (vales)</Label>
+              <input
+                className={inputCls}
+                value={conf.firma_rh}
+                onChange={(e) => setConf((c) => ({ ...c, firma_rh: e.target.value }))}
+              />
+            </div>
           </div>
         </div>
         <button

@@ -247,3 +247,9 @@ export const CARTAS: Record<ClaseCarta, ConfigCarta> = {
     esVale: true,
   },
 };
+
+// Textos bajo las líneas de firma de las cartas. Se pueden cambiar desde
+// "Plantillas y datos"; estos son los valores por defecto.
+export const ETIQ_EMPLEADO = "Nombre, Firma y No. de empleado quien recibe";
+export const ETIQ_SISTEMAS = "Nombre y firma del Jefe de sistemas";
+export const ETIQ_RH = "RECURSOS HUMANOS";

@@ -5,7 +5,7 @@ import { db, getConfig } from "../../lib/db";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
-import { CARTAS, type ClaseCarta } from "../../lib/constants";
+import { CARTAS, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, type ClaseCarta } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import type { Empleado, Equipo, ResultadoAccion } from "../../lib/types";
 
@@ -27,6 +27,9 @@ export async function guardarConfig(datos: {
   ciudad: string;
   entrega_default: string;
   direccion: string;
+  firma_empleado: string;
+  firma_sistemas: string;
+  firma_rh: string;
 }): Promise<ResultadoAccion> {
   try {
     const upsert = db.prepare(
@@ -36,7 +39,12 @@ export async function guardarConfig(datos: {
     upsert.run("ciudad", datos.ciudad.trim() || "Tijuana, Baja California");
     upsert.run("entrega_default", datos.entrega_default.trim() || "Departamento de TI");
     upsert.run("direccion", datos.direccion.trim());
+    // Textos bajo las líneas de firma de las cartas.
+    upsert.run("firma_empleado", datos.firma_empleado.trim() || ETIQ_EMPLEADO);
+    upsert.run("firma_sistemas", datos.firma_sistemas.trim() || ETIQ_SISTEMAS);
+    upsert.run("firma_rh", datos.firma_rh.trim() || ETIQ_RH);
     revalidatePath("/plantillas");
+    revalidatePath("/responsivas");
     revalidatePath("/responsivas/nueva");
     return { ok: true };
   } catch (e) {
@@ -158,7 +166,7 @@ export async function previsualizarPlantilla(clave: string, contenido: string): 
         filasUsuario: cfg.esVale ? [] : filasUsuario(EMP_DEMO),
         filasEquipo: equipoDemoUso ? filasEquipo(claseCarta, equipoDemoUso) : [],
         etiquetaIzq: cfg.esVale ? "EMPLEADO — Firma de conformidad" : "Nombre, Firma y No. de empleado quien recibe",
-        etiquetaDer: cfg.esVale ? "RECURSOS HUMANOS" : "Nombre y firma del Coordinador de sistemas",
+        etiquetaDer: cfg.esVale ? getConfig("firma_rh", ETIQ_RH) : getConfig("firma_sistemas", ETIQ_SISTEMAS),
         sustituye: !cfg.esVale && claseCarta !== "WIFI",
       };
     } else {
@@ -173,7 +181,7 @@ export async function previsualizarPlantilla(clave: string, contenido: string): 
           { etiqueta: "Condición al devolver", valor: "Buen estado" },
         ],
         etiquetaIzq: "Nombre, Firma y No. de empleado que entrega",
-        etiquetaDer: "Nombre y firma del Coordinador de sistemas",
+        etiquetaDer: getConfig("firma_sistemas", ETIQ_SISTEMAS),
         sustituye: false,
       };
     }

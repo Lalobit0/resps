@@ -242,6 +242,9 @@ function seed(db: Database.Database) {
     "direccion",
     "Av. Palmera 12341 Parque Industrial El Florido, Sección La Encantada, Tijuana B.C. México, CP 22225   Tel: (664) 622 8862"
   );
+  insConf.run("firma_empleado", "Nombre, Firma y No. de empleado quien recibe");
+  insConf.run("firma_sistemas", "Nombre y firma del Jefe de sistemas");
+  insConf.run("firma_rh", "RECURSOS HUMANOS");
 }
 
 // Si hay un respaldo marcado para restaurar (app.db.restore), se intercambia

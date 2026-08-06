@@ -7,7 +7,7 @@ import { db, getConfig, STORAGE_DIR, STORAGE_ELIMINADAS } from "../../lib/db";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
-import { CAMPOS_DETALLE, CARTAS, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
+import { CAMPOS_DETALLE, CARTAS, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
 
@@ -50,8 +50,6 @@ function guardarPdf(folio: string, bytes: Uint8Array): string {
   return relativa;
 }
 
-const ETIQ_EMPLEADO = "Nombre, Firma y No. de empleado quien recibe";
-const ETIQ_COORDINADOR = "Nombre y firma del Coordinador de sistemas";
 
 /** Datos de quien firma por la empresa; sin nombre se asume el titular. */
 export type Firmante = { nombre?: string | null; puesto?: string | null; ausencia?: boolean };
@@ -62,15 +60,14 @@ export type Firmante = { nombre?: string | null; puesto?: string | null; ausenci
  */
 function etiquetaAutoridad(clase: ClaseCarta, firmante: Firmante | null): string {
   const esVale = !!CARTAS[clase].esVale;
-  const base = esVale ? "RECURSOS HUMANOS" : ETIQ_COORDINADOR;
+  const base = esVale ? getConfig("firma_rh", ETIQ_RH) : getConfig("firma_sistemas", ETIQ_SISTEMAS);
   const nombre = firmante?.nombre?.trim();
   if (!nombre) return base;
 
   if (firmante?.ausencia) {
     // Aquí el puesto sí aporta: identifica a quien firma en lugar del titular.
     const quien = firmante?.puesto?.trim() ? `${nombre} - ${firmante.puesto.trim()}` : nombre;
-    const titular = esVale ? "del encargado de Recursos Humanos" : "del Coordinador de sistemas";
-    return `Por ausencia ${titular}: ${quien}`;
+    return `${base} — Por ausencia firma: ${quien}`;
   }
   // El titular ya lleva su cargo en la etiqueta base: basta el nombre.
   return `${base}: ${nombre}`;
@@ -123,7 +120,7 @@ async function bytesAsignacion(datos: {
     cuerpo,
     firma: datos.firmaEmpleado,
     firmaDer: datos.firmaAutoridad,
-    etiquetaIzq: config.esVale ? "EMPLEADO — Firma de conformidad" : ETIQ_EMPLEADO,
+    etiquetaIzq: config.esVale ? "EMPLEADO — Firma de conformidad" : getConfig("firma_empleado", ETIQ_EMPLEADO),
     etiquetaDer: etiquetaAutoridad(datos.clase, datos.firmante),
     sustituye: !config.esVale && datos.clase !== "WIFI",
   });
@@ -420,7 +417,7 @@ export async function registrarDevolucion(datos: {
         cuerpo,
         firma: datos.firma,
         etiquetaIzq: "Nombre, Firma y No. de empleado que entrega",
-        etiquetaDer: ETIQ_COORDINADOR,
+        etiquetaDer: getConfig("firma_sistemas", ETIQ_SISTEMAS),
         sustituye: false,
       });
 

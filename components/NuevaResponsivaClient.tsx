@@ -25,6 +25,8 @@ import SelectConOtro from "./SelectConOtro";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
 
 type NuevoEquipoForm = {
+  /** Con id se está corrigiendo un equipo del inventario; sin id es un alta. */
+  id?: number;
   tipo: TipoEquipo;
   codigo: string;
   marca: string;
@@ -111,6 +113,29 @@ export default function NuevaResponsivaClient({
     setError("");
   };
 
+  /** Abre el mismo formulario con los datos del equipo, para corregirlo antes de entregarlo. */
+  const editarEquipo = (e: Equipo) => {
+    let detalles: Record<string, string> = {};
+    try {
+      detalles = e.detalles ? (JSON.parse(e.detalles) as Record<string, string>) : {};
+    } catch {
+      detalles = {};
+    }
+    setErrorEquipo("");
+    setFormEquipo({
+      id: e.id,
+      tipo: ((TIPOS_EQUIPO as readonly string[]).includes(e.tipo) ? e.tipo : "OTRO") as TipoEquipo,
+      codigo: e.codigo,
+      marca: e.marca,
+      modelo: e.modelo,
+      numero_serie: e.numero_serie ?? "",
+      fecha_compra: e.fecha_compra ?? "",
+      costo: e.costo !== null ? String(e.costo) : "",
+      notas: e.notas ?? "",
+      detalles,
+    });
+  };
+
   const abrirNuevoEquipo = () => {
     setFormEquipo({
       tipo: tipoFiltro !== "TODOS" ? tipoFiltro : config.tiposEquipo[0] ?? "COMPUTO",
@@ -146,6 +171,7 @@ export default function NuevaResponsivaClient({
     setErrorEquipo("");
     iniciarEquipo(async () => {
       const res = await guardarEquipo({
+        id: formEquipo.id,
         tipo: formEquipo.tipo,
         codigo: formEquipo.codigo,
         marca: formEquipo.marca,
@@ -293,31 +319,41 @@ export default function NuevaResponsivaClient({
             ) : (
               <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
                 {equiposFiltrados.map((e) => (
-                  <label
+                  <div
                     key={e.id}
-                    className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm transition-colors ${
+                    className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
                       equipoId === e.id ? "border-kraft bg-orange-50/60" : "border-line bg-white hover:bg-paper/60"
                     }`}
                   >
-                    <input
-                      type="radio"
-                      name="equipo"
-                      className="mt-0.5 accent-kraft"
-                      checked={equipoId === e.id}
-                      onChange={() => elegirEquipo(e)}
-                    />
-                    <span>
-                      <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
-                      <span className="font-medium">
-                        {e.marca} {e.modelo}
+                    <label className="flex flex-1 cursor-pointer items-start gap-3">
+                      <input
+                        type="radio"
+                        name="equipo"
+                        className="mt-0.5 accent-kraft"
+                        checked={equipoId === e.id}
+                        onChange={() => elegirEquipo(e)}
+                      />
+                      <span>
+                        <span className="mono text-xs font-semibold text-kraft-dark">{e.codigo}</span>{" "}
+                        <span className="font-medium">
+                          {e.marca} {e.modelo}
+                        </span>
+                        <span className="block text-xs text-soft">
+                          {ETIQUETA_TIPO[e.tipo] ?? e.tipo}
+                          {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
+                          {e.specs ? ` · ${e.specs}` : ""}
+                        </span>
                       </span>
-                      <span className="block text-xs text-soft">
-                        {ETIQUETA_TIPO[e.tipo] ?? e.tipo}
-                        {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
-                        {e.specs ? ` · ${e.specs}` : ""}
-                      </span>
-                    </span>
-                  </label>
+                    </label>
+                    <button
+                      type="button"
+                      title="Corregir los datos de este equipo antes de entregarlo"
+                      onClick={() => editarEquipo(e)}
+                      className="shrink-0 rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper"
+                    >
+                      Editar
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -427,7 +463,15 @@ export default function NuevaResponsivaClient({
       {formEquipo ? (
         <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
           <Card className="my-6 w-full max-w-2xl">
-            <h2 className="mb-4 text-base font-bold text-ink">Registrar equipo nuevo</h2>
+            <h2 className="mb-4 text-base font-bold text-ink">
+              {formEquipo.id ? `Corregir ${formEquipo.codigo}` : "Registrar equipo nuevo"}
+            </h2>
+            {formEquipo.id ? (
+              <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                Estás corrigiendo un equipo que ya está en el inventario. Al guardar se actualizan sus datos y queda
+                elegido para esta responsiva.
+              </div>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label>Tipo de equipo *</Label>
@@ -500,7 +544,7 @@ export default function NuevaResponsivaClient({
 
             <div className="mt-4 flex gap-2">
               <button className={btnPrimary} onClick={guardarNuevoEquipo} disabled={guardandoEquipo}>
-                {guardandoEquipo ? "Guardando…" : "Guardar y seleccionar"}
+                {guardandoEquipo ? "Guardando…" : formEquipo.id ? "Guardar cambios y seleccionar" : "Guardar y seleccionar"}
               </button>
               <button className={btnGhost} onClick={() => setFormEquipo(null)} disabled={guardandoEquipo}>
                 Cancelar

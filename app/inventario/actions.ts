@@ -831,3 +831,338 @@ export async function importarEscaneoComputo(
     return { ok: false, error: "No se pudo leer el archivo del escaneo. Acepta CSV, TSV, JSON o Excel." };
   }
 }
+
+// ---------- Fusión a mano de dos registros del mismo aparato ----------
+
+/**
+ * El escaneo de PCs a veces da de alta un segundo registro del mismo equipo
+ * (la serie venía mal capturada, por ejemplo "83889LM3" contra "8389LM3"), así
+ * que la unión automática no los toca: queda el viejo con la responsiva y el
+ * nuevo con los datos buenos. Aquí se juntan a mano, eligiendo qué se conserva
+ * de cada uno, y las responsivas y el historial pasan al que se queda.
+ */
+
+export type CampoFusion = {
+  clave: string;
+  etiqueta: string;
+  /** "detalle" = vive dentro del JSON de detalles. */
+  donde: "equipo" | "detalle";
+  a: string;
+  b: string;
+};
+
+export type EquipoFusionable = {
+  id: number;
+  codigo: string;
+  tipo: string;
+  marca: string;
+  modelo: string;
+  numero_serie: string | null;
+  estado: string;
+  asignado_a: number | null;
+  asignado_nombre: string | null;
+  created_at: string;
+  responsivas: string[];
+  mantenimientos: number;
+  /** Cuántos datos trae llenos: ayuda a ver cuál está más completo. */
+  llenos: number;
+  motivo: string;
+};
+
+const ETIQUETAS_EQUIPO: { clave: keyof Equipo; etiqueta: string }[] = [
+  { clave: "codigo", etiqueta: "Código" },
+  { clave: "tipo", etiqueta: "Tipo" },
+  { clave: "categoria", etiqueta: "Categoría" },
+  { clave: "marca", etiqueta: "Marca" },
+  { clave: "modelo", etiqueta: "Modelo" },
+  { clave: "numero_serie", etiqueta: "Número de serie" },
+  { clave: "specs", etiqueta: "Características" },
+  { clave: "fecha_compra", etiqueta: "Fecha de compra" },
+  { clave: "costo", etiqueta: "Costo" },
+  { clave: "estado", etiqueta: "Estado" },
+  { clave: "notas", etiqueta: "Notas" },
+];
+
+function detallesDe(e: Equipo): Record<string, string> {
+  try {
+    const d = e.detalles ? JSON.parse(e.detalles) : {};
+    return d && typeof d === "object" ? (d as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Cuántos campos trae con algo escrito. */
+function datosLlenos(e: Equipo): number {
+  const propios = ETIQUETAS_EQUIPO.filter((c) => String(e[c.clave] ?? "").trim()).length;
+  return propios + Object.values(detallesDe(e)).filter((v) => String(v ?? "").trim()).length;
+}
+
+const soloAlfaNum = (v: string) => (v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/** Dos series se parecen si una contiene a la otra o difieren en un carácter. */
+function seriesParecidas(a: string, b: string): boolean {
+  const x = soloAlfaNum(a);
+  const y = soloAlfaNum(b);
+  if (!x || !y || x === y) return x === y && !!x;
+  if (x.length >= 5 && y.length >= 5 && (x.includes(y) || y.includes(x))) return true;
+  if (Math.abs(x.length - y.length) > 1) return false;
+  // Una sola edición de diferencia (un dígito de más, de menos o cambiado).
+  const [corta, larga] = x.length <= y.length ? [x, y] : [y, x];
+  let i = 0;
+  let j = 0;
+  let fallos = 0;
+  while (i < corta.length && j < larga.length) {
+    if (corta[i] === larga[j]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+    fallos += 1;
+    if (fallos > 1) return false;
+    if (corta.length === larga.length) i += 1;
+    j += 1;
+  }
+  return fallos + (larga.length - j) + (corta.length - i) <= 1;
+}
+
+/**
+ * Otros registros del inventario que podrían ser el mismo aparato. No decide
+ * nada: son sugerencias para que la persona compare y elija.
+ */
+export async function candidatosFusion(
+  equipoId: number
+): Promise<ResultadoAccion & { base?: EquipoFusionable; candidatos?: EquipoFusionable[] }> {
+  try {
+    const base = db.prepare("SELECT * FROM equipos WHERE id = ?").get(equipoId) as Equipo | undefined;
+    if (!base) return { ok: false, error: "El equipo ya no existe." };
+
+    const otros = db.prepare("SELECT * FROM equipos WHERE id != ?").all(equipoId) as Equipo[];
+    const detBase = detallesDe(base);
+
+    const conMotivo: { equipo: Equipo; motivo: string; peso: number }[] = [];
+    for (const o of otros) {
+      const det = detallesDe(o);
+      const motivos: string[] = [];
+      let peso = 0;
+
+      if (base.numero_serie && o.numero_serie && seriesParecidas(base.numero_serie, o.numero_serie)) {
+        const iguales = soloAlfaNum(base.numero_serie) === soloAlfaNum(o.numero_serie);
+        motivos.push(iguales ? "misma serie" : "serie casi igual");
+        peso += iguales ? 100 : 60;
+      }
+      for (const clave of ["imei", "numero", "activo", "nombre_computadora"]) {
+        const x = String(detBase[clave] ?? "").trim();
+        const y = String(det[clave] ?? "").trim();
+        if (x && y && soloAlfaNum(x) === soloAlfaNum(y)) {
+          motivos.push(`mismo ${clave.replace(/_/g, " ")}`);
+          peso += 50;
+        }
+      }
+      if (base.asignado_a && o.asignado_a === base.asignado_a) {
+        motivos.push("mismo empleado");
+        peso += 20;
+      }
+      if (soloAlfaNum(base.modelo) && soloAlfaNum(base.modelo) === soloAlfaNum(o.modelo)) {
+        motivos.push("mismo modelo");
+        peso += 10;
+      }
+
+      if (motivos.length && peso >= 20) conMotivo.push({ equipo: o, motivo: motivos.join(" · "), peso });
+    }
+
+    conMotivo.sort((x, y) => y.peso - x.peso || x.equipo.codigo.localeCompare(y.equipo.codigo));
+
+    const aFusionable = (e: Equipo, motivo: string): EquipoFusionable => {
+      const emp = e.asignado_a
+        ? (db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(e.asignado_a) as
+            | { numero_empleado: string; nombre: string }
+            | undefined)
+        : undefined;
+      return {
+        id: e.id,
+        codigo: e.codigo,
+        tipo: e.tipo,
+        marca: e.marca,
+        modelo: e.modelo,
+        numero_serie: e.numero_serie,
+        estado: e.estado,
+        asignado_a: e.asignado_a,
+        asignado_nombre: emp ? `${emp.numero_empleado} ${emp.nombre}` : null,
+        created_at: e.created_at,
+        responsivas: (
+          db
+            .prepare(
+              `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+               WHERE ri.equipo_id = ? AND r.estado != 'ELIMINADA' ORDER BY r.id DESC`
+            )
+            .all(e.id) as { folio: string }[]
+        ).map((r) => r.folio),
+        mantenimientos: (db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id = ?").get(e.id) as { c: number }).c,
+        llenos: datosLlenos(e),
+        motivo,
+      };
+    };
+
+    return {
+      ok: true,
+      base: aFusionable(base, "este equipo"),
+      candidatos: conMotivo.slice(0, 12).map((c) => aFusionable(c.equipo, c.motivo)),
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudieron buscar equipos parecidos." };
+  }
+}
+
+/** Los campos de los dos equipos, para compararlos uno junto al otro. */
+export async function camposFusion(
+  idA: number,
+  idB: number
+): Promise<ResultadoAccion & { campos?: CampoFusion[] }> {
+  try {
+    const a = db.prepare("SELECT * FROM equipos WHERE id = ?").get(idA) as Equipo | undefined;
+    const b = db.prepare("SELECT * FROM equipos WHERE id = ?").get(idB) as Equipo | undefined;
+    if (!a || !b) return { ok: false, error: "Alguno de los dos equipos ya no existe." };
+
+    const campos: CampoFusion[] = ETIQUETAS_EQUIPO.map((c) => ({
+      clave: String(c.clave),
+      etiqueta: c.etiqueta,
+      donde: "equipo" as const,
+      a: a[c.clave] == null ? "" : String(a[c.clave]),
+      b: b[c.clave] == null ? "" : String(b[c.clave]),
+    }));
+
+    // Los detalles del tipo de los dos (por si uno quedó con el tipo cambiado).
+    const detA = detallesDe(a);
+    const detB = detallesDe(b);
+    const vistos = new Set<string>();
+    for (const tipo of [a.tipo, b.tipo] as TipoEquipo[]) {
+      for (const c of CAMPOS_DETALLE[tipo] ?? []) {
+        if (vistos.has(c.clave)) continue;
+        vistos.add(c.clave);
+        campos.push({
+          clave: c.clave,
+          etiqueta: c.etiqueta,
+          donde: "detalle",
+          a: String(detA[c.clave] ?? ""),
+          b: String(detB[c.clave] ?? ""),
+        });
+      }
+    }
+    // Cualquier dato suelto que no esté en la lista del tipo, para no perderlo.
+    for (const clave of [...Object.keys(detA), ...Object.keys(detB)]) {
+      if (vistos.has(clave)) continue;
+      vistos.add(clave);
+      campos.push({
+        clave,
+        etiqueta: clave.replace(/_/g, " "),
+        donde: "detalle",
+        a: String(detA[clave] ?? ""),
+        b: String(detB[clave] ?? ""),
+      });
+    }
+
+    return { ok: true, campos };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudieron leer los datos de los equipos." };
+  }
+}
+
+/**
+ * Junta los dos registros en el que se decidió conservar, con los valores
+ * elegidos campo por campo. Las responsivas y los mantenimientos de los dos
+ * quedan en el que se conserva, y el otro desaparece del inventario.
+ */
+export async function fusionarEquiposManual(datos: {
+  conservarId: number;
+  eliminarId: number;
+  valores: { clave: string; donde: "equipo" | "detalle"; valor: string }[];
+}): Promise<ResultadoAccion> {
+  try {
+    if (datos.conservarId === datos.eliminarId) return { ok: false, error: "Son el mismo registro." };
+    const queda = db.prepare("SELECT * FROM equipos WHERE id = ?").get(datos.conservarId) as Equipo | undefined;
+    const sobra = db.prepare("SELECT * FROM equipos WHERE id = ?").get(datos.eliminarId) as Equipo | undefined;
+    if (!queda || !sobra) return { ok: false, error: "Alguno de los dos equipos ya no existe." };
+
+    // Respaldo antes de tocar nada: la fusión borra un registro.
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, "0");
+    const nombreRespaldo = `app-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(
+      d.getMinutes()
+    )}${p(d.getSeconds())}.db`;
+    await db.backup(path.join(BACKUP_DIR, nombreRespaldo));
+
+    const permitidos = new Set(ETIQUETAS_EQUIPO.map((c) => String(c.clave)));
+    const detalles = detallesDe(queda);
+    const sets: string[] = [];
+    const params: (string | number | null)[] = [];
+    for (const v of datos.valores) {
+      const valor = (v.valor ?? "").trim();
+      if (v.donde === "detalle") {
+        if (valor) detalles[v.clave] = valor;
+        else delete detalles[v.clave];
+        continue;
+      }
+      if (!permitidos.has(v.clave)) continue;
+      sets.push(`${v.clave} = ?`);
+      params.push(v.clave === "costo" ? (valor ? Number(valor) : null) : valor || null);
+    }
+
+    const foliosMovidos: string[] = [];
+    const fusion = db.transaction(() => {
+      // Si los dos estaban en la misma carta, el renglón sobrante se quita.
+      const compartidas = db
+        .prepare(
+          `SELECT ri.id FROM responsiva_items ri
+           WHERE ri.equipo_id = ? AND ri.responsiva_id IN (SELECT responsiva_id FROM responsiva_items WHERE equipo_id = ?)`
+        )
+        .all(sobra.id, queda.id) as { id: number }[];
+      for (const c of compartidas) db.prepare("DELETE FROM responsiva_items WHERE id = ?").run(c.id);
+
+      const folios = db
+        .prepare(
+          `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id WHERE ri.equipo_id = ?`
+        )
+        .all(sobra.id) as { folio: string }[];
+      foliosMovidos.push(...folios.map((f) => f.folio));
+
+      db.prepare("UPDATE responsiva_items SET equipo_id = ? WHERE equipo_id = ?").run(queda.id, sobra.id);
+      db.prepare("UPDATE mantenimientos SET equipo_id = ? WHERE equipo_id = ?").run(queda.id, sobra.id);
+
+      // El sobrante se borra ANTES de guardar los datos elegidos: si se decidió
+      // quedarse con su código, ese código tiene que estar libre (es único).
+      db.prepare("DELETE FROM equipos WHERE id = ?").run(sobra.id);
+
+      sets.push("detalles = ?");
+      params.push(Object.keys(detalles).length ? JSON.stringify(detalles) : null);
+      db.prepare(`UPDATE equipos SET ${sets.join(", ")} WHERE id = ?`).run(...params, queda.id);
+    });
+    fusion();
+
+    db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,?)").run(
+      "FUSION_MANUAL",
+      `Se unió ${sobra.codigo} con ${queda.codigo}${foliosMovidos.length ? ` (pasaron las responsivas ${foliosMovidos.join(", ")})` : ""}`,
+      JSON.stringify({ conservado: queda.id, eliminado: sobra, foliosMovidos, respaldo: nombreRespaldo }),
+      0
+    );
+
+    revalidar();
+    revalidatePath("/empleados");
+    revalidatePath("/responsivas");
+
+    const actualizado = db.prepare("SELECT codigo FROM equipos WHERE id = ?").get(queda.id) as { codigo: string };
+    return {
+      ok: true,
+      mensaje:
+        `Quedó un solo registro: ${actualizado.codigo}. Se eliminó ${sobra.codigo}` +
+        `${foliosMovidos.length ? ` y sus responsivas (${foliosMovidos.join(", ")}) pasaron al que se conservó` : ""}. ` +
+        `Respaldo previo: ${nombreRespaldo}`,
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudo unir: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}

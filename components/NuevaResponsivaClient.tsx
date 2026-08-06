@@ -16,6 +16,7 @@ import {
   type ClaseCarta,
   type TipoEquipo,
 } from "../lib/constants";
+import { fechaCorta, hoyISO } from "../lib/helpers";
 import { crearResponsiva } from "../app/responsivas/actions";
 import { guardarEquipo } from "../app/inventario/actions";
 import BuscadorEmpleado from "./BuscadorEmpleado";
@@ -67,6 +68,7 @@ export default function NuevaResponsivaClient({
   const [formEquipo, setFormEquipo] = useState<NuevoEquipoForm | null>(null);
   const [errorEquipo, setErrorEquipo] = useState("");
   const [guardandoEquipo, iniciarEquipo] = useTransition();
+  const [fecha, setFecha] = useState(hoyISO());
   const [observaciones, setObservaciones] = useState("");
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
@@ -204,6 +206,7 @@ export default function NuevaResponsivaClient({
         empleadoId: empleado.id,
         equipoId: requiereEquipo ? equipoId : null,
         observaciones,
+        fecha,
         // La carta se imprime y se firma en papel: sin firmas digitales.
         firma: "",
         concepto: esVale ? concepto : undefined,
@@ -251,6 +254,38 @@ export default function NuevaResponsivaClient({
               {empleado.supervisor ? ` · Jefe: ${empleado.supervisor}` : ""}
             </p>
           ) : null}
+
+          <div className="mt-4 border-t border-line pt-3">
+            <Label>Fecha de la carta</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                className={`${inputCls} max-w-[190px]`}
+                type="date"
+                max={hoyISO()}
+                value={fecha}
+                onChange={(e) => setFecha(e.target.value)}
+              />
+              {fecha !== hoyISO() ? (
+                <button type="button" className={btnGhost} onClick={() => setFecha(hoyISO())}>
+                  Usar la de hoy
+                </button>
+              ) : null}
+              {/* Sugerencia: si el equipo se entregó al ingresar, la fecha de alta suele ser la correcta. */}
+              {empleado?.fecha_alta && empleado.fecha_alta !== fecha ? (
+                <button
+                  type="button"
+                  className={btnGhost}
+                  title="Fecha de alta del empleado"
+                  onClick={() => setFecha(empleado.fecha_alta as string)}
+                >
+                  Usar su fecha de alta ({fechaCorta(empleado.fecha_alta)})
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-soft">
+              Por defecto es la de hoy. Cámbiala si la entrega fue antes.
+            </p>
+          </div>
         </Card>
 
         {requiereEquipo ? (

@@ -8,7 +8,8 @@ import ResponsivasEmpleado from "../../../components/ResponsivasEmpleado";
 import EquiposEmpleado from "../../../components/EquiposEmpleado";
 import AsignarEquipoBtn from "../../../components/AsignarEquipoBtn";
 import type { ResponsivaDeEquipo } from "../../../components/InventarioClient";
-import { idsSinResponsiva } from "../../../lib/pendientes";
+import { idsSinResponsiva, responsivasSinFirmaDe } from "../../../lib/pendientes";
+import SubirFirmadaBtn from "../../../components/SubirFirmadaBtn";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,9 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
        WHERE e.asignado_a = ? ORDER BY m.fecha_programada DESC`
     )
     .all(empleado.id) as MantenimientoConEquipo[];
+
+  // Responsivas ya generadas que siguen sin el documento firmado en papel.
+  const sinFirma = responsivasSinFirmaDe(empleado.id);
 
   // Equipos que este empleado tiene sin una carta responsiva que los respalde.
   const sinResp = idsSinResponsiva();
@@ -152,6 +156,35 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
         </Card>
       ) : null}
 
+      {sinFirma.length > 0 ? (
+        <Card className="mt-6 border-amber-200 bg-amber-50">
+          <h2 className="text-base font-bold text-amber-900">
+            ✍️ Tiene {sinFirma.length} responsiva{sinFirma.length > 1 ? "s" : ""} sin firmar
+          </h2>
+          <p className="mb-3 mt-1 text-sm text-amber-800">
+            Ya están generadas: imprímelas, recoge las firmas y sube aquí el documento firmado.
+          </p>
+          <div className="space-y-2">
+            {sinFirma.map((r) => (
+              <div
+                key={r.id}
+                className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-white px-3 py-2 text-sm"
+              >
+                <span className="mono text-xs font-semibold text-kraft-dark">{r.folio}</span>
+                <span className="text-soft">{fechaCorta(r.fecha)}</span>
+                {r.equipos ? <span className="mono text-xs text-soft">{r.equipos}</span> : null}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <a href={`/api/pdf/${r.id}?original=1`} target="_blank" className={btnGhost}>
+                    Imprimir
+                  </a>
+                  <SubirFirmadaBtn responsivaId={r.id} folio={r.folio} className={btnGhost} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       <div className="mb-2 mt-6 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-bold text-ink">Equipos asignados</h2>
         <AsignarEquipoBtn empleadoId={empleado.id} disponibles={disponibles} />
@@ -179,6 +212,7 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           fecha: r.fecha,
           estado: r.estado,
           pdf_path: r.pdf_path,
+          pdf_firmado: r.pdf_firmado ?? null,
         }))}
       />
 

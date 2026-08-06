@@ -193,8 +193,13 @@ function columnas(db: Database.Database, tabla: string): string[] {
 }
 
 function agregarColumna(db: Database.Database, tabla: string, col: string, tipoSql: string) {
-  if (!columnas(db, tabla).includes(col)) {
+  if (columnas(db, tabla).includes(col)) return;
+  try {
     db.exec(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${tipoSql}`);
+  } catch (e) {
+    // Si dos procesos abren la base a la vez pueden intentar la misma columna:
+    // que ya exista no es un error.
+    if (!/duplicate column name/i.test(String(e))) throw e;
   }
 }
 
@@ -218,6 +223,9 @@ function migrar(db: Database.Database) {
   agregarColumna(db, "responsivas", "firma_autoridad_nombre", "TEXT");
   agregarColumna(db, "responsivas", "firma_autoridad_puesto", "TEXT");
   agregarColumna(db, "responsivas", "firma_autoridad_ausencia", "INTEGER NOT NULL DEFAULT 0");
+  // La responsiva se imprime, se firma en papel y se sube escaneada.
+  agregarColumna(db, "responsivas", "pdf_firmado", "TEXT");
+  agregarColumna(db, "responsivas", "fecha_firma", "TEXT");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
 }

@@ -89,3 +89,51 @@ const POR_LIGAR = `
 export function equiposPorLigar(): EquipoPorLigar[] {
   return db.prepare(`${POR_LIGAR} ORDER BY e.codigo ASC`).all() as EquipoPorLigar[];
 }
+
+/**
+ * Responsivas generadas en el sistema que todavía no tienen el escaneo de la
+ * carta firmada en papel. Son las que hay que imprimir, firmar y subir.
+ *
+ * Se consideran firmadas: las que ya traen el escaneo, las que se cargaron
+ * desde un documento firmado (origen CARGADA) y las viejas que se firmaron
+ * digitalmente.
+ */
+export type ResponsivaSinFirma = {
+  id: number;
+  folio: string;
+  tipo: string;
+  clase: string;
+  fecha: string;
+  empleado_id: number;
+  empleado_numero: string;
+  empleado_nombre: string;
+  equipos: string | null;
+};
+
+const SIN_FIRMA = `
+  SELECT r.id, r.folio, r.tipo, r.clase, r.fecha, r.empleado_id,
+         em.numero_empleado AS empleado_numero, em.nombre AS empleado_nombre,
+         (SELECT GROUP_CONCAT(e.codigo, ', ') FROM responsiva_items ri
+            JOIN equipos e ON e.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
+  FROM responsivas r
+  JOIN empleados em ON em.id = r.empleado_id
+  WHERE r.estado != 'ELIMINADA'
+    AND COALESCE(r.pdf_firmado, '') = ''
+    AND COALESCE(r.origen, 'SISTEMA') != 'CARGADA'
+    AND COALESCE(r.firma_empleado, '') = ''
+`;
+
+/** Todas las responsivas pendientes de subir firmadas. */
+export function responsivasSinFirma(): ResponsivaSinFirma[] {
+  return db.prepare(`${SIN_FIRMA} ORDER BY r.fecha DESC, r.id DESC`).all() as ResponsivaSinFirma[];
+}
+
+/** Las de un empleado, para su ficha. */
+export function responsivasSinFirmaDe(empleadoId: number): ResponsivaSinFirma[] {
+  return db.prepare(`${SIN_FIRMA} AND r.empleado_id = ? ORDER BY r.fecha DESC, r.id DESC`).all(empleadoId) as ResponsivaSinFirma[];
+}
+
+/** Solo el conteo, para los avisos. */
+export function totalSinFirma(): number {
+  return (db.prepare(`SELECT COUNT(*) AS c FROM (${SIN_FIRMA})`).get() as { c: number }).c;
+}

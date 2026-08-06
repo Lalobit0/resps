@@ -69,6 +69,9 @@ export interface Responsiva {
   concepto: string | null;
   monto: number | null;
   created_at: string;
+  /** Escaneo de la carta ya firmada en papel. */
+  pdf_firmado?: string | null;
+  fecha_firma?: string | null;
 }
 
 /** Firma guardada del jefe de sistemas, de RH o de quien firma por ausencia. */

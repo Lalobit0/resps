@@ -32,9 +32,17 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     const fd = new FormData();
     for (const a of archivos) fd.append("archivo", a);
     iniciar(async () => {
-      const res = await analizarLoteResponsivas(fd);
-      if (res.ok && res.lote) setRenglones(res.lote.renglones);
-      else setError(res.error ?? "No se pudo leer el PDF.");
+      try {
+        const res = await analizarLoteResponsivas(fd);
+        if (res.ok && res.lote) setRenglones(res.lote.renglones);
+        else setError(res.error ?? "No se pudo leer el PDF.");
+      } catch {
+        // Si el servidor corta la subida (archivo enorme) no hay respuesta que leer.
+        setError(
+          "No se pudo subir el archivo: pesa demasiado o se interrumpió el envío. " +
+            "Divídelo en varios PDF más chicos y vuelve a intentar."
+        );
+      }
     });
   };
 
@@ -64,22 +72,26 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     }
     setError("");
     iniciar(async () => {
-      const res = await confirmarLoteResponsivas(
-        listos.map((r) => ({
-          clave: r.clave,
-          empleadoId: r.empleadoId,
-          responsivaId: r.responsivaId,
-          clase: r.clase,
-          fecha: r.fecha,
-          equipoIds: r.equipoIds,
-        }))
-      );
-      if (res.ok) {
-        setMensaje(res.mensaje ?? "Carga lista.");
-        setRenglones(null);
-        router.refresh();
-      } else {
-        setError(res.error ?? "No se pudo guardar.");
+      try {
+        const res = await confirmarLoteResponsivas(
+          listos.map((r) => ({
+            clave: r.clave,
+            empleadoId: r.empleadoId,
+            responsivaId: r.responsivaId,
+            clase: r.clase,
+            fecha: r.fecha,
+            equipoIds: r.equipoIds,
+          }))
+        );
+        if (res.ok) {
+          setMensaje(res.mensaje ?? "Carga lista.");
+          setRenglones(null);
+          router.refresh();
+        } else {
+          setError(res.error ?? "No se pudo guardar.");
+        }
+      } catch {
+        setError("Se interrumpió el guardado. Vuelve a subir el PDF e inténtalo de nuevo.");
       }
     });
   };

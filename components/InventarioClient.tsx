@@ -170,9 +170,13 @@ export default function InventarioClient({
     fd.append("archivo", archivo);
     const tipo = tipoImport.current;
     iniciar(async () => {
-      const res = await importarInventario(tipo, fd);
-      if (res.ok) setMensaje(res.mensaje ?? "Inventario importado.");
-      else setError(res.error ?? "No se pudo importar.");
+      try {
+        const res = await importarInventario(tipo, fd);
+        if (res.ok) setMensaje(res.mensaje ?? "Inventario importado.");
+        else setError(res.error ?? "No se pudo importar.");
+      } catch {
+        setError("No se pudo subir el archivo: pesa demasiado o se interrumpió el envío.");
+      }
     });
   };
 
@@ -187,10 +191,17 @@ export default function InventarioClient({
     for (const archivo of seleccion) fd.append("archivo", archivo);
     setEscaneo(null);
     iniciar(async () => {
-      const res = await importarEscaneoComputo(fd);
-      if (res.ok && res.escaneo) setEscaneo(res.escaneo);
-      else if (res.ok) setMensaje(res.mensaje ?? "Escaneo cargado.");
-      else setError(res.error ?? "No se pudo leer el escaneo.");
+      try {
+        const res = await importarEscaneoComputo(fd);
+        if (res.ok && res.escaneo) setEscaneo(res.escaneo);
+        else if (res.ok) setMensaje(res.mensaje ?? "Escaneo cargado.");
+        else setError(res.error ?? "No se pudo leer el escaneo.");
+      } catch {
+        setError(
+          "No se pudieron subir los archivos: pesan demasiado o se interrumpió el envío. " +
+            "Sube menos archivos a la vez."
+        );
+      }
     });
   };
 

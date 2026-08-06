@@ -32,9 +32,13 @@ export default function SubirFirmadaBtn({
     const fd = new FormData();
     fd.append("archivo", archivo);
     iniciar(async () => {
-      const res = await subirResponsivaFirmada(responsivaId, fd);
-      if (res.ok) router.refresh();
-      else setError(res.error ?? "No se pudo subir.");
+      try {
+        const res = await subirResponsivaFirmada(responsivaId, fd);
+        if (res.ok) router.refresh();
+        else setError(res.error ?? "No se pudo subir.");
+      } catch {
+        setError("El archivo pesa demasiado o se interrumpió la subida.");
+      }
     });
   };
 

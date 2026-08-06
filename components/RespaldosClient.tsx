@@ -62,6 +62,17 @@ export default function RespaldosClient({ respaldos, pendiente: hayPendiente }: 
         <div className="border-b border-line px-4 py-3">
           <h2 className="text-base font-bold text-ink">Respaldos guardados</h2>
           <p className="text-xs text-soft">Se guardan en la carpeta data/backups de la app.</p>
+          <p className="mt-3 border-t border-line pt-3 text-xs text-soft">
+            ¿Necesitas el archivero de responsivas ordenado en carpetas?{" "}
+            <a href="/api/archivero" className="font-semibold text-kraft-dark underline">
+              Descárgalo en ZIP
+            </a>{" "}
+            por departamento y empleado, o{" "}
+            <a href="/api/archivero?por=empleado" className="font-semibold text-kraft-dark underline">
+              solo por empleado
+            </a>
+            . Incluye un <span className="mono">indice.csv</span> con todo el listado.
+          </p>
         </div>
         {respaldos.length === 0 ? (
           <div className="p-4">

@@ -129,12 +129,17 @@ function reporteInventario(sp: URLSearchParams): Reporte {
 function reporteResponsivas(sp: URLSearchParams): Reporte {
   const q = (sp.get("q") || "").trim();
   const tipo = sp.get("tipo") || "";
+  const clase = sp.get("clase") || "";
   const estado = sp.get("estado") || "";
   const cond: string[] = [];
   const val: (string | number)[] = [];
   if (tipo) {
     cond.push("r.tipo = ?");
     val.push(tipo);
+  }
+  if (clase) {
+    cond.push("r.clase = ?");
+    val.push(clase);
   }
   if (estado) {
     cond.push("r.estado = ?");

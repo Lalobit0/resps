@@ -930,8 +930,8 @@ export async function confirmarLoteResponsivas(
   renglones: { clave: string; empleadoId: number | null; responsivaId: number | null; clase: string; fecha: string | null; equipoIds: number[] }[]
 ): Promise<ResultadoAccion> {
   try {
-    let adjuntadas = 0;
-    let creadas = 0;
+    const nuevas: string[] = [];
+    const firmadas: string[] = [];
     const omitidas: string[] = [];
 
     for (const r of renglones) {
@@ -953,7 +953,7 @@ export async function confirmarLoteResponsivas(
         fs.copyFileSync(origen, path.join(process.cwd(), destino));
         db.prepare("UPDATE responsivas SET pdf_firmado = ?, fecha_firma = ? WHERE id = ?").run(destino, hoyISO(), r.responsivaId);
         registrarBitacora("RESPONSIVA_FIRMADA", `Se subió firmada ${resp.folio} desde una carga masiva`, { folio: resp.folio }, false);
-        adjuntadas += 1;
+        firmadas.push(resp.folio);
         continue;
       }
 
@@ -1012,7 +1012,10 @@ export async function confirmarLoteResponsivas(
         { folio: creada.folio },
         false
       );
-      creadas += 1;
+      const emp = db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(r.empleadoId) as
+        | { numero_empleado: string; nombre: string }
+        | undefined;
+      nuevas.push(`${creada.folio} → ${emp ? `${emp.numero_empleado} ${emp.nombre}` : "empleado"}`);
     }
 
     // La carpeta temporal ya no hace falta.
@@ -1023,11 +1026,18 @@ export async function confirmarLoteResponsivas(
     }
 
     revalidar();
-    const partes = [`${creadas} responsiva(s) nueva(s)`, `${adjuntadas} adjuntada(s) a su folio`];
+    const partes = [`${nuevas.length} responsiva(s) nueva(s)`, `${firmadas.length} adjuntada(s) a su folio`];
     if (omitidas.length) partes.push(`${omitidas.length} sin guardar`);
+    // Se listan los folios: así se puede comprobar que quedaron guardadas.
+    const bloque = (t: string, l: string[]) => (l.length ? `\n\n${t}:\n· ${l.join("\n· ")}` : "");
     return {
       ok: true,
-      mensaje: `Carga masiva lista: ${partes.join(", ")}.` + (omitidas.length ? `\n· ${omitidas.join("\n· ")}` : ""),
+      mensaje:
+        `Carga masiva lista: ${partes.join(", ")}.` +
+        bloque("Se dieron de alta", nuevas) +
+        bloque("Se adjuntaron como firmadas", firmadas) +
+        bloque("No se guardaron", omitidas) +
+        "\n\nLas puedes ver en Responsivas (filtra por tipo de carta) o en la ficha de cada empleado.",
     };
   } catch (e) {
     console.error(e);

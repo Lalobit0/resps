@@ -90,6 +90,36 @@ export function leerPagina(texto: string): Omit<PaginaLote, "pagina" | "archivo"
   return { folio, numeroEmpleado, nombre: nombre || null, fecha, clase: claseDe(texto), series };
 }
 
+/**
+ * Junta varios PDF de una página en un solo documento para mandarlo a la
+ * impresora de un tirón. Si alguno no se puede leer se salta y se avisa cuál,
+ * para que el paquete no se caiga entero por una carta dañada.
+ */
+export async function unirPdfs(archivos: { ruta: string; etiqueta: string }[]): Promise<{
+  bytes: Uint8Array;
+  incluidos: string[];
+  omitidos: { etiqueta: string; motivo: string }[];
+}> {
+  const fs = await import("fs");
+  const destino = await PDFDocument.create();
+  const incluidos: string[] = [];
+  const omitidos: { etiqueta: string; motivo: string }[] = [];
+
+  for (const a of archivos) {
+    try {
+      const datos = fs.readFileSync(a.ruta);
+      const doc = await PDFDocument.load(new Uint8Array(datos), { ignoreEncryption: true });
+      const paginas = await destino.copyPages(doc, doc.getPageIndices());
+      for (const p of paginas) destino.addPage(p);
+      incluidos.push(a.etiqueta);
+    } catch (e) {
+      omitidos.push({ etiqueta: a.etiqueta, motivo: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  return { bytes: await destino.save(), incluidos, omitidos };
+}
+
 /** Parte el PDF en páginas y lee cada una. */
 export async function partirLote(datos: Uint8Array, nombreArchivo: string): Promise<PaginaLote[]> {
   const original = await PDFDocument.load(datos, { ignoreEncryption: true });

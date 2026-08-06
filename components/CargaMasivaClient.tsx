@@ -9,12 +9,31 @@ import { analizarLoteResponsivas, confirmarLoteResponsivas, type RenglonLote } f
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
 
+/** Una carta ya generada, cuando se está subiendo el escaneo de un lote. */
+export type CartaDeLote = {
+  id: number;
+  folio: string;
+  clase: string;
+  firmada: number;
+  empleado: string;
+};
+
 /**
  * Carga masiva: un PDF con muchas responsivas se separa en una por página, el
  * sistema propone de quién es cada una y aquí se revisa antes de guardar.
  * Lo que no pudo identificar se asigna a mano en la misma tabla.
+ *
+ * Cuando se llega desde un lote generado, el escaneo se reparte solo: las
+ * cartas salieron impresas en un orden conocido y regresan en ese mismo orden,
+ * así que la página 1 es la primera carta, la 2 la segunda, y así.
  */
-export default function CargaMasivaClient({ empleados }: { empleados: Empleado[] }) {
+export default function CargaMasivaClient({
+  empleados,
+  lote = null,
+}: {
+  empleados: Empleado[];
+  lote?: { nombre: string; cartas: CartaDeLote[] } | null;
+}) {
   const router = useRouter();
   const ref = useRef<HTMLInputElement>(null);
   const [renglones, setRenglones] = useState<RenglonLote[] | null>(null);
@@ -22,7 +41,58 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
   const [viendo, setViendo] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [avisoLote, setAvisoLote] = useState("");
   const [pendiente, iniciar] = useTransition();
+
+  /**
+   * Reparte las páginas del escaneo entre las cartas del lote, por orden. Solo
+   * se hace si las cuentas cuadran: si no, es mejor asignarlas a mano que
+   * adjudicar la firma de alguien a otra persona.
+   */
+  const emparejarConLote = (rs: RenglonLote[]): { renglones: RenglonLote[]; aviso: string } => {
+    if (!lote) return { renglones: rs, aviso: "" };
+    const pendientesLote = lote.cartas.filter((c) => !c.firmada);
+    const objetivo =
+      rs.length === lote.cartas.length ? lote.cartas : rs.length === pendientesLote.length ? pendientesLote : null;
+
+    if (!objetivo) {
+      return {
+        renglones: rs,
+        aviso:
+          `El escaneo trae ${rs.length} página(s) y el lote ${lote.nombre} tiene ${lote.cartas.length} carta(s) ` +
+          `(${pendientesLote.length} sin firmar). Como no coinciden, no se repartió solo: revisa cada página y ` +
+          `asígnala a mano.`,
+      };
+    }
+
+    const yaTomadas = new Set(rs.map((r) => r.responsivaId).filter((v): v is number => !!v));
+    let puestas = 0;
+    const salida = rs.map((r, i) => {
+      // Si se alcanzó a leer el folio en el papel, ese dato manda sobre el orden.
+      if (r.responsivaId) return r;
+      const carta = objetivo[i];
+      if (!carta || yaTomadas.has(carta.id)) return r;
+      yaTomadas.add(carta.id);
+      puestas += 1;
+      return {
+        ...r,
+        responsivaId: carta.id,
+        folio: carta.folio,
+        clase: carta.clase,
+        empleadoTexto: carta.empleado,
+        comoSeIdentifico: `el orden de impresión del lote ${lote.nombre}`,
+        aviso: "",
+      };
+    });
+
+    return {
+      renglones: salida,
+      aviso: puestas
+        ? `Se repartieron ${puestas} página(s) entre las cartas del lote ${lote.nombre} según el orden en que se ` +
+          `imprimieron. Ábrelas con 👁 Ver para comprobar que cada firma es de quien dice antes de guardar.`
+        : "",
+    };
+  };
 
   const analizar = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const archivos = Array.from(ev.target.files ?? []);
@@ -30,6 +100,7 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     if (!archivos.length) return;
     setError("");
     setMensaje("");
+    setAvisoLote("");
     setRenglones(null);
     setViendo(null);
     const fd = new FormData();
@@ -37,8 +108,11 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     iniciar(async () => {
       try {
         const res = await analizarLoteResponsivas(fd);
-        if (res.ok && res.lote) setRenglones(res.lote.renglones);
-        else setError(res.error ?? "No se pudo leer el PDF.");
+        if (res.ok && res.lote) {
+          const { renglones: rs, aviso } = emparejarConLote(res.lote.renglones);
+          setRenglones(rs);
+          setAvisoLote(aviso);
+        } else setError(res.error ?? "No se pudo leer el PDF.");
       } catch {
         // Si el servidor corta la subida (archivo enorme) no hay respuesta que leer.
         setError(
@@ -117,6 +191,19 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
 
   return (
     <div className="space-y-5">
+      {lote ? (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <p className="font-semibold">
+            Subiendo las firmadas del lote <span className="mono">{lote.nombre}</span> — {lote.cartas.length} carta(s),{" "}
+            {lote.cartas.filter((c) => !c.firmada).length} sin firmar.
+          </p>
+          <p className="mt-1">
+            Escanea el paquete completo <b>en el mismo orden en que se imprimió</b> y súbelo aquí: cada página se
+            asigna sola a su carta. Si escaneaste solo las que faltaban, también cuadra.
+          </p>
+        </div>
+      ) : null}
+
       <Card>
         <h2 className="mb-2 text-base font-bold text-ink">1. Sube el PDF con las responsivas</h2>
         <p className="mb-3 text-sm text-soft">
@@ -136,6 +223,9 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+      ) : null}
+      {avisoLote ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">{avisoLote}</div>
       ) : null}
 
       {renglones ? (

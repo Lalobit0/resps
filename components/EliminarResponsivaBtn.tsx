@@ -14,7 +14,7 @@ export default function EliminarResponsivaBtn({ id, folio, compacto = false }: {
   const eliminar = () => {
     if (
       !confirm(
-        `¿Eliminar la responsiva ${folio}?\n\nSe moverá a la papelera, se liberará/retirará su equipo del inventario y quedará registrado en la bitácora (podrás revertirlo).`
+        `¿Eliminar la responsiva ${folio}?\n\nSe moverá a la papelera y su equipo quedará DISPONIBLE en el inventario (el equipo no se borra).\n\nQueda en la bitácora, así que podrás revertirlo.`
       )
     )
       return;

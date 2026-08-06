@@ -7,7 +7,7 @@ import { db, getConfig, STORAGE_DIR, STORAGE_ELIMINADAS } from "../../lib/db";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
-import { CAMPOS_DETALLE, CARTAS, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, ETIQUETA_CLASE, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
+import { CAMPOS_DETALLE, CARTAS, CLASE_POR_TIPO, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, ETIQUETA_CLASE, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
 
@@ -126,7 +126,7 @@ async function bytesAsignacion(datos: {
   });
 }
 
-export async function crearResponsiva(datos: {
+export type DatosNuevaResponsiva = {
   clase: ClaseCarta;
   empleadoId: number;
   equipoId: number | null;
@@ -139,7 +139,15 @@ export async function crearResponsiva(datos: {
   firmanteAutoridad?: Firmante | null;
   concepto?: string;
   monto?: string;
-}): Promise<ResultadoAccion> {
+  /** Tanda de generación masiva, cuando viene de ahí. */
+  lote?: string;
+};
+
+/**
+ * El alta de una carta. Aparte para que la generación masiva la use en bucle
+ * sin recargar la caché de todas las pantallas en cada vuelta.
+ */
+async function crearUnaResponsiva(datos: DatosNuevaResponsiva): Promise<ResultadoAccion> {
   try {
     const config = CARTAS[datos.clase];
     if (!config) return { ok: false, error: "Selecciona un tipo de carta válido." };
@@ -207,6 +215,7 @@ export async function crearResponsiva(datos: {
           montoNum
         );
       const rid = Number(info.lastInsertRowid);
+      if (datos.lote) db.prepare("UPDATE responsivas SET lote=? WHERE id=?").run(datos.lote, rid);
       if (equipo) {
         db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion) VALUES (?,?,?)").run(
           rid,
@@ -245,11 +254,132 @@ export async function crearResponsiva(datos: {
       throw errorPdf;
     }
 
-    revalidar();
     return { ok: true, id, folio };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo generar la responsiva. Revisa la consola del servidor." };
+  }
+}
+
+export async function crearResponsiva(datos: DatosNuevaResponsiva): Promise<ResultadoAccion> {
+  const res = await crearUnaResponsiva(datos);
+  if (res.ok) revalidar();
+  return res;
+}
+
+// ---------- Generación masiva: imprimir, firmar en papel y subir ----------
+
+/** Nombre de la tanda, con fecha y hora para reconocerla de un vistazo. */
+function nombreDeLote(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const base = `L-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  let nombre = base;
+  for (let n = 2; db.prepare("SELECT 1 FROM responsivas WHERE lote = ? LIMIT 1").get(nombre); n += 1) {
+    nombre = `${base}-${n}`;
+  }
+  return nombre;
+}
+
+export type ResultadoGeneracion = {
+  lote: string;
+  generadas: { folio: string; empleado: string; equipo: string }[];
+  omitidas: { equipo: string; empleado: string; motivo: string }[];
+};
+
+/**
+ * Genera de golpe la carta de cada equipo entregado que no la tenía. Quedan sin
+ * firma: se imprimen todas juntas, se firman en papel y luego se sube el
+ * escaneo (el lote conserva el orden para poder repartirlo página por página).
+ */
+export async function generarResponsivasEnLote(
+  equipoIds: number[],
+  opciones: { fecha?: string; observaciones?: string } = {}
+): Promise<ResultadoAccion & { resultado?: ResultadoGeneracion }> {
+  try {
+    const ids = [...new Set(equipoIds.filter((n) => Number.isInteger(n) && n > 0))];
+    if (!ids.length) return { ok: false, error: "Selecciona al menos un equipo." };
+
+    const hoy = hoyISO();
+    const pedida = (opciones.fecha ?? "").trim();
+    if (pedida && !/^\d{4}-\d{2}-\d{2}$/.test(pedida)) return { ok: false, error: "La fecha de las cartas no es válida." };
+    if (pedida && pedida > hoy) return { ok: false, error: "La fecha de las cartas no puede ser posterior a hoy." };
+
+    const lote = nombreDeLote();
+    const generadas: ResultadoGeneracion["generadas"] = [];
+    const omitidas: ResultadoGeneracion["omitidas"] = [];
+
+    for (const equipoId of ids) {
+      const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(equipoId) as Equipo | undefined;
+      if (!eq) {
+        omitidas.push({ equipo: `#${equipoId}`, empleado: "—", motivo: "El equipo ya no existe en el inventario." });
+        continue;
+      }
+      const empleado = eq.asignado_a
+        ? (db.prepare("SELECT * FROM empleados WHERE id = ?").get(eq.asignado_a) as Empleado | undefined)
+        : undefined;
+      if (!empleado) {
+        omitidas.push({ equipo: eq.codigo, empleado: "—", motivo: "El equipo no tiene empleado asignado." });
+        continue;
+      }
+
+      const clase = CLASE_POR_TIPO[eq.tipo as TipoEquipo];
+      if (!clase) {
+        omitidas.push({ equipo: eq.codigo, empleado: empleado.nombre, motivo: `No hay carta para el tipo “${eq.tipo}”.` });
+        continue;
+      }
+
+      // Pudo generarse mientras se revisaba la lista: no se duplica.
+      const yaTiene = db
+        .prepare(
+          `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+           WHERE ri.equipo_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE' AND r.empleado_id = ?`
+        )
+        .get(eq.id, empleado.id) as { folio: string } | undefined;
+      if (yaTiene) {
+        omitidas.push({ equipo: eq.codigo, empleado: empleado.nombre, motivo: `Ya tenía la responsiva ${yaTiene.folio}.` });
+        continue;
+      }
+
+      const res = await crearUnaResponsiva({
+        clase,
+        empleadoId: empleado.id,
+        equipoId: eq.id,
+        observaciones: opciones.observaciones ?? "",
+        firma: "",
+        fecha: pedida || hoy,
+        lote,
+      });
+      if (res.ok && res.folio) {
+        generadas.push({
+          folio: res.folio,
+          empleado: `${empleado.numero_empleado} · ${empleado.nombre}`,
+          equipo: `${eq.codigo} · ${eq.marca} ${eq.modelo}`.trim(),
+        });
+      } else {
+        omitidas.push({ equipo: eq.codigo, empleado: empleado.nombre, motivo: res.error ?? "No se pudo generar." });
+      }
+    }
+
+    if (!generadas.length) {
+      return {
+        ok: false,
+        error: omitidas[0]?.motivo ? `No se generó ninguna carta. ${omitidas[0].motivo}` : "No se generó ninguna carta.",
+        resultado: { lote, generadas, omitidas },
+      };
+    }
+
+    registrarBitacora(
+      "GENERAR_LOTE",
+      `Se generaron ${generadas.length} responsivas sin firma en el lote ${lote}`,
+      { lote, folios: generadas.map((g) => g.folio) },
+      false
+    );
+    revalidar();
+    return { ok: true, resultado: { lote, generadas, omitidas } };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudieron generar las responsivas: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 
@@ -637,28 +767,21 @@ export async function eliminarResponsiva(id: number): Promise<ResultadoAccion> {
 
     const tx = db.transaction(() => {
       // Solo las asignaciones controlan el inventario; una devolución no.
+      //
+      // El equipo NUNCA se borra del inventario: el aparato existe físicamente y
+      // lo que se está tirando es el papel, no la máquina. Se deja disponible
+      // para volver a entregarlo. (Antes se intentaba borrar y siempre tronaba:
+      // la responsiva se queda en la papelera, así que sus renglones seguían
+      // apuntando al equipo y SQLite lo impedía por llave foránea.)
       if (r.tipo === "ASIGNACION") {
         for (const it of items) {
           const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(it.equipo_id) as Equipo | undefined;
           if (!eq) continue;
-          // ¿Otro documento vigente usa este equipo?
-          const otras = db
-            .prepare(
-              `SELECT COUNT(*) AS c FROM responsiva_items ri JOIN responsivas r2 ON r2.id = ri.responsiva_id
-               WHERE ri.equipo_id = ? AND ri.responsiva_id != ? AND r2.estado != 'ELIMINADA'`
-            )
-            .get(it.equipo_id, id) as { c: number };
-          if (otras.c === 0) {
-            // Nadie más lo usa: se retira del inventario (guardando copia para revertir).
-            snapEquipos.push({ modo: "BORRADO", equipo: eq });
-            db.prepare("DELETE FROM mantenimientos WHERE equipo_id = ?").run(eq.id);
-            db.prepare("DELETE FROM equipos WHERE id = ?").run(eq.id);
-          } else {
-            // Otro documento lo usa: solo se libera si estaba asignado a este empleado.
-            snapEquipos.push({ modo: "LIBERADO", equipoId: eq.id, estadoPrev: eq.estado, asignadoPrev: eq.asignado_a });
-            if (eq.asignado_a === r.empleado_id) {
-              db.prepare("UPDATE equipos SET estado='DISPONIBLE', asignado_a=NULL WHERE id=?").run(eq.id);
-            }
+          snapEquipos.push({ modo: "LIBERADO", equipoId: eq.id, estadoPrev: eq.estado, asignadoPrev: eq.asignado_a });
+          // Solo se libera si seguía a nombre de este empleado; si ya se lo
+          // entregaron a alguien más, esa entrega manda y no se toca.
+          if (eq.asignado_a === r.empleado_id) {
+            db.prepare("UPDATE equipos SET estado='DISPONIBLE', asignado_a=NULL WHERE id=?").run(eq.id);
           }
         }
       }
@@ -679,7 +802,8 @@ export async function eliminarResponsiva(id: number): Promise<ResultadoAccion> {
     return { ok: true };
   } catch (e) {
     console.error(e);
-    return { ok: false, error: "No se pudo eliminar la responsiva." };
+    // Con el motivo a la vista: un "no se pudo" a secas no dice qué arreglar.
+    return { ok: false, error: `No se pudo eliminar la responsiva: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 

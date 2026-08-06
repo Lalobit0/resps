@@ -78,6 +78,9 @@ export default async function PaginaResponsivas({
         <a href="/api/archivero" className={btnGhost} title="Descarga todas las responsivas en un ZIP, por departamento y empleado">
           🗄️ Archivero (ZIP)
         </a>
+        <Link href="/responsivas/generar" className={btnGhost}>
+          ✎✎ Generar en lote
+        </Link>
         <Link href="/responsivas/lote" className={btnGhost}>
           ↥↥ Carga masiva
         </Link>

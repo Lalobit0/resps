@@ -86,16 +86,20 @@ export default async function PaginaInicio() {
       </PageHeader>
 
       {faltanResponsiva > 0 ? (
-        <Link
-          href="/inventario?sinresp=1"
-          className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 hover:bg-sky-100"
-        >
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
           <span>
-            📄 <b>{faltanResponsiva}</b> equipo(s) entregados <b>sin carta responsiva</b>. Genéralas para que los
-            empleados las firmen.
+            📄 <b>{faltanResponsiva}</b> equipo(s) entregados <b>sin carta responsiva</b>. Genéralas todas juntas e
+            imprime el paquete para recoger las firmas.
           </span>
-          <span className="font-semibold underline">Ver cuáles →</span>
-        </Link>
+          <span className="flex flex-wrap gap-2">
+            <Link href="/responsivas/generar" className={btnPrimary}>
+              ✎ Generar en lote
+            </Link>
+            <Link href="/inventario?sinresp=1" className={btnGhost}>
+              Ver cuáles
+            </Link>
+          </span>
+        </div>
       ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

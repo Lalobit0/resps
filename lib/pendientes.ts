@@ -14,11 +14,17 @@ export type EquipoSinResponsiva = {
   asignado_a: number;
   empleado_numero: string;
   empleado_nombre: string;
+  empleado_puesto: string;
+  empleado_departamento: string;
+  empleado_area: string | null;
+  empleado_clase: string | null;
 };
 
 const CONSULTA = `
   SELECT e.id, e.codigo, e.tipo, e.marca, e.modelo, e.numero_serie, e.asignado_a,
-         em.numero_empleado AS empleado_numero, em.nombre AS empleado_nombre
+         em.numero_empleado AS empleado_numero, em.nombre AS empleado_nombre,
+         em.puesto AS empleado_puesto, em.departamento AS empleado_departamento,
+         em.area AS empleado_area, em.clase AS empleado_clase
   FROM equipos e
   JOIN empleados em ON em.id = e.asignado_a
   WHERE e.estado = 'ASIGNADO'
@@ -36,6 +42,17 @@ const CONSULTA = `
 /** Lista completa de equipos asignados sin responsiva vigente. */
 export function equiposSinResponsiva(): EquipoSinResponsiva[] {
   return db.prepare(`${CONSULTA} ORDER BY e.tipo ASC, e.codigo ASC`).all() as EquipoSinResponsiva[];
+}
+
+/**
+ * Lo mismo, ordenado como conviene para imprimir y repartir en piso: por
+ * departamento y empleado, de modo que las cartas de una misma área salgan
+ * juntas del cajón de la impresora.
+ */
+export function equiposSinResponsivaParaGenerar(): EquipoSinResponsiva[] {
+  return db
+    .prepare(`${CONSULTA} ORDER BY em.departamento ASC, COALESCE(em.area,'') ASC, em.nombre ASC, e.tipo ASC`)
+    .all() as EquipoSinResponsiva[];
 }
 
 /** Solo el conteo, para los avisos del tablero. */
@@ -136,4 +153,66 @@ export function responsivasSinFirmaDe(empleadoId: number): ResponsivaSinFirma[] 
 /** Solo el conteo, para los avisos. */
 export function totalSinFirma(): number {
   return (db.prepare(`SELECT COUNT(*) AS c FROM (${SIN_FIRMA})`).get() as { c: number }).c;
+}
+
+/**
+ * Tandas generadas de golpe. Sirven para reimprimir el paquete completo y para
+ * repartir después el escaneo de las cartas firmadas, que vuelve en el mismo
+ * orden en que salieron impresas.
+ */
+export type LoteGenerado = {
+  lote: string;
+  total: number;
+  sin_firma: number;
+  creado: string;
+  departamentos: string | null;
+};
+
+export function lotesGenerados(): LoteGenerado[] {
+  return db
+    .prepare(
+      `SELECT r.lote,
+              COUNT(*) AS total,
+              SUM(CASE WHEN COALESCE(r.pdf_firmado,'') = '' THEN 1 ELSE 0 END) AS sin_firma,
+              MIN(r.created_at) AS creado,
+              (SELECT GROUP_CONCAT(d, ', ') FROM (
+                 SELECT DISTINCT em2.departamento AS d FROM responsivas r2
+                 JOIN empleados em2 ON em2.id = r2.empleado_id
+                 WHERE r2.lote = r.lote AND r2.estado != 'ELIMINADA' ORDER BY d
+               )) AS departamentos
+       FROM responsivas r
+       WHERE COALESCE(r.lote,'') != '' AND r.estado != 'ELIMINADA'
+       GROUP BY r.lote
+       ORDER BY creado DESC`
+    )
+    .all() as LoteGenerado[];
+}
+
+/** Las cartas de una tanda, en el mismo orden en que se imprimieron. */
+export type ResponsivaDeLote = {
+  id: number;
+  folio: string;
+  clase: string;
+  pdf_path: string | null;
+  firmada: number;
+  empleado_id: number;
+  empleado_numero: string;
+  empleado_nombre: string;
+  equipos: string | null;
+};
+
+export function responsivasDeLote(lote: string): ResponsivaDeLote[] {
+  return db
+    .prepare(
+      `SELECT r.id, r.folio, r.clase, r.pdf_path,
+              CASE WHEN COALESCE(r.pdf_firmado,'') = '' THEN 0 ELSE 1 END AS firmada,
+              r.empleado_id, em.numero_empleado AS empleado_numero, em.nombre AS empleado_nombre,
+              (SELECT GROUP_CONCAT(e.codigo, ', ') FROM responsiva_items ri
+                 JOIN equipos e ON e.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
+       FROM responsivas r
+       JOIN empleados em ON em.id = r.empleado_id
+       WHERE r.lote = ? AND r.estado != 'ELIMINADA'
+       ORDER BY r.id ASC`
+    )
+    .all(lote) as ResponsivaDeLote[];
 }

@@ -491,13 +491,31 @@ export async function cargarResponsivaFirmada(formData: FormData): Promise<Resul
     const ext = (nombreArchivo.split(".").pop() || "pdf").toLowerCase();
     if (!EXT_PERMITIDAS.includes(ext)) return { ok: false, error: "El archivo debe ser PDF, JPG o PNG." };
 
-    // Modo "existente": valida equipos disponibles
+    // Modo "existente": el equipo debe estar libre o ya ser de este empleado.
+    // Ese segundo caso es el normal aquí: se está cargando la carta firmada de
+    // algo que ya se le había entregado (regularizar el archivo).
     let equipos: Equipo[] = [];
     if (modo === "existente" && equipoIds.length) {
       const marcas = equipoIds.map(() => "?").join(",");
       equipos = db.prepare(`SELECT * FROM equipos WHERE id IN (${marcas})`).all(...equipoIds) as Equipo[];
-      if (equipos.length !== equipoIds.length || equipos.some((e) => e.estado !== "DISPONIBLE")) {
-        return { ok: false, error: "Alguno de los equipos seleccionados ya no está disponible." };
+      if (equipos.length !== equipoIds.length) {
+        return { ok: false, error: "Alguno de los equipos seleccionados ya no existe." };
+      }
+      const ocupado = equipos.find(
+        (e) => e.estado !== "DISPONIBLE" && !(e.estado === "ASIGNADO" && e.asignado_a === empleado.id)
+      );
+      if (ocupado) {
+        const otro = ocupado.asignado_a
+          ? (db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(ocupado.asignado_a) as
+              | { numero_empleado: string; nombre: string }
+              | undefined)
+          : undefined;
+        return {
+          ok: false,
+          error: otro
+            ? `${ocupado.codigo} está asignado a ${otro.numero_empleado} ${otro.nombre}. Registra su devolución antes de cargarle la carta a otra persona.`
+            : `${ocupado.codigo} está en estado ${ocupado.estado.toLowerCase()}: no se le puede cargar una responsiva.`,
+        };
       }
     }
 

@@ -538,6 +538,43 @@ export async function ligarConSuResponsiva(equipoId?: number): Promise<Resultado
   }
 }
 
+/** Qué pasó con un equipo del escaneo, para poder revisarlo y corregirlo en pantalla. */
+export type LineaEscaneo = {
+  equipoId: number;
+  codigo: string;
+  descripcion: string;
+  serie: string;
+  accion: "NUEVO" | "ACTUALIZADO" | "IGUAL";
+  cambios: string[];
+  empleadoId: number | null;
+  empleadoTexto: string | null;
+  /** Se ligó en esta carga (no venía asignado desde antes). */
+  ligadoAhora: boolean;
+  usuarioEscaneo: string;
+  aviso: string;
+  sinResponsiva: boolean;
+};
+
+export type ResultadoEscaneo = {
+  leidos: number;
+  nuevos: number;
+  actualizados: number;
+  iguales: number;
+  ligados: number;
+  porFirmar: number;
+  lineas: LineaEscaneo[];
+  sinSerie: string[];
+  ilegibles: string[];
+};
+
+/** Nombre legible de un empleado por id. */
+function nombreEmpleado(id: number): string | null {
+  const e = db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(id) as
+    | { numero_empleado: string; nombre: string }
+    | undefined;
+  return e ? `${e.numero_empleado} ${e.nombre}` : null;
+}
+
 /**
  * Carga el archivo que genera el script de escaneo de las computadoras.
  *
@@ -549,7 +586,9 @@ export async function ligarConSuResponsiva(equipoId?: number): Promise<Resultado
  *
  * No borra datos: un campo que el escaneo trae vacío conserva lo que ya había.
  */
-export async function importarEscaneoComputo(formData: FormData): Promise<ResultadoAccion> {
+export async function importarEscaneoComputo(
+  formData: FormData
+): Promise<ResultadoAccion & { escaneo?: ResultadoEscaneo }> {
   try {
     const archivos = formData.getAll("archivo").filter((a): a is File => a instanceof File);
     if (!archivos.length) return { ok: false, error: "No se recibió ningún archivo." };
@@ -606,13 +645,8 @@ export async function importarEscaneoComputo(formData: FormData): Promise<Result
       modelo: "modelo",
     };
 
-    const nuevos: string[] = [];
-    const cambiados: string[] = [];
-    const ligados: string[] = [];
-    const idsLigados: number[] = [];
-    const sinEmpleado: string[] = [];
+    const lineas: LineaEscaneo[] = [];
     const sinSerie: string[] = [];
-    let iguales = 0;
 
     const proceso = db.transaction(() => {
       const catalogo = db
@@ -669,29 +703,42 @@ export async function importarEscaneoComputo(formData: FormData): Promise<Result
 
           // Vínculo con el empleado que usa la máquina.
           let asignado = existente.asignado_a;
+          let aviso = "";
+          let ligadoAhora = false;
           if (empleado && existente.asignado_a !== empleado.id) {
             const vigente = responsivaVigenteDe(existente.id);
             if (vigente && vigente.empleado_id !== empleado.id) {
-              sinEmpleado.push(
-                `${existente.codigo} lo usa ${empleado.numero_empleado} ${empleado.nombre} pero tiene la responsiva ` +
-                  `${vigente.folio} vigente a nombre de otra persona: registra la devolución antes de cambiarlo.`
-              );
+              aviso =
+                `Lo usa ${empleado.numero_empleado} ${empleado.nombre}, pero tiene la responsiva ${vigente.folio} ` +
+                `vigente a nombre de otra persona: registra la devolución antes de cambiarlo.`;
             } else {
               asignado = empleado.id;
-              ligados.push(`${existente.codigo} → ${empleado.numero_empleado} ${empleado.nombre}`);
-              idsLigados.push(existente.id);
+              ligadoAhora = true;
             }
           } else if (numEmp && !empleado) {
-            sinEmpleado.push(`${existente.codigo}: el número de empleado ${numEmp} no existe en el sistema`);
+            aviso = `El usuario “${numEmp}” del escaneo no existe como empleado: elige a quién se le asigna.`;
           }
 
-          if (!diferencias.length && asignado === existente.asignado_a) {
-            iguales += 1;
-            continue;
-          }
-          if (diferencias.length) {
-            cambiados.push(`${existente.codigo} (${serie}) — ${diferencias.join("; ")}`);
-          }
+          const sinCambios = !diferencias.length && asignado === existente.asignado_a;
+          lineas.push({
+            equipoId: existente.id,
+            codigo: existente.codigo,
+            descripcion: `${marca} ${modelo}`.trim() || "(sin modelo)",
+            serie,
+            accion: sinCambios ? "IGUAL" : "ACTUALIZADO",
+            cambios: diferencias,
+            empleadoId: asignado,
+            empleadoTexto: asignado
+              ? empleado && asignado === empleado.id
+                ? `${empleado.numero_empleado} ${empleado.nombre}`
+                : nombreEmpleado(asignado)
+              : null,
+            ligadoAhora,
+            usuarioEscaneo: numEmp,
+            aviso,
+            sinResponsiva: false,
+          });
+          if (sinCambios) continue;
           db.prepare(
             "UPDATE equipos SET marca=?, modelo=?, specs=?, detalles=?, estado=?, asignado_a=? WHERE id=?"
           ).run(
@@ -709,8 +756,6 @@ export async function importarEscaneoComputo(formData: FormData): Promise<Result
             const valor = (f[campo] ?? "").trim();
             if (valor) detalles[campo] = valor;
           }
-          if (numEmp && !empleado) sinEmpleado.push(`serie ${serie}: el número de empleado ${numEmp} no existe en el sistema`);
-
           const codigo = generarCodigo(TIPO_DEFAULTS.COMPUTO.prefijo);
           const info = db
             .prepare(
@@ -737,14 +782,25 @@ export async function importarEscaneoComputo(formData: FormData): Promise<Result
             modelo: (f.modelo ?? "").trim(),
             asignado_a: empleado ? empleado.id : null,
           });
-          nuevos.push(
-            `${codigo} ${(f.marca ?? "").trim()} ${(f.modelo ?? "").trim()} (${serie})` +
-              (empleado ? ` → ${empleado.numero_empleado} ${empleado.nombre}` : " — sin empleado")
-          );
-          if (empleado) {
-            ligados.push(`${codigo} → ${empleado.numero_empleado} ${empleado.nombre}`);
-            idsLigados.push(Number(info.lastInsertRowid));
-          }
+          lineas.push({
+            equipoId: Number(info.lastInsertRowid),
+            codigo,
+            descripcion: `${(f.marca ?? "").trim()} ${(f.modelo ?? "").trim()}`.trim() || "(sin modelo)",
+            serie,
+            accion: "NUEVO",
+            cambios: [],
+            empleadoId: empleado ? empleado.id : null,
+            empleadoTexto: empleado ? `${empleado.numero_empleado} ${empleado.nombre}` : null,
+            ligadoAhora: !!empleado,
+            usuarioEscaneo: numEmp,
+            aviso:
+              numEmp && !empleado
+                ? `El usuario “${numEmp}” del escaneo no existe como empleado: elige a quién se le asigna.`
+                : !numEmp
+                  ? "El escaneo no trae usuario: elige a quién se le asigna."
+                  : "",
+            sinResponsiva: false,
+          });
         }
       }
     });
@@ -753,27 +809,23 @@ export async function importarEscaneoComputo(formData: FormData): Promise<Result
     revalidar();
     revalidatePath("/empleados");
 
-    const bloque = (titulo: string, lista: string[], tope = 25) =>
-      lista.length ? `\n\n${titulo} (${lista.length}):\n· ${lista.slice(0, tope).join("\n· ")}${lista.length > tope ? `\n· …y ${lista.length - tope} más` : ""}` : "";
+    // Marca cuáles quedaron entregados sin carta firmada.
+    const pendientes = idsSinResponsiva();
+    for (const l of lineas) l.sinResponsiva = l.empleadoId !== null && pendientes.has(l.equipoId);
 
-    // De lo que quedó ligado, cuáles siguen sin carta firmada.
-    const pendientes = idsLigados.length ? idsSinResponsiva() : new Set<number>();
-    const porFirmar = idsLigados.filter((id) => pendientes.has(id)).length;
+    const escaneo: ResultadoEscaneo = {
+      leidos: filas.length,
+      nuevos: lineas.filter((l) => l.accion === "NUEVO").length,
+      actualizados: lineas.filter((l) => l.accion === "ACTUALIZADO").length,
+      iguales: lineas.filter((l) => l.accion === "IGUAL").length,
+      ligados: lineas.filter((l) => l.ligadoAhora).length,
+      porFirmar: lineas.filter((l) => l.sinResponsiva).length,
+      lineas,
+      sinSerie,
+      ilegibles,
+    };
 
-    const resumen =
-      `Se leyeron ${filas.length} equipos del escaneo: ${nuevos.length} nuevos, ${cambiados.length} actualizados, ` +
-      `${iguales} ya estaban al día, ${ligados.length} ligados a su empleado.` +
-      (porFirmar
-        ? `\n\n📄 ${porFirmar} de ellos quedaron entregados SIN carta responsiva: genérala con "Ver los que faltan" ` +
-          `de aquí arriba, o desde la ficha del empleado.`
-        : "") +
-      bloque("Ligados a su empleado", ligados) +
-      bloque("Datos actualizados", cambiados) +
-      bloque("Altas nuevas", nuevos) +
-      bloque("Requieren revisión", [...sinEmpleado, ...sinSerie]) +
-      bloque("Archivos que no se pudieron leer", ilegibles);
-
-    return { ok: true, mensaje: resumen };
+    return { ok: true, escaneo };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo leer el archivo del escaneo. Acepta CSV, TSV, JSON o Excel." };

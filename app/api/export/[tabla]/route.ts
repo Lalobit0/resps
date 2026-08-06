@@ -42,15 +42,18 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
   const rows = db
     .prepare(
       `SELECT e.*, (SELECT COUNT(*) FROM equipos q WHERE q.asignado_a = e.id) AS eq,
-              (SELECT COUNT(*) FROM equipos qc WHERE qc.asignado_a = e.id AND qc.tipo = 'COMPUTO') AS computo
+              (SELECT COUNT(*) FROM equipos qc WHERE qc.asignado_a = e.id AND qc.tipo = 'COMPUTO') AS computo,
+              (SELECT COUNT(*) FROM equipos qt WHERE qt.asignado_a = e.id AND qt.tipo = 'CELULAR') AS celular,
+              (SELECT COUNT(*) FROM equipos qr WHERE qr.asignado_a = e.id AND qr.tipo = 'RADIO') AS radio,
+              (SELECT COUNT(*) FROM equipos qo WHERE qo.asignado_a = e.id AND qo.tipo NOT IN ('COMPUTO','CELULAR','RADIO')) AS otro
        FROM empleados e ${where}
        ORDER BY CAST(e.numero_empleado AS INTEGER) ASC, e.numero_empleado ASC`
     )
     .all(...val) as Record<string, unknown>[];
   return {
     titulo: "Empleados",
-    columnas: ["No.", "Nombre", "Clase", "Puesto", "Departamento", "Área", "Jefe directo", "Alta", "Correo", "Teléfono", "Cómputo", "Eq.", "Estado"],
-    pesos: [5, 15, 8, 11, 10, 8, 11, 7, 13, 8, 6, 3, 6],
+    columnas: ["No.", "Nombre", "Clase", "Puesto", "Departamento", "Área", "Jefe directo", "Alta", "Correo", "Teléfono", "Equipos", "Estado"],
+    pesos: [5, 15, 8, 11, 10, 8, 11, 7, 12, 8, 10, 6],
     filas: rows.map((e) => [
       e.numero_empleado as string,
       e.nombre as string,
@@ -62,8 +65,15 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
       fechaCorta(e.fecha_alta as string | null),
       (e.correo as string) ?? "",
       (e.telefono as string) ?? "",
-      (e.computo as number) > 0 ? `Sí (${e.computo as number})` : "Sin PC",
-      e.eq as number,
+      // Qué trae cada quien, por tipo: "PC 1 · CEL 1".
+      [
+        (e.computo as number) > 0 ? `PC ${e.computo as number}` : "Sin PC",
+        (e.celular as number) > 0 ? `CEL ${e.celular as number}` : "",
+        (e.radio as number) > 0 ? `RADIO ${e.radio as number}` : "",
+        (e.otro as number) > 0 ? `OTRO ${e.otro as number}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
       e.activo ? "Activo" : "Inactivo",
     ]),
   };

@@ -264,16 +264,15 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <Card className="p-0">
           <table className="w-full table-fixed border-collapse">
             <colgroup>
-              <col className="w-[5%]" />
-              <col className="w-[16%]" />
+              <col className="w-[4%]" />
+              <col className="w-[14%]" />
+              <col className="w-[9%]" />
               <col className="w-[10%]" />
-              <col className="w-[11%]" />
               <col className="w-[12%]" />
               <col className="w-[10%]" />
-              <col className="w-[9%]" />
-              <col className="w-[4%]" />
+              <col className="w-[17%]" />
               <col className="w-[6%]" />
-              <col className="w-[5%]" />
+              <col className="w-[6%]" />
               <col className="w-[12%]" />
             </colgroup>
             <thead className="border-b border-line bg-paper/70">
@@ -284,8 +283,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                 <th className={thc}>Puesto</th>
                 <th className={thc}>Depto / Área</th>
                 <th className={thc}>Jefe directo</th>
-                <th className={`${thc} text-center`} title="Equipo de cómputo asignado">Cómputo</th>
-                <th className={`${thc} text-center`}>Eq.</th>
+                <th className={thc} title="Equipos asignados por tipo">Equipos</th>
                 <th className={`${thc} text-center`} title="Equipos entregados sin carta responsiva">Sin resp.</th>
                 <th className={thc}>Estado</th>
                 <th className={thc}>Acciones</th>
@@ -313,28 +311,22 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                   <td className={`${celda} truncate text-xs text-soft`} title={e.supervisor ?? ""}>
                     {e.supervisor ?? "—"}
                   </td>
-                  <td className={`${celda} text-center`}>
-                    {(e.computo ?? 0) > 0 ? (
-                      <Link href={`/empleados/${e.id}`} title="Tiene equipo de cómputo asignado">
-                        <Badge tono="verde">💻 {e.computo}</Badge>
-                      </Link>
-                    ) : (
-                      <span
-                        className="inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
-                        title="No tiene equipo de cómputo asignado"
-                      >
-                        Sin PC
-                      </span>
-                    )}
-                  </td>
-                  <td className={`${celda} text-center`}>
-                    {e.equipos_asignados > 0 ? (
-                      <Link href={`/empleados/${e.id}`}>
-                        <Badge tono="petrol">{e.equipos_asignados}</Badge>
-                      </Link>
-                    ) : (
-                      <span className="text-soft">—</span>
-                    )}
+                  <td className={celda}>
+                    <Link href={`/empleados/${e.id}`} className="flex flex-wrap items-center gap-1" title="Ver su histórico">
+                      {(e.computo ?? 0) > 0 ? (
+                        <Badge tono="verde">PC {e.computo}</Badge>
+                      ) : (
+                        <span
+                          className="inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                          title="No tiene equipo de cómputo asignado"
+                        >
+                          Sin PC
+                        </span>
+                      )}
+                      {(e.celular ?? 0) > 0 ? <Badge tono="petrol">CEL {e.celular}</Badge> : null}
+                      {(e.radio ?? 0) > 0 ? <Badge tono="ambar">RADIO {e.radio}</Badge> : null}
+                      {(e.otro ?? 0) > 0 ? <Badge tono="gris">OTRO {e.otro}</Badge> : null}
+                    </Link>
                   </td>
                   <td className={`${celda} text-center`}>
                     {(e.sin_responsiva ?? 0) > 0 ? (

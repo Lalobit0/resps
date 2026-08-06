@@ -6,7 +6,8 @@ import type { Empleado, EquipoConAsignado } from "../lib/types";
 import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
 import type { Conflicto } from "../lib/duplicados";
-import { eliminarEquipo, guardarEquipo, importarEscaneoComputo, importarInventario, ligarConSuResponsiva } from "../app/inventario/actions";
+import { eliminarEquipo, guardarEquipo, importarEscaneoComputo, importarInventario, ligarConSuResponsiva, type ResultadoEscaneo as ResultadoEscaneoDatos } from "../app/inventario/actions";
+import ResultadoEscaneo from "./ResultadoEscaneo";
 import SelectConOtro from "./SelectConOtro";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
@@ -120,6 +121,7 @@ export default function InventarioClient({
     return e ? formDeEquipo(e) : null;
   });
   const [verEq, setVerEq] = useState<EquipoConAsignado | null>(null);
+  const [escaneo, setEscaneo] = useState<ResultadoEscaneoDatos | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [pendiente, iniciar] = useTransition();
@@ -183,9 +185,11 @@ export default function InventarioClient({
     setMensaje("");
     const fd = new FormData();
     for (const archivo of seleccion) fd.append("archivo", archivo);
+    setEscaneo(null);
     iniciar(async () => {
       const res = await importarEscaneoComputo(fd);
-      if (res.ok) setMensaje(res.mensaje ?? "Escaneo cargado.");
+      if (res.ok && res.escaneo) setEscaneo(res.escaneo);
+      else if (res.ok) setMensaje(res.mensaje ?? "Escaneo cargado.");
       else setError(res.error ?? "No se pudo leer el escaneo.");
     });
   };
@@ -202,6 +206,8 @@ export default function InventarioClient({
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
       ) : null}
+
+      {escaneo ? <ResultadoEscaneo escaneo={escaneo} empleados={empleados} onCerrar={() => setEscaneo(null)} /> : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <button

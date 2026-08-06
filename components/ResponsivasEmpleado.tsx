@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ETIQUETA_CLASE } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
 import EliminarResponsivaBtn from "./EliminarResponsivaBtn";
+import SubirFirmadaBtn from "./SubirFirmadaBtn";
 import { Badge, Card, Empty, btnGhost, btnPrimary, tdCls, thCls } from "./ui";
 
 function puedeDevolver(r: { tipo: string; estado: string; clase: string }): boolean {
@@ -21,7 +22,14 @@ export type FilaResponsiva = {
   fecha: string;
   estado: string;
   pdf_path: string | null;
+  /** Escaneo de la carta firmada en papel; sin él la responsiva está pendiente de firma. */
+  pdf_firmado?: string | null;
 };
+
+/** Una responsiva cuenta como firmada si hay documento firmado o llegó ya firmada. */
+export function estaFirmada(r: FilaResponsiva): boolean {
+  return !!r.pdf_firmado || r.origen === "CARGADA";
+}
 
 /**
  * Tabla de responsivas del empleado con vista previa del documento DENTRO de
@@ -58,6 +66,7 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
               <td className={`${tdCls} text-xs`}>
                 {r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} · {ETIQUETA_CLASE[r.clase] ?? r.clase}{" "}
                 {r.origen === "CARGADA" ? <Badge tono="ambar">Cargada</Badge> : null}
+                {estaFirmada(r) ? null : <Badge tono="rojo">Sin firmar</Badge>}
               </td>
               <td className={`${tdCls} mono text-xs`}>{r.equipos ?? "—"}</td>
               <td className={tdCls}>{fechaCorta(r.fecha)}</td>
@@ -80,6 +89,14 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
                       {sel?.id === r.id ? "Ocultar" : "Ver"}
                     </button>
                   ) : null}
+                  {estaFirmada(r) ? null : (
+                    <>
+                      <a href={`/api/pdf/${r.id}?original=1`} target="_blank" className={btnGhost}>
+                        Imprimir
+                      </a>
+                      <SubirFirmadaBtn responsivaId={r.id} folio={r.folio} className={btnGhost} />
+                    </>
+                  )}
                   {puedeDevolver(r) ? (
                     <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                       Devolución
@@ -118,6 +135,7 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
           >
             <div className="flex items-center justify-between gap-2">
               <span className="mono text-xs font-semibold text-kraft-dark">{r.folio}</span>
+              {estaFirmada(r) ? null : <Badge tono="rojo">Sin firmar</Badge>}
               {r.tipo === "DEVOLUCION" ? null : r.estado === "VIGENTE" ? (
                 <Badge tono="verde">Vigente</Badge>
               ) : (

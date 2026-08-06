@@ -134,6 +134,7 @@ export async function crearResponsiva(datos: {
   empleadoId: number;
   equipoId: number | null;
   observaciones: string;
+  /** Firma digital del empleado. Vacía = la carta se imprime y se firma en papel. */
   firma: string;
   firmaAutoridad?: string | null;
   firmanteAutoridad?: Firmante | null;
@@ -146,7 +147,6 @@ export async function crearResponsiva(datos: {
 
     const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(datos.empleadoId) as Empleado | undefined;
     if (!empleado) return { ok: false, error: "Selecciona un empleado." };
-    if (!datos.firma) return { ok: false, error: "Falta la firma del empleado." };
 
     let montoNum: number | null = null;
     if (config.esVale) {
@@ -193,7 +193,7 @@ export async function crearResponsiva(datos: {
           "VIGENTE",
           entregadoPor,
           datos.observaciones.trim() || null,
-          datos.firma,
+          datos.firma || null,
           datos.firmaAutoridad || null,
           firmante?.nombre?.trim() || null,
           firmante?.puesto?.trim() || null,
@@ -222,7 +222,7 @@ export async function crearResponsiva(datos: {
         observaciones: datos.observaciones,
         concepto: config.esVale ? datos.concepto?.trim() || null : null,
         monto: montoNum,
-        firmaEmpleado: datos.firma,
+        firmaEmpleado: datos.firma || null,
         firmaAutoridad: datos.firmaAutoridad || null,
         firmante,
         empleado,
@@ -715,5 +715,56 @@ export async function revertirBitacora(bitacoraId: number): Promise<ResultadoAcc
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo revertir el movimiento." };
+  }
+}
+
+/**
+ * Sube el escaneo de una responsiva ya firmada en papel.
+ *
+ * La carta se genera en el sistema, se imprime, se firma y aquí se guarda el
+ * documento firmado. El PDF original se conserva: el escaneo se guarda aparte
+ * y es el que se muestra a partir de ese momento.
+ */
+export async function subirResponsivaFirmada(responsivaId: number, formData: FormData): Promise<ResultadoAccion> {
+  try {
+    const archivo = formData.get("archivo") as File | null;
+    if (!archivo || typeof archivo.arrayBuffer !== "function") {
+      return { ok: false, error: "Sube el archivo escaneado o la foto de la responsiva firmada." };
+    }
+    const r = db.prepare("SELECT id, folio, estado, pdf_firmado FROM responsivas WHERE id = ?").get(responsivaId) as
+      | { id: number; folio: string; estado: string; pdf_firmado: string | null }
+      | undefined;
+    if (!r) return { ok: false, error: "La responsiva ya no existe." };
+    if (r.estado === "ELIMINADA") return { ok: false, error: "Esa responsiva está eliminada." };
+
+    const ext = (archivo.name.split(".").pop() || "pdf").toLowerCase();
+    if (!EXT_PERMITIDAS.includes(ext)) return { ok: false, error: "El archivo debe ser PDF, JPG o PNG." };
+
+    const relativa = path.join("storage", "responsivas", `${r.folio}-firmada.${ext}`);
+    fs.mkdirSync(path.join(process.cwd(), "storage", "responsivas"), { recursive: true });
+    fs.writeFileSync(path.join(process.cwd(), relativa), Buffer.from(await archivo.arrayBuffer()));
+
+    // Si ya había un escaneo con otra extensión, se quita para no dejar basura.
+    if (r.pdf_firmado && r.pdf_firmado !== relativa) {
+      try {
+        fs.rmSync(path.join(process.cwd(), r.pdf_firmado), { force: true });
+      } catch {
+        // si no se puede borrar, no es motivo para fallar
+      }
+    }
+
+    db.prepare("UPDATE responsivas SET pdf_firmado = ?, fecha_firma = ? WHERE id = ?").run(relativa, hoyISO(), responsivaId);
+    registrarBitacora(
+      "RESPONSIVA_FIRMADA",
+      `Se subió la responsiva firmada ${r.folio}`,
+      { folio: r.folio, archivo: relativa },
+      false
+    );
+
+    revalidar();
+    return { ok: true, id: responsivaId, folio: r.folio, mensaje: `${r.folio} quedó marcada como firmada.` };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo guardar la responsiva firmada." };
   }
 }

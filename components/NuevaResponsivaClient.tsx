@@ -18,8 +18,6 @@ import {
 } from "../lib/constants";
 import { crearResponsiva } from "../app/responsivas/actions";
 import { guardarEquipo } from "../app/inventario/actions";
-import SignatureCanvas from "./SignatureCanvas";
-import SelectorFirmaAutoridad, { type FirmaElegida } from "./SelectorFirmaAutoridad";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import SelectConOtro from "./SelectConOtro";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
@@ -72,9 +70,6 @@ export default function NuevaResponsivaClient({
   const [observaciones, setObservaciones] = useState("");
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
-  const [firma, setFirma] = useState<string | null>(null);
-  const [firmaAutoridad, setFirmaAutoridad] = useState<FirmaElegida | null>(null);
-  const [firmarDespues, setFirmarDespues] = useState(true);
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
 
@@ -203,24 +198,14 @@ export default function NuevaResponsivaClient({
     if (requiereEquipo && !equipoId) return setError("Selecciona el equipo a asignar.");
     if (esVale && !concepto.trim()) return setError("Indica el concepto del descuento.");
     if (esVale && !(Number(monto) > 0)) return setError("Indica el valor de reposición.");
-    if (!firma) return setError("Falta la firma del empleado en pantalla.");
-    if (!firmarDespues && !firmaAutoridad) return setError(`Falta la firma del ${rol.toLowerCase()}.`);
-    if (!firmarDespues && firmaAutoridad?.ausencia && !firmaAutoridad.nombre.trim()) {
-      return setError("Escribe el nombre de quien firma por ausencia.");
-    }
-
     iniciar(async () => {
       const res = await crearResponsiva({
         clase,
         empleadoId: empleado.id,
         equipoId: requiereEquipo ? equipoId : null,
         observaciones,
-        firma,
-        firmaAutoridad: firmarDespues ? null : firmaAutoridad?.imagen ?? null,
-        firmanteAutoridad:
-          firmarDespues || !firmaAutoridad
-            ? null
-            : { nombre: firmaAutoridad.nombre, puesto: firmaAutoridad.puesto, ausencia: firmaAutoridad.ausencia },
+        // La carta se imprime y se firma en papel: sin firmas digitales.
+        firma: "",
         concepto: esVale ? concepto : undefined,
         monto: esVale ? monto : undefined,
       });
@@ -413,39 +398,19 @@ export default function NuevaResponsivaClient({
         </Card>
 
         <Card>
-          <h2 className="mb-3 text-base font-bold text-ink">5. Firmas</h2>
-          <div className="space-y-5">
-            <div>
-              <p className="mb-2 text-sm font-semibold text-ink">Firma del empleado</p>
-              <SignatureCanvas onChange={setFirma} />
-            </div>
-
-            <div className="border-t border-line pt-4">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-ink">Firma del {rol}</p>
-                <label className="flex items-center gap-1.5 text-xs text-soft">
-                  <input
-                    type="checkbox"
-                    className="accent-kraft"
-                    checked={firmarDespues}
-                    onChange={(e) => {
-                      setFirmarDespues(e.target.checked);
-                      if (e.target.checked) setFirmaAutoridad(null);
-                    }}
-                  />
-                  Firmar después
-                </label>
-              </div>
-              {firmarDespues ? (
-                <p className="rounded-md border border-dashed border-line bg-paper/60 px-3 py-4 text-center text-xs text-soft">
-                  La responsiva quedará marcada como <b>pendiente de firma</b>. El {rol.toLowerCase()} podrá firmarla
-                  digitalmente después desde el listado de responsivas y el PDF se regenera con las dos firmas.
-                </p>
-              ) : (
-                <SelectorFirmaAutoridad clase={clase} firmas={firmas} onChange={setFirmaAutoridad} />
-              )}
-            </div>
-          </div>
+          <h2 className="mb-3 text-base font-bold text-ink">5. Firma</h2>
+          <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink">
+            <li>Se genera la responsiva y se abre el PDF para imprimirla.</li>
+            <li>El empleado y el {rol.toLowerCase()} la firman en papel.</li>
+            <li>
+              Se escanea o se toma foto y se sube con el botón <b>Subir firmada</b>, que aparece en la ficha del
+              empleado y en el listado de responsivas.
+            </li>
+          </ol>
+          <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Mientras no se suba el documento firmado, la responsiva queda marcada como <b>sin firmar</b>, para que no se
+            pierda de vista.
+          </p>
         </Card>
 
         {error ? (
@@ -453,10 +418,10 @@ export default function NuevaResponsivaClient({
         ) : null}
 
         <button className={`${btnPrimary} w-full py-3 text-base`} onClick={enviar} disabled={pendiente}>
-          {pendiente ? "Generando PDF…" : "Generar responsiva y guardar"}
+          {pendiente ? "Generando PDF…" : "Generar responsiva para firmar"}
         </button>
         <p className="text-center text-xs text-soft">
-          El PDF se guarda en el repositorio con el formato oficial de Sultana Packaging.
+          El PDF se abre para imprimirlo y se guarda en el repositorio con el formato oficial de Sultana Packaging.
         </p>
       </div>
 

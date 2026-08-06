@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { db } from "../../lib/db";
-import type { FirmaGuardada, ResponsivaLista } from "../../lib/types";
+import type { ResponsivaLista } from "../../lib/types";
 import { fechaCorta } from "../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "../../components/ui";
 import ExportarBotones from "../../components/ExportarBotones";
 import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
-import FirmarAutoridadBtn from "../../components/FirmarAutoridadBtn";
-import { ETIQUETA_CLASE, rolAutoridad } from "../../lib/constants";
+import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
+import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -59,14 +59,9 @@ export default async function PaginaResponsivas({
     )
     .all(...valores) as ResponsivaLista[];
 
-  const firmas = db
-    .prepare("SELECT * FROM firmas WHERE activo = 1 ORDER BY rol ASC, nombre ASC")
-    .all() as FirmaGuardada[];
-
   const totalDuplicados = responsivas.filter((r) => (r.es_duplicado ?? 0) > 0).length;
-  // Generadas por el sistema a las que todavía les falta la firma de sistemas / RH.
-  const faltaFirma = (r: ResponsivaLista) =>
-    r.tipo === "ASIGNACION" && r.origen !== "CARGADA" && !r.firma_autoridad;
+  // La carta se firma en papel: está pendiente mientras no se suba el escaneo.
+  const faltaFirma = (r: ResponsivaLista) => r.origen !== "CARGADA" && !r.pdf_firmado;
   const totalSinFirma = responsivas.filter(faltaFirma).length;
 
   return (
@@ -87,9 +82,9 @@ export default async function PaginaResponsivas({
       ) : null}
 
       {totalSinFirma > 0 ? (
-        <div className="mb-5 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-          ✍️ Hay <b>{totalSinFirma}</b> responsiva(s) pendientes de firma. Usa el botón <b>Firmar</b> del renglón para
-          firmarlas digitalmente; el PDF se regenera con las dos firmas.
+        <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          ✍️ Hay <b>{totalSinFirma}</b> responsiva(s) <b>sin firmar</b>. Imprímelas, recoge las firmas y sube el
+          documento con <b>Subir firmada</b> del renglón.
         </div>
       ) : null}
 
@@ -152,7 +147,7 @@ export default async function PaginaResponsivas({
                       {r.tipo === "ASIGNACION" ? <Badge tono="petrol">Asignación</Badge> : <Badge tono="kraft">Devolución</Badge>}
                       {r.origen === "CARGADA" ? <Badge tono="ambar">Cargada</Badge> : null}
                       {(r.es_duplicado ?? 0) > 0 ? <Badge tono="rojo">Posible duplicado</Badge> : null}
-                      {faltaFirma(r) ? <Badge tono="ambar">Falta firma</Badge> : null}
+                      {faltaFirma(r) ? <Badge tono="rojo">Sin firmar</Badge> : null}
                     </div>
                     <div className="mt-1 text-[11px] text-soft">{ETIQUETA_CLASE[r.clase] ?? r.clase}</div>
                   </td>
@@ -175,19 +170,18 @@ export default async function PaginaResponsivas({
                   </td>
                   <td className={tdCls}>
                     <div className="flex flex-wrap gap-1.5">
-                      {r.pdf_path ? (
+                      {r.pdf_path || r.pdf_firmado ? (
                         <a href={`/api/pdf/${r.id}`} target="_blank" className={btnGhost}>
                           Ver PDF
                         </a>
                       ) : null}
                       {faltaFirma(r) ? (
-                        <FirmarAutoridadBtn
-                          id={r.id}
-                          folio={r.folio}
-                          clase={r.clase}
-                          rol={rolAutoridad(r.clase)}
-                          firmas={firmas}
-                        />
+                        <>
+                          <a href={`/api/pdf/${r.id}?original=1`} target="_blank" className={btnGhost}>
+                            Imprimir
+                          </a>
+                          <SubirFirmadaBtn responsivaId={r.id} folio={r.folio} className={btnGhost} />
+                        </>
                       ) : null}
                       {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE" ? (
                         <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>

@@ -17,6 +17,7 @@ export default async function PaginaResponsivas({
 }) {
   const sp = await searchParams;
   const tipo = typeof sp.tipo === "string" ? sp.tipo : "";
+  const clase = typeof sp.clase === "string" ? sp.clase : "";
   const estado = typeof sp.estado === "string" ? sp.estado : "";
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const nueva = typeof sp.nueva === "string" ? sp.nueva : "";
@@ -35,6 +36,10 @@ export default async function PaginaResponsivas({
   if (tipo) {
     condiciones.push("r.tipo = ?");
     valores.push(tipo);
+  }
+  if (clase) {
+    condiciones.push("r.clase = ?");
+    valores.push(clase);
   }
   if (estado) {
     condiciones.push("r.estado = ?");
@@ -108,6 +113,14 @@ export default async function PaginaResponsivas({
           <option value="ASIGNACION">Asignación</option>
           <option value="DEVOLUCION">Devolución</option>
         </select>
+        <select name="clase" defaultValue={clase} className={`${inputCls} max-w-[190px]`}>
+          <option value="">Todas las cartas</option>
+          {Object.entries(ETIQUETA_CLASE).map(([valor, etiqueta]) => (
+            <option key={valor} value={valor}>
+              {etiqueta}
+            </option>
+          ))}
+        </select>
         <select name="estado" defaultValue={estado} className={`${inputCls} max-w-[160px]`}>
           <option value="">Todos los estados</option>
           <option value="VIGENTE">Vigente</option>
@@ -123,7 +136,7 @@ export default async function PaginaResponsivas({
           Filtrar
         </button>
         <div className="ml-auto">
-          <ExportarBotones tabla="responsivas" params={{ q, tipo, estado }} />
+          <ExportarBotones tabla="responsivas" params={{ q, tipo, clase, estado }} />
         </div>
       </form>
 

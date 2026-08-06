@@ -401,11 +401,11 @@ export default function InventarioClient({
                       </div>
                     ) : null}
                   </td>
-                  <td className={`${tdc} truncate text-xs`} title={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : ""}>
-                    {e.asignado_nombre ? (
-                      <>
+                  <td className={`${tdc} truncate text-xs`} title={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre} · ver su histórico` : ""}>
+                    {e.asignado_nombre && e.asignado_a ? (
+                      <Link href={`/empleados/${e.asignado_a}`} className="hover:text-kraft hover:underline">
                         <span className="mono text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
-                      </>
+                      </Link>
                     ) : (
                       <span className="text-soft">—</span>
                     )}
@@ -584,10 +584,10 @@ function DetalleEquipo({
           {dato("Estado", <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>)}
           {dato(
             "Asignado a",
-            e.asignado_nombre ? (
-              <>
+            e.asignado_nombre && e.asignado_a ? (
+              <Link href={`/empleados/${e.asignado_a}`} className="hover:text-kraft hover:underline" title="Ver su histórico">
                 <span className="mono text-xs text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
-              </>
+              </Link>
             ) : null
           )}
           {dato("Fecha de compra", e.fecha_compra ? fechaCorta(e.fecha_compra) : null)}

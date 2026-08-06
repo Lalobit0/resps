@@ -67,6 +67,9 @@ export default async function PaginaResponsivas({
   return (
     <>
       <PageHeader eyebrow="Repositorio" title="Cartas responsivas">
+        <Link href="/responsivas/lote" className={btnGhost}>
+          ↥↥ Carga masiva
+        </Link>
         <Link href="/responsivas/cargar" className={btnGhost}>
           ↥ Cargar firmada
         </Link>

@@ -136,6 +136,8 @@ export async function crearResponsiva(datos: {
   observaciones: string;
   /** Firma digital del empleado. Vacía = la carta se imprime y se firma en papel. */
   firma: string;
+  /** Fecha de la carta (yyyy-mm-dd). Vacía = hoy. */
+  fecha?: string;
   firmaAutoridad?: string | null;
   firmanteAutoridad?: Firmante | null;
   concepto?: string;
@@ -174,7 +176,13 @@ export async function crearResponsiva(datos: {
     }
 
     const folio = siguienteFolio(config.esVale ? "VALE" : "RESP");
-    const fecha = hoyISO();
+    // La fecha se puede ajustar (p. ej. a la de alta del empleado), pero nunca
+    // adelante: una carta con fecha futura no la firmó nadie todavía.
+    const hoy = hoyISO();
+    const pedida = (datos.fecha ?? "").trim();
+    if (pedida && !/^\d{4}-\d{2}-\d{2}$/.test(pedida)) return { ok: false, error: "La fecha de la carta no es válida." };
+    if (pedida && pedida > hoy) return { ok: false, error: "La fecha de la carta no puede ser posterior a hoy." };
+    const fecha = pedida || hoy;
     const entregadoPor = getConfig("entrega_default", "Departamento de TI");
     // Sin firma de la empresa no hay firmante que registrar.
     const firmante: Firmante | null = datos.firmaAutoridad ? datos.firmanteAutoridad ?? null : null;

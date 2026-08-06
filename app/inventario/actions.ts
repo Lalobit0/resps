@@ -6,9 +6,10 @@ import { revalidatePath } from "next/cache";
 import { db, BACKUP_DIR } from "../../lib/db";
 import { CAMPOS_DETALLE, TIPO_DEFAULTS, TIPOS_EQUIPO, type TipoEquipo } from "../../lib/constants";
 import { importarDeExcel, type Mapeo } from "../../lib/importar";
+import { leerEscaneo } from "../../lib/escaneo";
 import { CAMPOS_BLOQUEANTES, conflictosContra, detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
 import { fusionarInventario } from "../../lib/fusionar.mjs";
-import { equiposPorLigar } from "../../lib/pendientes";
+import { equiposPorLigar, idsSinResponsiva } from "../../lib/pendientes";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -534,5 +535,220 @@ export async function ligarConSuResponsiva(equipoId?: number): Promise<Resultado
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudieron ligar los equipos." };
+  }
+}
+
+/**
+ * Carga el archivo que genera el script de escaneo de las computadoras.
+ *
+ * La serie manda: con ella se busca el equipo en el inventario.
+ *  - Si está, se actualiza solo lo que cambió y se dice qué cambió.
+ *  - Si no está, se da de alta.
+ *  - En los dos casos se liga al empleado por su número. Si ese número no
+ *    existe en el sistema, el equipo se queda sin asignar y se avisa.
+ *
+ * No borra datos: un campo que el escaneo trae vacío conserva lo que ya había.
+ */
+export async function importarEscaneoComputo(formData: FormData): Promise<ResultadoAccion> {
+  try {
+    const archivo = formData.get("archivo") as File | null;
+    if (!archivo || typeof archivo.arrayBuffer !== "function") return { ok: false, error: "No se recibió ningún archivo." };
+
+    const buf = Buffer.from(await archivo.arrayBuffer());
+    const filas = await leerEscaneo(buf, archivo.name);
+    if (!filas.length) {
+      return {
+        ok: false,
+        error:
+          "No se reconoció ninguna columna del escaneo. Acepta CSV, TSV, JSON o Excel con encabezados " +
+          "como: usuario, nombre del equipo, sistema operativo, marca, modelo, número de serie, procesador, " +
+          "espacio del disco, IP, marca del monitor y serie del monitor.",
+      };
+    }
+
+    const CAMPOS = ["nombre_computadora", "sistema_operativo", "procesador", "ram", "hd", "ip", "monitor", "monitor_serie"];
+    const ETIQUETA: Record<string, string> = {
+      nombre_computadora: "nombre del equipo",
+      sistema_operativo: "sistema operativo",
+      procesador: "procesador",
+      ram: "RAM",
+      hd: "disco",
+      ip: "IP",
+      monitor: "monitor",
+      monitor_serie: "serie del monitor",
+      marca: "marca",
+      modelo: "modelo",
+    };
+
+    const nuevos: string[] = [];
+    const cambiados: string[] = [];
+    const ligados: string[] = [];
+    const idsLigados: number[] = [];
+    const sinEmpleado: string[] = [];
+    const sinSerie: string[] = [];
+    let iguales = 0;
+
+    const proceso = db.transaction(() => {
+      const catalogo = db
+        .prepare("SELECT id, codigo, numero_serie, detalles, marca, modelo, asignado_a FROM equipos")
+        .all() as {
+        id: number;
+        codigo: string;
+        numero_serie: string | null;
+        detalles: string | null;
+        marca: string;
+        modelo: string;
+        asignado_a: number | null;
+      }[];
+
+      for (const f of filas) {
+        const serie = (f.serie ?? "").trim();
+        const clave = normalizarSerie(serie);
+        if (!clave) {
+          sinSerie.push(`${f.nombre_computadora || f.num_emp || "(sin nombre)"} — el escaneo no trae número de serie`);
+          continue;
+        }
+
+        // El empleado del escaneo: su número es el usuario de la máquina.
+        const numEmp = (f.num_emp ?? "").trim();
+        let empleado: { id: number; numero_empleado: string; nombre: string } | undefined;
+        if (numEmp) {
+          empleado = db
+            .prepare("SELECT id, numero_empleado, nombre FROM empleados WHERE numero_empleado = ?")
+            .get(numEmp) as typeof empleado;
+        }
+
+        const existente = catalogo.find((c) => normalizarSerie(c.numero_serie ?? "") === clave);
+
+        if (existente) {
+          let detalles: Record<string, string> = {};
+          try {
+            detalles = existente.detalles ? (JSON.parse(existente.detalles) as Record<string, string>) : {};
+          } catch {
+            detalles = {};
+          }
+
+          // Qué trae distinto el escaneo. Lo vacío no pisa lo que ya había.
+          const diferencias: string[] = [];
+          for (const campo of CAMPOS) {
+            const valor = (f[campo] ?? "").trim();
+            if (!valor || valor === (detalles[campo] ?? "").trim()) continue;
+            diferencias.push(`${ETIQUETA[campo]}: ${detalles[campo] || "(vacío)"} → ${valor}`);
+            detalles[campo] = valor;
+          }
+          const marca = (f.marca ?? "").trim() || existente.marca;
+          const modelo = (f.modelo ?? "").trim() || existente.modelo;
+          if (marca !== existente.marca) diferencias.push(`marca: ${existente.marca || "(vacío)"} → ${marca}`);
+          if (modelo !== existente.modelo) diferencias.push(`modelo: ${existente.modelo || "(vacío)"} → ${modelo}`);
+
+          // Vínculo con el empleado que usa la máquina.
+          let asignado = existente.asignado_a;
+          if (empleado && existente.asignado_a !== empleado.id) {
+            const vigente = responsivaVigenteDe(existente.id);
+            if (vigente && vigente.empleado_id !== empleado.id) {
+              sinEmpleado.push(
+                `${existente.codigo} lo usa ${empleado.numero_empleado} ${empleado.nombre} pero tiene la responsiva ` +
+                  `${vigente.folio} vigente a nombre de otra persona: registra la devolución antes de cambiarlo.`
+              );
+            } else {
+              asignado = empleado.id;
+              ligados.push(`${existente.codigo} → ${empleado.numero_empleado} ${empleado.nombre}`);
+              idsLigados.push(existente.id);
+            }
+          } else if (numEmp && !empleado) {
+            sinEmpleado.push(`${existente.codigo}: el número de empleado ${numEmp} no existe en el sistema`);
+          }
+
+          if (!diferencias.length && asignado === existente.asignado_a) {
+            iguales += 1;
+            continue;
+          }
+          if (diferencias.length) {
+            cambiados.push(`${existente.codigo} (${serie}) — ${diferencias.join("; ")}`);
+          }
+          db.prepare(
+            "UPDATE equipos SET marca=?, modelo=?, specs=?, detalles=?, estado=?, asignado_a=? WHERE id=?"
+          ).run(
+            marca,
+            modelo,
+            componerSpecs("COMPUTO", detalles) || null,
+            JSON.stringify(detalles),
+            asignado ? "ASIGNADO" : "DISPONIBLE",
+            asignado,
+            existente.id
+          );
+        } else {
+          const detalles: Record<string, string> = {};
+          for (const campo of CAMPOS) {
+            const valor = (f[campo] ?? "").trim();
+            if (valor) detalles[campo] = valor;
+          }
+          if (numEmp && !empleado) sinEmpleado.push(`serie ${serie}: el número de empleado ${numEmp} no existe en el sistema`);
+
+          const codigo = generarCodigo(TIPO_DEFAULTS.COMPUTO.prefijo);
+          const info = db
+            .prepare(
+              "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, estado, asignado_a) VALUES (?,?,?,?,?,?,?,?,?,?)"
+            )
+            .run(
+              codigo,
+              "COMPUTO",
+              TIPO_DEFAULTS.COMPUTO.categoria,
+              (f.marca ?? "").trim(),
+              (f.modelo ?? "").trim(),
+              serie,
+              componerSpecs("COMPUTO", detalles) || null,
+              Object.keys(detalles).length ? JSON.stringify(detalles) : null,
+              empleado ? "ASIGNADO" : "DISPONIBLE",
+              empleado ? empleado.id : null
+            );
+          catalogo.push({
+            id: Number(info.lastInsertRowid),
+            codigo,
+            numero_serie: serie,
+            detalles: null,
+            marca: (f.marca ?? "").trim(),
+            modelo: (f.modelo ?? "").trim(),
+            asignado_a: empleado ? empleado.id : null,
+          });
+          nuevos.push(
+            `${codigo} ${(f.marca ?? "").trim()} ${(f.modelo ?? "").trim()} (${serie})` +
+              (empleado ? ` → ${empleado.numero_empleado} ${empleado.nombre}` : " — sin empleado")
+          );
+          if (empleado) {
+            ligados.push(`${codigo} → ${empleado.numero_empleado} ${empleado.nombre}`);
+            idsLigados.push(Number(info.lastInsertRowid));
+          }
+        }
+      }
+    });
+    proceso();
+
+    revalidar();
+    revalidatePath("/empleados");
+
+    const bloque = (titulo: string, lista: string[], tope = 25) =>
+      lista.length ? `\n\n${titulo} (${lista.length}):\n· ${lista.slice(0, tope).join("\n· ")}${lista.length > tope ? `\n· …y ${lista.length - tope} más` : ""}` : "";
+
+    // De lo que quedó ligado, cuáles siguen sin carta firmada.
+    const pendientes = idsLigados.length ? idsSinResponsiva() : new Set<number>();
+    const porFirmar = idsLigados.filter((id) => pendientes.has(id)).length;
+
+    const resumen =
+      `Se leyeron ${filas.length} equipos del escaneo: ${nuevos.length} nuevos, ${cambiados.length} actualizados, ` +
+      `${iguales} ya estaban al día, ${ligados.length} ligados a su empleado.` +
+      (porFirmar
+        ? `\n\n📄 ${porFirmar} de ellos quedaron entregados SIN carta responsiva: genérala con "Ver los que faltan" ` +
+          `de aquí arriba, o desde la ficha del empleado.`
+        : "") +
+      bloque("Ligados a su empleado", ligados) +
+      bloque("Datos actualizados", cambiados) +
+      bloque("Altas nuevas", nuevos) +
+      bloque("Requieren revisión", [...sinEmpleado, ...sinSerie]);
+
+    return { ok: true, mensaje: resumen };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo leer el archivo del escaneo. Acepta CSV, TSV, JSON o Excel." };
   }
 }

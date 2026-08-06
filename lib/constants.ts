@@ -122,7 +122,8 @@ export const CAMPOS_DETALLE: Record<TipoEquipo, CampoDetalle[]> = {
     { clave: "activo", etiqueta: "No. de activo" },
     { clave: "descripcion", etiqueta: "Descripción del equipo" },
     { clave: "accesorios", etiqueta: "Accesorios" },
-    { clave: "monitor", etiqueta: "Monitor" },
+    { clave: "monitor", etiqueta: "Monitor (marca / modelo)" },
+    { clave: "monitor_serie", etiqueta: "Serie del monitor" },
   ],
   CELULAR: [
     { clave: "numero", etiqueta: "Número (línea)" },

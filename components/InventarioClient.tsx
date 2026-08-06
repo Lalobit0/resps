@@ -6,7 +6,7 @@ import type { Empleado, EquipoConAsignado } from "../lib/types";
 import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
 import type { Conflicto } from "../lib/duplicados";
-import { eliminarEquipo, guardarEquipo, importarInventario, ligarConSuResponsiva } from "../app/inventario/actions";
+import { eliminarEquipo, guardarEquipo, importarEscaneoComputo, importarInventario, ligarConSuResponsiva } from "../app/inventario/actions";
 import SelectConOtro from "./SelectConOtro";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
@@ -124,6 +124,7 @@ export default function InventarioClient({
   const [mensaje, setMensaje] = useState("");
   const [pendiente, iniciar] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
+  const escaneoRef = useRef<HTMLInputElement>(null);
   const tipoImport = useRef<TipoEquipo>("COMPUTO");
 
   const setC = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -173,12 +174,30 @@ export default function InventarioClient({
     });
   };
 
+  /** Archivo que genera el script que recorre las computadoras. */
+  const importarEscaneo = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const archivo = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!archivo) return;
+    setError("");
+    setMensaje("");
+    const fd = new FormData();
+    fd.append("archivo", archivo);
+    iniciar(async () => {
+      const res = await importarEscaneoComputo(fd);
+      if (res.ok) setMensaje(res.mensaje ?? "Escaneo cargado.");
+      else setError(res.error ?? "No se pudo leer el escaneo.");
+    });
+  };
+
   const camposDetalle = form ? CAMPOS_DETALLE[form.tipo] : [];
 
   return (
     <div className="space-y-5">
       {mensaje ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{mensaje}</div>
+        <div className="max-h-80 overflow-y-auto whitespace-pre-wrap rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {mensaje}
+        </div>
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
@@ -202,6 +221,21 @@ export default function InventarioClient({
           </button>
         ))}
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importar} />
+        <button
+          className={btnGhost}
+          disabled={pendiente}
+          title="Archivo que genera el script que lee las computadoras (CSV, TSV, JSON o Excel)"
+          onClick={() => escaneoRef.current?.click()}
+        >
+          🖥️ Escaneo de PCs
+        </button>
+        <input
+          ref={escaneoRef}
+          type="file"
+          accept=".csv,.tsv,.txt,.json,.xlsx,.xls"
+          className="hidden"
+          onChange={importarEscaneo}
+        />
       </div>
 
       {form ? (

@@ -6,6 +6,7 @@ import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, 
 import ExportarBotones from "../../components/ExportarBotones";
 import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
 import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
+import { CambiarClaseLista, SelectClaseResponsiva } from "../../components/ClaseResponsiva";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,8 @@ export default async function PaginaResponsivas({
     .all(...valores) as ResponsivaLista[];
 
   const totalDuplicados = responsivas.filter((r) => (r.es_duplicado ?? 0) > 0).length;
+  // Solo las de asignación cambian de tipo: la devolución hereda el de su carta.
+  const asignaciones = responsivas.filter((r) => r.tipo === "ASIGNACION");
   // La carta se firma en papel: está pendiente mientras no se suba el escaneo.
   const faltaFirma = (r: ResponsivaLista) => r.origen !== "CARGADA" && !r.pdf_firmado;
   const totalSinFirma = responsivas.filter(faltaFirma).length;
@@ -104,6 +107,13 @@ export default async function PaginaResponsivas({
           ⚠️ Se detectaron <b>{totalDuplicados}</b> responsiva(s) que parecen duplicadas (mismo empleado, tipo y fecha).
           Revísalas y elimina la que sobre; la eliminación va a la papelera y se puede revertir.
         </div>
+      ) : null}
+
+      {asignaciones.length > 0 ? (
+        <CambiarClaseLista
+          ids={asignaciones.map((r) => r.id)}
+          resumen={`${asignaciones[0].folio} … ${asignaciones[asignaciones.length - 1].folio}`}
+        />
       ) : null}
 
       <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
@@ -168,7 +178,9 @@ export default async function PaginaResponsivas({
                       {(r.es_duplicado ?? 0) > 0 ? <Badge tono="rojo">Posible duplicado</Badge> : null}
                       {faltaFirma(r) ? <Badge tono="rojo">Sin firmar</Badge> : null}
                     </div>
-                    <div className="mt-1 text-[11px] text-soft">{ETIQUETA_CLASE[r.clase] ?? r.clase}</div>
+                    <div className="mt-1">
+                      <SelectClaseResponsiva id={r.id} clase={r.clase} tipo={r.tipo} />
+                    </div>
                   </td>
                   <td className={`${tdCls} mono text-xs`}>{r.empleado_numero}</td>
                   <td className={`${tdCls} font-medium`}>

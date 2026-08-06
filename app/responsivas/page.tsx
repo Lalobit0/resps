@@ -67,6 +67,9 @@ export default async function PaginaResponsivas({
   return (
     <>
       <PageHeader eyebrow="Repositorio" title="Cartas responsivas">
+        <a href="/api/archivero" className={btnGhost} title="Descarga todas las responsivas en un ZIP, por departamento y empleado">
+          🗄️ Archivero (ZIP)
+        </a>
         <Link href="/responsivas/lote" className={btnGhost}>
           ↥↥ Carga masiva
         </Link>

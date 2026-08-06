@@ -551,11 +551,32 @@ export async function ligarConSuResponsiva(equipoId?: number): Promise<Resultado
  */
 export async function importarEscaneoComputo(formData: FormData): Promise<ResultadoAccion> {
   try {
-    const archivo = formData.get("archivo") as File | null;
-    if (!archivo || typeof archivo.arrayBuffer !== "function") return { ok: false, error: "No se recibió ningún archivo." };
+    const archivos = formData.getAll("archivo").filter((a): a is File => a instanceof File);
+    if (!archivos.length) return { ok: false, error: "No se recibió ningún archivo." };
 
-    const buf = Buffer.from(await archivo.arrayBuffer());
-    const filas = await leerEscaneo(buf, archivo.name);
+    // El script genera un archivo por computadora, así que se pueden subir
+    // varios de un jalón, o el ZIP con todos dentro.
+    const filas: Awaited<ReturnType<typeof leerEscaneo>> = [];
+    const ilegibles: string[] = [];
+    for (const archivo of archivos) {
+      const buf = Buffer.from(await archivo.arrayBuffer());
+      if (/\.zip$/i.test(archivo.name)) {
+        const JSZip = (await import("jszip")).default;
+        const zip = await JSZip.loadAsync(buf);
+        for (const entrada of Object.values(zip.files)) {
+          if (entrada.dir || /(^|\/)__MACOSX\//.test(entrada.name)) continue;
+          const contenido = Buffer.from(await entrada.async("nodebuffer"));
+          const leidas = await leerEscaneo(contenido, entrada.name);
+          if (leidas.length) filas.push(...leidas);
+          else ilegibles.push(entrada.name);
+        }
+        continue;
+      }
+      const leidas = await leerEscaneo(buf, archivo.name);
+      if (leidas.length) filas.push(...leidas);
+      else ilegibles.push(archivo.name);
+    }
+
     if (!filas.length) {
       return {
         ok: false,
@@ -566,7 +587,10 @@ export async function importarEscaneoComputo(formData: FormData): Promise<Result
       };
     }
 
-    const CAMPOS = ["nombre_computadora", "sistema_operativo", "procesador", "ram", "hd", "ip", "monitor", "monitor_serie"];
+    const CAMPOS = [
+      "nombre_computadora", "sistema_operativo", "procesador", "ram", "hd", "discos",
+      "arquitectura", "ip", "monitor", "monitor_serie",
+    ];
     const ETIQUETA: Record<string, string> = {
       nombre_computadora: "nombre del equipo",
       sistema_operativo: "sistema operativo",
@@ -574,6 +598,8 @@ export async function importarEscaneoComputo(formData: FormData): Promise<Result
       ram: "RAM",
       hd: "disco",
       ip: "IP",
+      discos: "discos",
+      arquitectura: "arquitectura",
       monitor: "monitor",
       monitor_serie: "serie del monitor",
       marca: "marca",
@@ -744,7 +770,8 @@ export async function importarEscaneoComputo(formData: FormData): Promise<Result
       bloque("Ligados a su empleado", ligados) +
       bloque("Datos actualizados", cambiados) +
       bloque("Altas nuevas", nuevos) +
-      bloque("Requieren revisión", [...sinEmpleado, ...sinSerie]);
+      bloque("Requieren revisión", [...sinEmpleado, ...sinSerie]) +
+      bloque("Archivos que no se pudieron leer", ilegibles);
 
     return { ok: true, mensaje: resumen };
   } catch (e) {

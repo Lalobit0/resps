@@ -174,15 +174,15 @@ export default function InventarioClient({
     });
   };
 
-  /** Archivo que genera el script que recorre las computadoras. */
+  /** Archivos que genera el script que recorre las computadoras (uno por equipo). */
   const importarEscaneo = (ev: React.ChangeEvent<HTMLInputElement>) => {
-    const archivo = ev.target.files?.[0];
+    const seleccion = Array.from(ev.target.files ?? []);
     ev.target.value = "";
-    if (!archivo) return;
+    if (!seleccion.length) return;
     setError("");
     setMensaje("");
     const fd = new FormData();
-    fd.append("archivo", archivo);
+    for (const archivo of seleccion) fd.append("archivo", archivo);
     iniciar(async () => {
       const res = await importarEscaneoComputo(fd);
       if (res.ok) setMensaje(res.mensaje ?? "Escaneo cargado.");
@@ -224,7 +224,7 @@ export default function InventarioClient({
         <button
           className={btnGhost}
           disabled={pendiente}
-          title="Archivo que genera el script que lee las computadoras (CSV, TSV, JSON o Excel)"
+          title="Archivos que genera el script que lee las computadoras: puedes seleccionar varios o subir el ZIP"
           onClick={() => escaneoRef.current?.click()}
         >
           🖥️ Escaneo de PCs
@@ -232,7 +232,8 @@ export default function InventarioClient({
         <input
           ref={escaneoRef}
           type="file"
-          accept=".csv,.tsv,.txt,.json,.xlsx,.xls"
+          multiple
+          accept=".txt,.csv,.tsv,.json,.zip,.xlsx,.xls"
           className="hidden"
           onChange={importarEscaneo}
         />

@@ -41,6 +41,123 @@ export const MAPEO_ESCANEO: Mapeo = {
   ],
 };
 
+/**
+ * Encabezados del reporte que genera el script por equipo (un archivo por
+ * computadora). Se separan del mapeo de tablas porque ahí las claves son otras:
+ * "Fabricante del sistema", "NUMERO_DE_SERIE", "MONITORES"…
+ */
+const MAPEO_REPORTE: Mapeo = {
+  ...MAPEO_ESCANEO,
+  num_emp: [...MAPEO_ESCANEO.num_emp, "asignado a"],
+  nombre_computadora: [...MAPEO_ESCANEO.nombre_computadora, "nombre de host"],
+  sistema_operativo: [...MAPEO_ESCANEO.sistema_operativo, "nombre del sistema operativo"],
+  marca: [...MAPEO_ESCANEO.marca, "fabricante del sistema"],
+  modelo: [...MAPEO_ESCANEO.modelo, "modelo del sistema"],
+  ram: [...MAPEO_ESCANEO.ram, "memoria ram gb"],
+  hd: [...MAPEO_ESCANEO.hd, "discos"],
+  ip: [...MAPEO_ESCANEO.ip, "ipv4"],
+  monitor: [...MAPEO_ESCANEO.monitor, "monitores"],
+  arquitectura: ["arquitectura"],
+};
+
+/** Valores que el reporte deja como pendientes de llenar a mano. */
+const PENDIENTE = /^(captura manual|n\/?a|na|sin dato|desconocido|-+)$/i;
+
+/** Marca limpia: "Dell Inc." -> "DELL". */
+function limpiarMarca(v: string): string {
+  return v
+    .replace(/[,.]?\s*(inc|corporation|corp|co|ltd|llc|s\.?a\.?( de c\.?v\.?)?)\.?$/i, "")
+    .trim()
+    .toUpperCase();
+}
+
+/** Procesador legible: "Intel(R) Core(TM) i3-8100 CPU @ 3.60GHz" -> "Intel Core i3-8100". */
+function limpiarProcesador(v: string): string {
+  return v
+    .replace(/\((R|TM|r|tm)\)/g, "")
+    .replace(/\s*CPU\s*@.*$/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** Capacidad real del disco: se queda con la última medida del renglón. */
+function capacidadDisco(v: string): string {
+  const medidas = v.match(/\d+(?:[.,]\d+)?\s*(?:GB|TB|MB)/gi);
+  return medidas?.length ? medidas[medidas.length - 1].replace(/\s+/g, " ").toUpperCase() : "";
+}
+
+/**
+ * Lee el reporte de un equipo: líneas "Clave: valor" o "CLAVE=valor", con
+ * valores que pueden venir en los renglones siguientes (discos, IPs, monitores).
+ */
+function filasDeReporte(texto: string, mapeo: Mapeo = MAPEO_REPORTE): FilaEscaneo[] {
+  const alias = new Map<string, string>();
+  for (const [campo, nombres] of Object.entries(mapeo)) {
+    for (const n of nombres) alias.set(normClave(n), campo);
+    alias.set(normClave(campo), campo);
+  }
+
+  const lineas = texto.split(/\r?\n/);
+  const crudo: Record<string, string[]> = {};
+  const esClave = (l: string) => /^\[/.test(l) || /^[A-ZÁÉÍÓÚÑ_0-9]{2,}\s*=/.test(l);
+
+  for (let i = 0; i < lineas.length; i += 1) {
+    const linea = lineas[i].trim();
+    if (!linea || linea.startsWith("[")) continue;
+    const m = linea.match(/^([^:=]{2,60}?)\s*[:=]\s*(.*)$/);
+    if (!m) continue;
+    const campo = alias.get(normClave(m[1]));
+    if (!campo) continue;
+
+    let valor = m[2].trim();
+    // Valor en los renglones siguientes (DISCOS=, IPV4=, MONITORES=).
+    if (!valor) {
+      const partes: string[] = [];
+      for (let j = i + 1; j < lineas.length; j += 1) {
+        const sig = lineas[j].trim();
+        if (!sig || esClave(sig)) break;
+        partes.push(sig);
+        i = j;
+      }
+      valor = partes.join(" · ");
+    }
+    if (!valor || PENDIENTE.test(valor)) continue;
+    (crudo[campo] ??= []).push(valor);
+  }
+
+  // De cada dato se conserva el primero que apareció, que es el más confiable.
+  const fila: FilaEscaneo = {};
+  for (const [campo, valores] of Object.entries(crudo)) fila[campo] = valores[0];
+  if (!Object.keys(fila).length) return [];
+
+  // El usuario viene como DOMINIO\numero.
+  if (fila.num_emp) fila.num_emp = fila.num_emp.split(/[\\/]/).pop()!.trim();
+  if (fila.marca) fila.marca = limpiarMarca(fila.marca);
+  if (fila.procesador) fila.procesador = limpiarProcesador(fila.procesador);
+  if (fila.ram && /^\d+([.,]\d+)?$/.test(fila.ram)) fila.ram = `${fila.ram.replace(",", ".")}GB`;
+  if (fila.hd) {
+    // El renglón trae modelo y capacidad: la capacidad va al campo del disco y
+    // la descripción completa se guarda aparte para no perderla.
+    const capacidad = capacidadDisco(fila.hd);
+    if (capacidad && capacidad !== fila.hd) {
+      fila.discos = fila.hd;
+      fila.hd = capacidad;
+    }
+  }
+  if (fila.monitor) {
+    // "HP 2311 - Serie: CNT21096BL" -> monitor + serie del monitor.
+    const series: string[] = [];
+    const modelos = fila.monitor.split(" · ").map((m) => {
+      const s = m.match(/serie\s*:\s*(\S+)/i);
+      if (s) series.push(s[1]);
+      return m.replace(/\s*-?\s*serie\s*:.*$/i, "").trim();
+    });
+    fila.monitor = modelos.filter(Boolean).join(" · ");
+    if (series.length && !fila.monitor_serie) fila.monitor_serie = series.join(" · ");
+  }
+  return [fila];
+}
+
 export type FilaEscaneo = Record<string, string>;
 
 /**
@@ -179,6 +296,12 @@ export async function leerEscaneo(buf: Buffer, nombreArchivo: string, mapeo: Map
   }
 
   const texto = buf.toString("utf8").replace(/^﻿/, "");
+
+  // Reporte por equipo del script de inventario (un archivo por computadora).
+  if (/\[DATOS MEDIANTE POWERSHELL\]|NUMERO_DE_SERIE\s*=|\[SYSTEMINFO\]/i.test(texto)) {
+    return filasDeReporte(texto);
+  }
+
   if (ext === "json" || texto.trimStart().startsWith("[") || texto.trimStart().startsWith("{")) {
     try {
       return filasDeJson(texto, mapeo);

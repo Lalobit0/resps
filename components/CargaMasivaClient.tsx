@@ -18,6 +18,8 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
   const router = useRouter();
   const ref = useRef<HTMLInputElement>(null);
   const [renglones, setRenglones] = useState<RenglonLote[] | null>(null);
+  /** Página abierta en el visor, para ver la carta mientras se asigna. */
+  const [viendo, setViendo] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [pendiente, iniciar] = useTransition();
@@ -29,6 +31,7 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     setError("");
     setMensaje("");
     setRenglones(null);
+    setViendo(null);
     const fd = new FormData();
     for (const a of archivos) fd.append("archivo", a);
     iniciar(async () => {
@@ -97,6 +100,12 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
   };
 
   const faltan = renglones?.filter((r) => !r.responsivaId && !r.empleadoId).length ?? 0;
+  const indiceAbierta = renglones?.findIndex((r) => r.clave === viendo) ?? -1;
+  const abierta = indiceAbierta >= 0 ? renglones?.[indiceAbierta] ?? null : null;
+  /** Salta a otra carta sin cerrar el visor: así se revisan de corrido. */
+  const irA = (i: number) => {
+    if (renglones && i >= 0 && i < renglones.length) setViendo(renglones[i].clave);
+  };
 
   return (
     <div className="space-y-5">
@@ -190,9 +199,9 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
                     </td>
                     <td className={`${tdCls} mono text-xs`}>{r.equiposTexto ?? "—"}</td>
                     <td className={tdCls}>
-                      <a href={`/api/lote/${encodeURIComponent(r.clave)}`} target="_blank" className={btnGhost}>
-                        Ver página
-                      </a>
+                      <button className={btnGhost} onClick={() => setViendo(r.clave)}>
+                        👁 Ver
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -205,6 +214,71 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
             responsiva cargada del empleado que elijas. Las que dejes sin empleado no se guardan.
           </p>
         </Card>
+      ) : null}
+
+      {abierta ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4" onClick={() => setViendo(null)}>
+          <div
+            className="flex h-[92vh] w-full max-w-6xl flex-col rounded-lg border border-line bg-white p-3 shadow-xl"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-bold text-ink">
+                  Carta {indiceAbierta + 1} de {renglones?.length ?? 0}
+                </p>
+                <p className="text-xs text-soft">
+                  {abierta.archivo} · pág. {abierta.pagina}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className={btnGhost} disabled={indiceAbierta <= 0} onClick={() => irA(indiceAbierta - 1)}>
+                  ← Anterior
+                </button>
+                <button
+                  className={btnGhost}
+                  disabled={!renglones || indiceAbierta >= renglones.length - 1}
+                  onClick={() => irA(indiceAbierta + 1)}
+                >
+                  Siguiente →
+                </button>
+                <a href={`/api/lote/${encodeURIComponent(abierta.clave)}`} target="_blank" className={btnGhost}>
+                  Abrir en pestaña ↗
+                </a>
+                <button className={btnGhost} onClick={() => setViendo(null)}>
+                  ✕ Cerrar
+                </button>
+              </div>
+            </div>
+
+            {/* El empleado se elige aquí mismo, con la carta a la vista. */}
+            <div className="mb-2 flex flex-wrap items-center gap-3 rounded-md border border-line bg-paper/60 px-3 py-2">
+              {abierta.responsivaId ? (
+                <p className="text-sm">
+                  Es la firma de <span className="mono font-semibold">{abierta.folio}</span> — {abierta.empleadoTexto}
+                </p>
+              ) : (
+                <>
+                  <span className="text-sm font-semibold text-ink">Empleado:</span>
+                  <div className="w-80">
+                    <BuscadorEmpleado
+                      empleados={empleados}
+                      value={abierta.empleadoId}
+                      onChange={(id) => cambiarEmpleado(abierta.clave, id)}
+                    />
+                  </div>
+                  {abierta.empleadoId ? <span className="text-xs text-emerald-700">Asignada</span> : null}
+                </>
+              )}
+            </div>
+
+            <iframe
+              title={`Carta ${abierta.pagina}`}
+              src={`/api/lote/${encodeURIComponent(abierta.clave)}`}
+              className="h-full w-full rounded-md border border-line bg-white"
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -7,7 +7,7 @@ import { db, getConfig, STORAGE_DIR, STORAGE_ELIMINADAS } from "../../lib/db";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
-import { CAMPOS_DETALLE, CARTAS, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
+import { CAMPOS_DETALLE, CARTAS, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, ETIQUETA_CLASE, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
 
@@ -904,7 +904,10 @@ export async function analizarLoteResponsivas(formData: FormData): Promise<Resul
           empleadoId: empleado?.id ?? null,
           empleadoTexto: empleado ? `${empleado.numero_empleado} ${empleado.nombre}` : null,
           comoSeIdentifico: existente ? `folio ${p.folio} ya registrado` : como,
-          clase: (CARTAS as Record<string, unknown>)[p.clase ?? ""] ? (p.clase as string) : "COMPUTO",
+          // Sin texto que leer no se adivina el tipo de carta: se deja vacío y
+          // la pantalla obliga a elegirlo. Suponer "cómputo" guardaba mal las
+          // de Wi-Fi, que ni siquiera llevan equipo.
+          clase: (CARTAS as Record<string, unknown>)[p.clase ?? ""] ? (p.clase as string) : "",
           fecha: p.fecha,
           equipoIds: equipos.map((e) => e.id),
           equiposTexto: equipos.length ? equipos.map((e) => e.codigo).join(", ") : null,
@@ -961,13 +964,17 @@ export async function confirmarLoteResponsivas(
         omitidas.push(`${r.clave}: sin empleado asignado`);
         continue;
       }
+      if (!(CARTAS as Record<string, unknown>)[r.clase]) {
+        omitidas.push(`${r.clave}: falta elegir el tipo de carta`);
+        continue;
+      }
       const empleado = db.prepare("SELECT id FROM empleados WHERE id = ?").get(r.empleadoId) as { id: number } | undefined;
       if (!empleado) {
         omitidas.push(`${r.clave}: el empleado ya no existe`);
         continue;
       }
 
-      const clase = (CARTAS as Record<string, unknown>)[r.clase] ? r.clase : "COMPUTO";
+      const clase = r.clase;
       const folio = siguienteFolio(clase === "VALE" ? "VALE" : "RESP");
       const destino = path.join("storage", "responsivas", `${folio}.pdf`);
       fs.mkdirSync(path.join(process.cwd(), "storage", "responsivas"), { recursive: true });
@@ -1042,5 +1049,36 @@ export async function confirmarLoteResponsivas(
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo guardar la carga masiva." };
+  }
+}
+
+/**
+ * Corrige el tipo de carta de una responsiva.
+ *
+ * Hace falta cuando se cargó un escaneo y el sistema no pudo leer de qué era:
+ * entra como cómputo y hay que decirle que era, por ejemplo, de Wi-Fi.
+ */
+export async function cambiarClaseResponsiva(id: number, clase: string): Promise<ResultadoAccion> {
+  try {
+    if (!(CARTAS as Record<string, unknown>)[clase]) return { ok: false, error: "Tipo de carta no válido." };
+    const r = db.prepare("SELECT folio, clase, estado FROM responsivas WHERE id = ?").get(id) as
+      | { folio: string; clase: string; estado: string }
+      | undefined;
+    if (!r) return { ok: false, error: "La responsiva ya no existe." };
+    if (r.estado === "ELIMINADA") return { ok: false, error: "Esa responsiva está eliminada." };
+    if (r.clase === clase) return { ok: true, id, folio: r.folio };
+
+    db.prepare("UPDATE responsivas SET clase = ? WHERE id = ?").run(clase, id);
+    registrarBitacora(
+      "CAMBIO_CLASE_RESPONSIVA",
+      `${r.folio}: el tipo de carta pasó de ${ETIQUETA_CLASE[r.clase] ?? r.clase} a ${ETIQUETA_CLASE[clase] ?? clase}`,
+      { folio: r.folio, antes: r.clase, despues: clase },
+      false
+    );
+    revalidar();
+    return { ok: true, id, folio: r.folio, mensaje: `${r.folio} quedó como ${ETIQUETA_CLASE[clase] ?? clase}.` };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo cambiar el tipo de carta." };
   }
 }

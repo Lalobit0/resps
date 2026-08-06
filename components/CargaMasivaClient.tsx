@@ -3,11 +3,11 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado } from "../lib/types";
-import { ETIQUETA_CLASE } from "../lib/constants";
+import { CLASES_CARTA, ETIQUETA_CLASE } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
 import { analizarLoteResponsivas, confirmarLoteResponsivas, type RenglonLote } from "../app/responsivas/actions";
 import BuscadorEmpleado from "./BuscadorEmpleado";
-import { Badge, Card, btnGhost, btnPrimary, tdCls, thCls } from "./ui";
+import { Badge, Card, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
 
 /**
  * Carga masiva: un PDF con muchas responsivas se separa en una por página, el
@@ -49,6 +49,14 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     });
   };
 
+  /** Tipo de carta de una página. En los escaneos no se puede leer: se elige. */
+  const cambiarClase = (clave: string, clase: string) =>
+    setRenglones((rs) => (rs ? rs.map((r) => (r.clave === clave ? { ...r, clase } : r)) : rs));
+
+  /** Un lote suele ser todo del mismo tipo: se aplica de una vez. */
+  const claseATodas = (clase: string) =>
+    setRenglones((rs) => (rs ? rs.map((r) => (r.responsivaId ? r : { ...r, clase })) : rs));
+
   const cambiarEmpleado = (clave: string, id: number | null) =>
     setRenglones((rs) =>
       rs
@@ -68,9 +76,9 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
 
   const guardar = () => {
     if (!renglones) return;
-    const listos = renglones.filter((r) => r.responsivaId || r.empleadoId);
+    const listos = renglones.filter((r) => r.responsivaId || (r.empleadoId && r.clase));
     if (!listos.length) {
-      setError("Todavía no hay ninguna carta con empleado asignado.");
+      setError("Todavía no hay ninguna carta lista: falta elegir empleado y tipo de carta.");
       return;
     }
     setError("");
@@ -99,7 +107,7 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     });
   };
 
-  const faltan = renglones?.filter((r) => !r.responsivaId && !r.empleadoId).length ?? 0;
+  const faltan = renglones?.filter((r) => !r.responsivaId && (!r.empleadoId || !r.clase)).length ?? 0;
   const indiceAbierta = renglones?.findIndex((r) => r.clave === viendo) ?? -1;
   const abierta = indiceAbierta >= 0 ? renglones?.[indiceAbierta] ?? null : null;
   /** Salta a otra carta sin cerrar el visor: así se revisan de corrido. */
@@ -140,7 +148,7 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
                 {faltan > 0 ? (
                   <>
                     {" "}
-                    Faltan <b>{faltan}</b> por asignar a un empleado; las demás ya están listas.
+                    Faltan <b>{faltan}</b> por completar (empleado y tipo de carta); las demás ya están listas.
                   </>
                 ) : (
                   " Todas quedaron identificadas."
@@ -150,6 +158,23 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
             <button className={btnPrimary} disabled={pendiente} onClick={guardar}>
               {pendiente ? "Guardando…" : "Guardar las identificadas"}
             </button>
+          </div>
+
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-line bg-paper/60 px-3 py-2 text-xs">
+            <span className="font-semibold text-ink">Todas son de:</span>
+            {CLASES_CARTA.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className="rounded-md border border-line bg-white px-2 py-1 font-medium text-ink hover:bg-paper"
+                onClick={() => claseATodas(c)}
+              >
+                {ETIQUETA_CLASE[c] ?? c}
+              </button>
+            ))}
+            <span className="text-soft">
+              — cámbialo de golpe cuando el lote sea todo del mismo tipo (las que ya existen no se tocan).
+            </span>
           </div>
 
           <div className="overflow-x-auto rounded-md border border-line">
@@ -173,8 +198,26 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
                     <td className={tdCls}>
                       <div className="flex flex-wrap items-center gap-1">
                         {r.folio ? <span className="mono text-xs font-semibold text-kraft-dark">{r.folio}</span> : null}
-                        <Badge tono="petrol">{ETIQUETA_CLASE[r.clase] ?? r.clase}</Badge>
-                        {r.responsivaId ? <Badge tono="verde">Es la firma de esa carta</Badge> : null}
+                        {r.responsivaId ? (
+                          <>
+                            <Badge tono="petrol">{ETIQUETA_CLASE[r.clase] ?? r.clase}</Badge>
+                            <Badge tono="verde">Es la firma de esa carta</Badge>
+                          </>
+                        ) : (
+                          <select
+                            className={`${inputCls} max-w-[170px] py-1 text-xs ${r.clase ? "" : "border-amber-400"}`}
+                            value={r.clase}
+                            onChange={(e) => cambiarClase(r.clave, e.target.value)}
+                            title="Tipo de carta: elígelo si el escaneo no se pudo leer"
+                          >
+                            <option value="">— Elige el tipo —</option>
+                            {CLASES_CARTA.map((c) => (
+                              <option key={c} value={c}>
+                                {ETIQUETA_CLASE[c] ?? c}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                       <div className="mt-0.5 text-xs text-soft">
                         {r.fecha ? fechaCorta(r.fecha) : "sin fecha"}
@@ -187,6 +230,9 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
                       ) : (
                         <div className="space-y-1">
                           {r.aviso ? <p className="text-xs text-amber-800">{r.aviso}</p> : null}
+                          {!r.clase ? (
+                            <p className="text-xs text-amber-800">Falta elegir el tipo de carta.</p>
+                          ) : null}
                           <div className="w-64">
                             <BuscadorEmpleado
                               empleados={empleados}
@@ -260,13 +306,26 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
               ) : (
                 <>
                   <span className="text-sm font-semibold text-ink">Empleado:</span>
-                  <div className="w-80">
+                  <div className="w-72">
                     <BuscadorEmpleado
                       empleados={empleados}
                       value={abierta.empleadoId}
                       onChange={(id) => cambiarEmpleado(abierta.clave, id)}
                     />
                   </div>
+                  <span className="text-sm font-semibold text-ink">Tipo:</span>
+                  <select
+                    className={`${inputCls} max-w-[180px] py-1 text-sm ${abierta.clase ? "" : "border-amber-400"}`}
+                    value={abierta.clase}
+                    onChange={(e) => cambiarClase(abierta.clave, e.target.value)}
+                  >
+                    <option value="">— Elige el tipo —</option>
+                    {CLASES_CARTA.map((c) => (
+                      <option key={c} value={c}>
+                        {ETIQUETA_CLASE[c] ?? c}
+                      </option>
+                    ))}
+                  </select>
                   {abierta.empleadoId ? <span className="text-xs text-emerald-700">Asignada</span> : null}
                 </>
               )}

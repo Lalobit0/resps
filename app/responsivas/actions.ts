@@ -1082,3 +1082,47 @@ export async function cambiarClaseResponsiva(id: number, clase: string): Promise
     return { ok: false, error: "No se pudo cambiar el tipo de carta." };
   }
 }
+
+/**
+ * Cambia el tipo de carta de varias responsivas de una vez.
+ *
+ * Es para arreglar una carga masiva que entró con el tipo equivocado: se
+ * filtran las que quedaron mal y se corrigen todas juntas.
+ */
+export async function cambiarClaseVarias(ids: number[], clase: string): Promise<ResultadoAccion> {
+  try {
+    if (!(CARTAS as Record<string, unknown>)[clase]) return { ok: false, error: "Tipo de carta no válido." };
+    const limpios = ids.filter((n) => Number.isFinite(n));
+    if (!limpios.length) return { ok: false, error: "No hay responsivas que cambiar." };
+
+    const marcas = limpios.map(() => "?").join(",");
+    const filas = db
+      .prepare(`SELECT id, folio, clase FROM responsivas WHERE id IN (${marcas}) AND estado != 'ELIMINADA'`)
+      .all(...limpios) as { id: number; folio: string; clase: string }[];
+    const cambian = filas.filter((f) => f.clase !== clase);
+    if (!cambian.length) return { ok: true, mensaje: `Ya estaban todas como ${ETIQUETA_CLASE[clase] ?? clase}.` };
+
+    const aplicar = db.transaction(() => {
+      const upd = db.prepare("UPDATE responsivas SET clase = ? WHERE id = ?");
+      for (const f of cambian) upd.run(clase, f.id);
+    });
+    aplicar();
+
+    registrarBitacora(
+      "CAMBIO_CLASE_RESPONSIVA",
+      `${cambian.length} responsiva(s) pasaron a ${ETIQUETA_CLASE[clase] ?? clase}: ${cambian.map((f) => f.folio).join(", ")}`,
+      { clase, folios: cambian.map((f) => f.folio) },
+      false
+    );
+    revalidar();
+    return {
+      ok: true,
+      mensaje: `${cambian.length} responsiva(s) quedaron como ${ETIQUETA_CLASE[clase] ?? clase}: ${cambian
+        .map((f) => f.folio)
+        .join(", ")}.`,
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo cambiar el tipo de carta." };
+  }
+}

@@ -773,3 +773,246 @@ export async function subirResponsivaFirmada(responsivaId: number, formData: For
     return { ok: false, error: "No se pudo guardar la responsiva firmada." };
   }
 }
+
+// ---------- Carga masiva de responsivas ----------
+
+/** Una carta del lote, ya analizada y con la propuesta de a quién pertenece. */
+export type RenglonLote = {
+  clave: string;
+  archivo: string;
+  pagina: number;
+  folio: string | null;
+  /** Responsiva existente con ese folio: la carta es su versión firmada. */
+  responsivaId: number | null;
+  empleadoId: number | null;
+  empleadoTexto: string | null;
+  /** Cómo se identificó al empleado, para que se pueda revisar. */
+  comoSeIdentifico: string;
+  clase: string;
+  fecha: string | null;
+  equipoIds: number[];
+  equiposTexto: string | null;
+  aviso: string;
+};
+
+export type ResultadoLote = { total: number; renglones: RenglonLote[] };
+
+/** Carpeta temporal donde viven las páginas separadas hasta que se confirman. */
+const DIR_LOTE = path.join(process.cwd(), "storage", "lote");
+
+/**
+ * Separa uno o varios PDF (cada uno puede traer muchas cartas) y propone a qué
+ * empleado y equipo corresponde cada página. No guarda nada en la base: solo
+ * deja las páginas sueltas listas para confirmarse.
+ */
+export async function analizarLoteResponsivas(formData: FormData): Promise<ResultadoAccion & { lote?: ResultadoLote }> {
+  try {
+    const archivos = formData.getAll("archivo").filter((a): a is File => a instanceof File);
+    if (!archivos.length) return { ok: false, error: "Sube el PDF con las responsivas." };
+
+    const { partirLote } = await import("../../lib/lote");
+    const sesion = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const carpeta = path.join(DIR_LOTE, sesion);
+    fs.mkdirSync(carpeta, { recursive: true });
+
+    const renglones: RenglonLote[] = [];
+    for (const archivo of archivos) {
+      if (!/\.pdf$/i.test(archivo.name)) continue;
+      const paginas = await partirLote(new Uint8Array(await archivo.arrayBuffer()), archivo.name);
+
+
+      for (const p of paginas) {
+        const clave = `${sesion}/${renglones.length + 1}.pdf`;
+        fs.writeFileSync(path.join(DIR_LOTE, clave), Buffer.from(p.pdfBase64, "base64"));
+
+        // 1) Por folio: si ya existe esa responsiva, la página es su firma.
+        const existente = p.folio
+          ? (db.prepare("SELECT id, empleado_id FROM responsivas WHERE folio = ? AND estado != 'ELIMINADA'").get(p.folio) as
+              | { id: number; empleado_id: number }
+              | undefined)
+          : undefined;
+
+        // 2) Por número de empleado y, si no, por nombre.
+        let empleado = p.numeroEmpleado
+          ? (db.prepare("SELECT id, numero_empleado, nombre FROM empleados WHERE numero_empleado = ?").get(p.numeroEmpleado) as
+              | { id: number; numero_empleado: string; nombre: string }
+              | undefined)
+          : undefined;
+        let como = empleado ? `número de empleado ${p.numeroEmpleado}` : "";
+        if (!empleado && p.nombre) {
+          const porNombre = db
+            .prepare("SELECT id, numero_empleado, nombre FROM empleados WHERE UPPER(nombre) = UPPER(?)")
+            .all(p.nombre) as { id: number; numero_empleado: string; nombre: string }[];
+          if (porNombre.length === 1) {
+            empleado = porNombre[0];
+            como = `nombre “${p.nombre}”`;
+          }
+        }
+        if (existente && !empleado) {
+          empleado = db
+            .prepare("SELECT id, numero_empleado, nombre FROM empleados WHERE id = ?")
+            .get(existente.empleado_id) as typeof empleado;
+          if (empleado) como = `folio ${p.folio}`;
+        }
+
+        // 3) Equipos por serie o IMEI de la carta.
+        const equipos: { id: number; codigo: string }[] = [];
+        for (const s of p.series) {
+          const eq = db
+            .prepare(
+              `SELECT id, codigo FROM equipos
+               WHERE UPPER(REPLACE(REPLACE(COALESCE(numero_serie,''),' ',''),'-','')) = UPPER(REPLACE(REPLACE(?,' ',''),'-',''))
+                  OR COALESCE(json_extract(detalles,'$.imei'),'') = ?
+               LIMIT 1`
+            )
+            .get(s, s) as { id: number; codigo: string } | undefined;
+          if (eq && !equipos.some((x) => x.id === eq.id)) equipos.push(eq);
+        }
+
+        const aviso = existente
+          ? ""
+          : !empleado
+            ? p.texto
+              ? "No se pudo identificar al empleado en la carta: elígelo a mano."
+              : "La página es un escaneo sin texto: elige al empleado a mano."
+            : "";
+
+        renglones.push({
+          clave,
+          archivo: p.archivo,
+          pagina: p.pagina,
+          folio: p.folio,
+          responsivaId: existente?.id ?? null,
+          empleadoId: empleado?.id ?? null,
+          empleadoTexto: empleado ? `${empleado.numero_empleado} ${empleado.nombre}` : null,
+          comoSeIdentifico: existente ? `folio ${p.folio} ya registrado` : como,
+          clase: (CARTAS as Record<string, unknown>)[p.clase ?? ""] ? (p.clase as string) : "COMPUTO",
+          fecha: p.fecha,
+          equipoIds: equipos.map((e) => e.id),
+          equiposTexto: equipos.length ? equipos.map((e) => e.codigo).join(", ") : null,
+          aviso,
+        });
+      }
+    }
+
+    if (!renglones.length) return { ok: false, error: "No se encontró ninguna página PDF que leer." };
+    return { ok: true, lote: { total: renglones.length, renglones } };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo leer el PDF. Asegúrate de que no esté protegido con contraseña." };
+  }
+}
+
+/**
+ * Guarda las cartas del lote ya revisadas. Cada página se convierte en la
+ * responsiva firmada de su empleado: si la carta ya existía en el sistema se
+ * adjunta como su firma, y si no, se da de alta como responsiva cargada.
+ */
+export async function confirmarLoteResponsivas(
+  renglones: { clave: string; empleadoId: number | null; responsivaId: number | null; clase: string; fecha: string | null; equipoIds: number[] }[]
+): Promise<ResultadoAccion> {
+  try {
+    let adjuntadas = 0;
+    let creadas = 0;
+    const omitidas: string[] = [];
+
+    for (const r of renglones) {
+      const origen = path.join(DIR_LOTE, r.clave);
+      if (!/^[\w.-]+\/\d+\.pdf$/.test(r.clave) || !fs.existsSync(origen)) {
+        omitidas.push(`${r.clave}: el archivo temporal ya no está, vuelve a subir el PDF`);
+        continue;
+      }
+
+      // Ya existía: la página es su versión firmada.
+      if (r.responsivaId) {
+        const resp = db.prepare("SELECT folio FROM responsivas WHERE id = ?").get(r.responsivaId) as { folio: string } | undefined;
+        if (!resp) {
+          omitidas.push(`${r.clave}: la responsiva ya no existe`);
+          continue;
+        }
+        const destino = path.join("storage", "responsivas", `${resp.folio}-firmada.pdf`);
+        fs.mkdirSync(path.join(process.cwd(), "storage", "responsivas"), { recursive: true });
+        fs.copyFileSync(origen, path.join(process.cwd(), destino));
+        db.prepare("UPDATE responsivas SET pdf_firmado = ?, fecha_firma = ? WHERE id = ?").run(destino, hoyISO(), r.responsivaId);
+        registrarBitacora("RESPONSIVA_FIRMADA", `Se subió firmada ${resp.folio} desde una carga masiva`, { folio: resp.folio }, false);
+        adjuntadas += 1;
+        continue;
+      }
+
+      if (!r.empleadoId) {
+        omitidas.push(`${r.clave}: sin empleado asignado`);
+        continue;
+      }
+      const empleado = db.prepare("SELECT id FROM empleados WHERE id = ?").get(r.empleadoId) as { id: number } | undefined;
+      if (!empleado) {
+        omitidas.push(`${r.clave}: el empleado ya no existe`);
+        continue;
+      }
+
+      const clase = (CARTAS as Record<string, unknown>)[r.clase] ? r.clase : "COMPUTO";
+      const folio = siguienteFolio(clase === "VALE" ? "VALE" : "RESP");
+      const destino = path.join("storage", "responsivas", `${folio}.pdf`);
+      fs.mkdirSync(path.join(process.cwd(), "storage", "responsivas"), { recursive: true });
+      fs.copyFileSync(origen, path.join(process.cwd(), destino));
+
+      const alta = db.transaction(() => {
+        const info = db
+          .prepare(
+            "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, entregado_por, observaciones, origen, pdf_path, pdf_firmado, fecha_firma) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+          )
+          .run(
+            folio,
+            "ASIGNACION",
+            clase,
+            r.empleadoId,
+            r.fecha || hoyISO(),
+            "VIGENTE",
+            getConfig("entrega_default", "Departamento de TI"),
+            "Cargada desde un PDF con varias responsivas",
+            "CARGADA",
+            destino,
+            destino,
+            hoyISO()
+          );
+        const rid = Number(info.lastInsertRowid);
+        for (const equipoId of r.equipoIds) {
+          const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(equipoId) as Equipo | undefined;
+          if (!eq) continue;
+          db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion) VALUES (?,?,?)").run(
+            rid,
+            eq.id,
+            descripcionEquipo(eq)
+          );
+          db.prepare("UPDATE equipos SET estado='ASIGNADO', asignado_a=? WHERE id=?").run(r.empleadoId, eq.id);
+        }
+        return { rid, folio };
+      });
+      const creada = alta();
+      registrarBitacora(
+        "RESPONSIVA_CARGADA",
+        `Se cargó ${creada.folio} desde un PDF con varias responsivas`,
+        { folio: creada.folio },
+        false
+      );
+      creadas += 1;
+    }
+
+    // La carpeta temporal ya no hace falta.
+    try {
+      fs.rmSync(DIR_LOTE, { recursive: true, force: true });
+    } catch {
+      // que quede basura temporal no debe romper la carga
+    }
+
+    revalidar();
+    const partes = [`${creadas} responsiva(s) nueva(s)`, `${adjuntadas} adjuntada(s) a su folio`];
+    if (omitidas.length) partes.push(`${omitidas.length} sin guardar`);
+    return {
+      ok: true,
+      mensaje: `Carga masiva lista: ${partes.join(", ")}.` + (omitidas.length ? `\n· ${omitidas.join("\n· ")}` : ""),
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo guardar la carga masiva." };
+  }
+}

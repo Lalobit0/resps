@@ -161,9 +161,16 @@ const PLANTILLA_WIFI = `Recibí de: SULTANA PACKAGING el acceso a la red Wi-Fi. 
 1. Uso exclusivo para actividades laborales: El acceso a la red está restringido al uso exclusivo para actividades relacionadas con el trabajo. No se permite el acceso a contenido no relacionado con la labor profesional, como entretenimiento, redes sociales, juegos en línea o navegación en sitios web no laborales.
 2. Protección de datos: Los empleados y visitantes deben asegurarse de que su dispositivo esté protegido con contraseñas y con el sistema operativo actualizado.
 3. Confidencialidad: El acceso a la red Wi-Fi de la empresa implica la responsabilidad de mantener la confidencialidad de la información y datos de la empresa, así como de no compartir la conexión con personas ajenas a la misma sin la debida autorización.
-4. Uso responsable: El usuario se compromete a no generar un uso excesivo o ineficiente de la red Wi-Fi, evitando actividades que puedan afectar el rendimiento de la misma o interrumpir el acceso de otros usuarios.
-5. Supervisión y control: La empresa se reserva el derecho de monitorear el uso de la red Wi-Fi para asegurar que se cumpla con las políticas establecidas. Cualquier actividad sospechosa o no autorizada será investigada.
-6. Consecuencias por incumplimiento: El incumplimiento de las políticas de uso de la red Wi-Fi podrá resultar en la suspensión temporal o permanente del acceso a la red. Además, se aplicarán las medidas disciplinarias de acuerdo con la Ley Federal de Trabajo y/o el reglamento interno según aplique.`;
+5. Uso responsable: El usuario se compromete a no generar un uso excesivo o ineficiente de la red Wi-Fi, evitando actividades que puedan afectar el rendimiento de la misma o interrumpir el acceso de otros usuarios.
+6. Supervisión y control: La empresa se reserva el derecho de monitorear el uso de la red Wi-Fi para asegurar que se cumpla con las políticas establecidas. Cualquier actividad sospechosa o no autorizada será investigada.
+7. Consecuencias por incumplimiento: El incumplimiento de las políticas de uso de la red Wi-Fi podrá resultar en la suspensión temporal o permanente del acceso a la red. Además, se aplicarán las medidas disciplinarias de acuerdo con la Ley Federal de Trabajo y/o el reglamento interno según aplique.`;
+
+// Antes se renumeraron los puntos de corrido (1 a 6). El formato oficial en
+// papel (FSI-02 Rev.00) numera 1, 2, 3, 5, 6, 7 —sin el 4—, así que la
+// plantilla se alinea con él. Solo se actualiza si nadie la editó a mano.
+const PLANTILLA_WIFI_ANTERIOR = PLANTILLA_WIFI.replace("\n5. Uso responsable:", "\n4. Uso responsable:")
+  .replace("\n6. Supervisión y control:", "\n5. Supervisión y control:")
+  .replace("\n7. Consecuencias por incumplimiento:", "\n6. Consecuencias por incumplimiento:");
 
 const PLANTILLA_VALE = `En {{ciudad}}, a {{fecha}}. Yo {{nombre_empleado}}, con número de empleado {{numero_empleado}}, por medio del presente estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}}, con un valor de reposición de {{monto}}.
 
@@ -233,6 +240,13 @@ function migrar(db: Database.Database) {
 function seed(db: Database.Database) {
   const insPl = db.prepare("INSERT OR IGNORE INTO plantillas (clave, nombre, contenido) VALUES (?, ?, ?)");
   for (const [clave, nombre, contenido] of PLANTILLAS_SEED) insPl.run(clave, nombre, contenido);
+
+  // La plantilla de Wi-Fi se corrige para que su numeración coincida con el
+  // formato oficial; si el usuario ya la editó, no se toca.
+  db.prepare("UPDATE plantillas SET contenido = ? WHERE clave = 'carta_wifi' AND contenido = ?").run(
+    PLANTILLA_WIFI,
+    PLANTILLA_WIFI_ANTERIOR
+  );
 
   const insConf = db.prepare("INSERT OR IGNORE INTO config (clave, valor) VALUES (?, ?)");
   insConf.run("empresa", "Sultana Packaging");

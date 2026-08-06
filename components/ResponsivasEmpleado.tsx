@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { CLASES_CARTA, ETIQUETA_CLASE } from "../lib/constants";
+import { useState } from "react";
+import { ETIQUETA_CLASE } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
 import EliminarResponsivaBtn from "./EliminarResponsivaBtn";
 import SubirFirmadaBtn from "./SubirFirmadaBtn";
-import { cambiarClaseResponsiva } from "../app/responsivas/actions";
-import { Badge, Card, Empty, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
+import { EditarClaseBtn } from "./ClaseResponsiva";
+import { Badge, Card, Empty, btnGhost, btnPrimary, tdCls, thCls } from "./ui";
 
 function puedeDevolver(r: { tipo: string; estado: string; clase: string }): boolean {
   return r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE";
@@ -39,20 +38,7 @@ export function estaFirmada(r: FilaResponsiva): boolean {
  * salir a otra pestaña.
  */
 export default function ResponsivasEmpleado({ responsivas }: { responsivas: FilaResponsiva[] }) {
-  const router = useRouter();
   const [sel, setSel] = useState<FilaResponsiva | null>(null);
-  const [error, setError] = useState("");
-  const [pendiente, iniciar] = useTransition();
-
-  /** Corrige el tipo de carta: un escaneo que no se pudo leer entra como cómputo. */
-  const corregirClase = (id: number, clase: string) => {
-    setError("");
-    iniciar(async () => {
-      const res = await cambiarClaseResponsiva(id, clase);
-      if (res.ok) router.refresh();
-      else setError(res.error ?? "No se pudo cambiar el tipo.");
-    });
-  };
 
   if (responsivas.length === 0) {
     return <Empty>Este empleado no tiene responsivas registradas.</Empty>;
@@ -60,7 +46,6 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
 
   const tabla = (
     <Card className="overflow-x-auto p-0">
-      {error ? <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">{error}</div> : null}
       <table className="w-full min-w-[560px] border-collapse">
         <thead className="border-b border-line bg-paper/70">
           <tr>
@@ -80,28 +65,9 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
             >
               <td className={`${tdCls} mono text-xs font-semibold`}>{r.folio}</td>
               <td className={`${tdCls} text-xs`}>
-                <div className="flex flex-wrap items-center gap-1">
-                  <span>{r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} ·</span>
-                  {r.tipo === "ASIGNACION" ? (
-                    <select
-                      className={`${inputCls} max-w-[160px] py-0.5 text-xs`}
-                      value={r.clase}
-                      disabled={pendiente}
-                      onChange={(e) => corregirClase(r.id, e.target.value)}
-                      title="Tipo de carta. Cámbialo si se cargó mal (por ejemplo, una de Wi-Fi que entró como cómputo)."
-                    >
-                      {CLASES_CARTA.map((c) => (
-                        <option key={c} value={c}>
-                          {ETIQUETA_CLASE[c] ?? c}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span>{ETIQUETA_CLASE[r.clase] ?? r.clase}</span>
-                  )}
-                  {r.origen === "CARGADA" ? <Badge tono="ambar">Cargada</Badge> : null}
-                  {estaFirmada(r) ? null : <Badge tono="rojo">Sin firmar</Badge>}
-                </div>
+                {r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} · {ETIQUETA_CLASE[r.clase] ?? r.clase}{" "}
+                {r.origen === "CARGADA" ? <Badge tono="ambar">Cargada</Badge> : null}
+                {estaFirmada(r) ? null : <Badge tono="rojo">Sin firmar</Badge>}
               </td>
               <td className={`${tdCls} mono text-xs`}>{r.equipos ?? "—"}</td>
               <td className={tdCls}>{fechaCorta(r.fecha)}</td>
@@ -132,6 +98,7 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
                       <SubirFirmadaBtn responsivaId={r.id} folio={r.folio} className={btnGhost} />
                     </>
                   )}
+                  <EditarClaseBtn id={r.id} folio={r.folio} clase={r.clase} tipo={r.tipo} className={btnGhost} />
                   {puedeDevolver(r) ? (
                     <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                       Devolución

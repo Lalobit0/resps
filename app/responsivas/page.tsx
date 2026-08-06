@@ -6,7 +6,7 @@ import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, 
 import ExportarBotones from "../../components/ExportarBotones";
 import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
 import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
-import { CambiarClaseLista, SelectClaseResponsiva } from "../../components/ClaseResponsiva";
+import { CambiarClaseLista, EditarClaseBtn } from "../../components/ClaseResponsiva";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -178,9 +178,7 @@ export default async function PaginaResponsivas({
                       {(r.es_duplicado ?? 0) > 0 ? <Badge tono="rojo">Posible duplicado</Badge> : null}
                       {faltaFirma(r) ? <Badge tono="rojo">Sin firmar</Badge> : null}
                     </div>
-                    <div className="mt-1">
-                      <SelectClaseResponsiva id={r.id} clase={r.clase} tipo={r.tipo} />
-                    </div>
+                    <div className="mt-1 text-[11px] text-soft">{ETIQUETA_CLASE[r.clase] ?? r.clase}</div>
                   </td>
                   <td className={`${tdCls} mono text-xs`}>{r.empleado_numero}</td>
                   <td className={`${tdCls} font-medium`}>
@@ -214,6 +212,7 @@ export default async function PaginaResponsivas({
                           <SubirFirmadaBtn responsivaId={r.id} folio={r.folio} className={btnGhost} />
                         </>
                       ) : null}
+                      <EditarClaseBtn id={r.id} folio={r.folio} clase={r.clase} tipo={r.tipo} />
                       {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE" ? (
                         <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                           Registrar devolución

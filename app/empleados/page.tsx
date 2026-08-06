@@ -10,6 +10,9 @@ export default async function PaginaEmpleados() {
     .prepare(
       `SELECT e.*, (SELECT COUNT(*) FROM equipos q WHERE q.asignado_a = e.id) AS equipos_asignados,
          (SELECT COUNT(*) FROM equipos qc WHERE qc.asignado_a = e.id AND qc.tipo = 'COMPUTO') AS computo,
+         (SELECT COUNT(*) FROM equipos qt WHERE qt.asignado_a = e.id AND qt.tipo = 'CELULAR') AS celular,
+         (SELECT COUNT(*) FROM equipos qr WHERE qr.asignado_a = e.id AND qr.tipo = 'RADIO') AS radio,
+         (SELECT COUNT(*) FROM equipos qo WHERE qo.asignado_a = e.id AND qo.tipo NOT IN ('COMPUTO','CELULAR','RADIO')) AS otro,
          (SELECT COUNT(*) FROM equipos q2
             WHERE q2.asignado_a = e.id AND q2.estado = 'ASIGNADO'
               AND NOT EXISTS (

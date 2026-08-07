@@ -66,6 +66,20 @@ CREATE TABLE IF NOT EXISTS responsiva_items (
   condiciones TEXT
 );
 
+CREATE TABLE IF NOT EXISTS revisiones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tipo TEXT NOT NULL,                -- FSI03 | FSI04 | FSI05
+  folio TEXT NOT NULL UNIQUE,
+  fecha TEXT NOT NULL,
+  empleado_id INTEGER REFERENCES empleados(id),
+  equipo_id INTEGER REFERENCES equipos(id),
+  realizada_por TEXT,
+  resultado TEXT,                    -- SIN_HALLAZGOS | CON_HALLAZGOS
+  datos TEXT,                        -- JSON: los puntos marcados y lo propio de cada formato
+  observaciones TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS mantenimientos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   equipo_id INTEGER NOT NULL REFERENCES equipos(id),

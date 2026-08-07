@@ -867,6 +867,8 @@ export type EquipoFusionable = {
   /** Cuántos datos trae llenos: ayuda a ver cuál está más completo. */
   llenos: number;
   motivo: string;
+  /** Los datos que sirven para reconocerlo de un vistazo. */
+  ficha: { etiqueta: string; valor: string }[];
 };
 
 const ETIQUETAS_EQUIPO: { clave: keyof Equipo; etiqueta: string }[] = [
@@ -899,6 +901,18 @@ function datosLlenos(e: Equipo): number {
 }
 
 const soloAlfaNum = (v: string) => (v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/**
+ * Rellenos que no identifican nada. Sin esto, un inventario donde el número de
+ * activo quedó en "0" o "N/A" hacía que todos los equipos parecieran el mismo.
+ */
+const BASURA = new Set(["", "0", "00", "NA", "ND", "NULL", "NINGUNO", "SIN", "SN", "SINDATO", "NOAPLICA", "PENDIENTE", "X", "XX"]);
+
+function valorUtil(v: string | null | undefined): string {
+  const limpio = soloAlfaNum(String(v ?? ""));
+  if (limpio.length < 3 || BASURA.has(limpio)) return "";
+  return limpio;
+}
 
 /** Dos series se parecen si una contiene a la otra o difieren en un carácter. */
 function seriesParecidas(a: string, b: string): boolean {
@@ -940,6 +954,16 @@ export async function candidatosFusion(
     const otros = db.prepare("SELECT * FROM equipos WHERE id != ?").all(equipoId) as Equipo[];
     const detBase = detallesDe(base);
 
+    // Cuántos equipos comparten cada valor: lo que se repite mucho no sirve.
+    const repetidos = new Map<string, number>();
+    for (const e of [base, ...otros]) {
+      const d = detallesDe(e);
+      for (const clave of ["imei", "numero", "activo", "nombre_computadora"]) {
+        const v = valorUtil(d[clave]);
+        if (v) repetidos.set(`${clave}:${v}`, (repetidos.get(`${clave}:${v}`) ?? 0) + 1);
+      }
+    }
+
     const conMotivo: { equipo: Equipo; motivo: string; peso: number }[] = [];
     for (const o of otros) {
       const det = detallesDe(o);
@@ -952,9 +976,10 @@ export async function candidatosFusion(
         peso += iguales ? 100 : 60;
       }
       for (const clave of ["imei", "numero", "activo", "nombre_computadora"]) {
-        const x = String(detBase[clave] ?? "").trim();
-        const y = String(det[clave] ?? "").trim();
-        if (x && y && soloAlfaNum(x) === soloAlfaNum(y)) {
+        const x = valorUtil(detBase[clave]);
+        const y = valorUtil(det[clave]);
+        // Si ese mismo valor lo traen tres o más equipos, no distingue a nadie.
+        if (x && x === y && (repetidos.get(`${clave}:${x}`) ?? 0) < 3) {
           motivos.push(`mismo ${clave.replace(/_/g, " ")}`);
           peso += 50;
         }
@@ -968,10 +993,30 @@ export async function candidatosFusion(
         peso += 10;
       }
 
-      if (motivos.length && peso >= 20) conMotivo.push({ equipo: o, motivo: motivos.join(" · "), peso });
+      // Hace falta al menos un dato propio del aparato (serie, IMEI, activo,
+      // nombre): compartir empleado y modelo le pasa a media oficina.
+      if (peso >= 50) conMotivo.push({ equipo: o, motivo: motivos.join(" · "), peso });
     }
 
     conMotivo.sort((x, y) => y.peso - x.peso || x.equipo.codigo.localeCompare(y.equipo.codigo));
+
+    /** Los datos con los que una persona reconoce el aparato en la mesa. */
+    const fichaDe = (e: Equipo): { etiqueta: string; valor: string }[] => {
+      const d = detallesDe(e);
+      const campos: [string, string | null | undefined][] = [
+        ["Serie", e.numero_serie],
+        ["Marca y modelo", `${e.marca} ${e.modelo}`.trim()],
+        ["Nombre del equipo", d.nombre_computadora],
+        ["No. de activo", d.activo],
+        ["IMEI", d.imei],
+        ["Línea", d.numero],
+        ["Características", e.specs],
+        ["Comprado", e.fecha_compra],
+      ];
+      return campos
+        .filter(([, v]) => String(v ?? "").trim())
+        .map(([etiqueta, v]) => ({ etiqueta, valor: String(v).trim() }));
+    };
 
     const aFusionable = (e: Equipo, motivo: string): EquipoFusionable => {
       const emp = e.asignado_a
@@ -1001,6 +1046,7 @@ export async function candidatosFusion(
         mantenimientos: (db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id = ?").get(e.id) as { c: number }).c,
         llenos: datosLlenos(e),
         motivo,
+        ficha: fichaDe(e),
       };
     };
 
@@ -1012,6 +1058,86 @@ export async function candidatosFusion(
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudieron buscar equipos parecidos." };
+  }
+}
+
+/**
+ * Busca cualquier equipo del inventario por código, marca, modelo o serie. Las
+ * sugerencias no siempre aciertan y quien está frente a los dos aparatos sabe
+ * cuál es: esto le deja elegirlo sin pelear con la lista.
+ */
+export async function buscarParaFusion(
+  equipoId: number,
+  texto: string
+): Promise<ResultadoAccion & { equipos?: EquipoFusionable[] }> {
+  try {
+    const q = (texto || "").trim();
+    if (q.length < 2) return { ok: true, equipos: [] };
+    const like = `%${q}%`;
+    const filas = db
+      .prepare(
+        `SELECT * FROM equipos
+         WHERE id != ? AND (codigo LIKE ? OR marca LIKE ? OR modelo LIKE ? OR numero_serie LIKE ? OR detalles LIKE ?)
+         ORDER BY codigo ASC LIMIT 20`
+      )
+      .all(equipoId, like, like, like, like, like) as Equipo[];
+
+    const res = await candidatosFusion(equipoId);
+    const yaSugeridos = new Set((res.candidatos ?? []).map((c) => c.id));
+    return {
+      ok: true,
+      equipos: filas
+        .filter((e) => !yaSugeridos.has(e.id))
+        .map((e) => {
+          const emp = e.asignado_a
+            ? (db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(e.asignado_a) as
+                | { numero_empleado: string; nombre: string }
+                | undefined)
+            : undefined;
+          const d = detallesDe(e);
+          return {
+            id: e.id,
+            codigo: e.codigo,
+            tipo: e.tipo,
+            marca: e.marca,
+            modelo: e.modelo,
+            numero_serie: e.numero_serie,
+            estado: e.estado,
+            asignado_a: e.asignado_a,
+            asignado_nombre: emp ? `${emp.numero_empleado} ${emp.nombre}` : null,
+            created_at: e.created_at,
+            responsivas: (
+              db
+                .prepare(
+                  `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+                   WHERE ri.equipo_id = ? AND r.estado != 'ELIMINADA' ORDER BY r.id DESC`
+                )
+                .all(e.id) as { folio: string }[]
+            ).map((r) => r.folio),
+            mantenimientos: (db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id = ?").get(e.id) as {
+              c: number;
+            }).c,
+            llenos: datosLlenos(e),
+            motivo: "elegido a mano",
+            ficha: (
+              [
+                ["Serie", e.numero_serie],
+                ["Marca y modelo", `${e.marca} ${e.modelo}`.trim()],
+                ["Nombre del equipo", d.nombre_computadora],
+                ["No. de activo", d.activo],
+                ["IMEI", d.imei],
+                ["Línea", d.numero],
+                ["Características", e.specs],
+              ] as [string, string | null | undefined][]
+            )
+              .filter(([, v]) => String(v ?? "").trim())
+              .map(([etiqueta, v]) => ({ etiqueta, valor: String(v).trim() })),
+          };
+        }),
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo buscar." };
   }
 }
 

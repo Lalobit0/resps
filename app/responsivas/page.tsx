@@ -7,6 +7,7 @@ import ExportarBotones from "../../components/ExportarBotones";
 import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
 import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
 import { CambiarClaseLista, EditarClaseBtn } from "../../components/ClaseResponsiva";
+import CorregirResponsivaBtn from "../../components/CorregirResponsivaBtn";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -228,6 +229,7 @@ export default async function PaginaResponsivas({
                         </>
                       ) : null}
                       <EditarClaseBtn id={r.id} folio={r.folio} clase={r.clase} tipo={r.tipo} />
+                      <CorregirResponsivaBtn id={r.id} folio={r.folio} tipo={r.tipo} />
                       {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE" ? (
                         <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                           Registrar devolución

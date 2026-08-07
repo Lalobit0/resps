@@ -7,6 +7,7 @@ import { fechaCorta } from "../lib/helpers";
 import EliminarResponsivaBtn from "./EliminarResponsivaBtn";
 import SubirFirmadaBtn from "./SubirFirmadaBtn";
 import { EditarClaseBtn } from "./ClaseResponsiva";
+import CorregirResponsivaBtn from "./CorregirResponsivaBtn";
 import { Badge, Card, Empty, btnGhost, btnPrimary, tdCls, thCls } from "./ui";
 
 function puedeDevolver(r: { tipo: string; estado: string; clase: string }): boolean {
@@ -99,6 +100,7 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
                     </>
                   )}
                   <EditarClaseBtn id={r.id} folio={r.folio} clase={r.clase} tipo={r.tipo} className={btnGhost} />
+                  <CorregirResponsivaBtn id={r.id} folio={r.folio} tipo={r.tipo} className={btnGhost} />
                   {puedeDevolver(r) ? (
                     <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                       Devolución

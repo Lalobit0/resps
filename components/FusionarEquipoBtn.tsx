@@ -43,6 +43,8 @@ export default function FusionarEquipoBtn({
   /** Búsqueda a mano, para cuando las sugerencias no traen el que se busca. */
   const [busqueda, setBusqueda] = useState("");
   const [hallados, setHallados] = useState<EquipoFusionable[]>([]);
+  /** Explicación cuando lo buscado no es un equipo (p. ej. un folio de carta). */
+  const [avisoBusqueda, setAvisoBusqueda] = useState("");
   const [pendiente, iniciar] = useTransition();
 
   const abrir = () => {
@@ -126,10 +128,13 @@ export default function FusionarEquipoBtn({
 
   const buscar = () => {
     setError("");
+    setAvisoBusqueda("");
     iniciar(async () => {
       const res = await buscarParaFusion(equipoId, busqueda);
-      if (res.ok) setHallados(res.equipos ?? []);
-      else setError(res.error ?? "No se pudo buscar.");
+      if (res.ok) {
+        setHallados(res.equipos ?? []);
+        setAvisoBusqueda(res.aviso ?? "");
+      } else setError(res.error ?? "No se pudo buscar.");
     });
   };
 
@@ -218,7 +223,7 @@ export default function FusionarEquipoBtn({
                 <div className="mb-3 flex flex-wrap gap-2">
                   <input
                     className={`${inputCls} max-w-sm`}
-                    placeholder="Buscar cualquier equipo por código, marca, modelo o serie…"
+                    placeholder="Código, marca, modelo, serie… o el folio de su responsiva"
                     value={busqueda}
                     onChange={(e) => setBusqueda(e.target.value)}
                     onKeyDown={(e) => {
@@ -229,6 +234,12 @@ export default function FusionarEquipoBtn({
                     Buscar
                   </button>
                 </div>
+
+                {avisoBusqueda ? (
+                  <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    {avisoBusqueda}
+                  </div>
+                ) : null}
 
                 {hallados.length ? (
                   <div className="mb-3 grid gap-2 sm:grid-cols-2">
@@ -246,9 +257,10 @@ export default function FusionarEquipoBtn({
                   </div>
                 ) : null}
                 {pendiente && !candidatos.length ? <p className="text-sm text-soft">Buscando parecidos…</p> : null}
-                {!pendiente && !candidatos.length ? (
+                {!pendiente && !candidatos.length && !hallados.length && !avisoBusqueda ? (
                   <p className="rounded-md border border-dashed border-line bg-paper/60 px-4 py-6 text-center text-sm text-soft">
-                    No se encontró ningún registro parecido. Búscalo arriba por código, marca, modelo o serie.
+                    No se encontró ningún registro parecido. Búscalo arriba por código, marca, modelo o serie —o por el
+                    folio de su responsiva.
                   </p>
                 ) : null}
                 <div className="grid gap-2 sm:grid-cols-2">

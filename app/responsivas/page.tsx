@@ -10,6 +10,7 @@ import { CambiarClaseLista, EditarClaseBtn } from "../../components/ClaseRespons
 import CorregirResponsivaBtn from "../../components/CorregirResponsivaBtn";
 import AvisoParesPartidos from "../../components/AvisoParesPartidos";
 import VerPdfBtn from "../../components/VerPdfBtn";
+import RegenerarResponsivaBtn from "../../components/RegenerarResponsivaBtn";
 import { paresPartidos } from "../../lib/pendientes";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
@@ -260,6 +261,7 @@ export default async function PaginaResponsivas({
                       ) : null}
                       <EditarClaseBtn id={r.id} folio={r.folio} clase={r.clase} tipo={r.tipo} />
                       <CorregirResponsivaBtn id={r.id} folio={r.folio} tipo={r.tipo} />
+                      <RegenerarResponsivaBtn id={r.id} folio={r.folio} origen={r.origen} firmada={!!r.pdf_firmado} />
                       {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE" ? (
                         <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                           Registrar devolución

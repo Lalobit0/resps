@@ -1655,3 +1655,129 @@ export async function unirParesPartidos(
     return { ok: false, error: `No se pudieron unir: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
+
+// ---------- Regenerar el documento ----------
+
+/**
+ * Rehace el PDF de una carta con lo que hoy dice el sistema. Hace falta cuando
+ * se cambió la plantilla, se corrigieron los datos del equipo o del empleado, o
+ * se cambió el tipo de carta: hasta ahora el documento se quedaba con lo viejo
+ * y había que borrar la carta y volver a hacerla.
+ *
+ * Conserva folio, fecha y firmas. El escaneo firmado no se toca nunca: ese es
+ * el papel que alguien firmó y no se puede rehacer.
+ */
+export async function regenerarResponsiva(id: number): Promise<ResultadoAccion> {
+  try {
+    const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(id) as Responsiva | undefined;
+    if (!r) return { ok: false, error: "La responsiva ya no existe." };
+    if (r.estado === "ELIMINADA") return { ok: false, error: "Esa responsiva está en la papelera." };
+    if (r.origen === "CARGADA") {
+      return {
+        ok: false,
+        error: "Esta carta es un escaneo cargado: no hay documento que rehacer, el archivo ES el papel firmado.",
+      };
+    }
+
+    const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(r.empleado_id) as Empleado | undefined;
+    if (!empleado) return { ok: false, error: "El empleado de la responsiva ya no existe." };
+
+    let bytes: Uint8Array;
+
+    if (r.tipo === "DEVOLUCION") {
+      const items = db
+        .prepare(
+          `SELECT ri.equipo_id, ri.descripcion, ri.condiciones, e.codigo, e.numero_serie
+           FROM responsiva_items ri JOIN equipos e ON e.id = ri.equipo_id WHERE ri.responsiva_id = ?`
+        )
+        .all(r.id) as { equipo_id: number; descripcion: string; condiciones: string | null; codigo: string; numero_serie: string | null }[];
+      const origen = r.responsiva_origen_id
+        ? (db.prepare("SELECT folio FROM responsivas WHERE id = ?").get(r.responsiva_origen_id) as { folio: string } | undefined)
+        : undefined;
+
+      const plantilla = llenarPlantilla(contenidoPlantilla("responsiva_devolucion"), {
+        fecha: fechaLarga(r.fecha),
+        ciudad: getConfig("ciudad"),
+        empresa: getConfig("empresa"),
+        nombre_empleado: empleado.nombre,
+        numero_empleado: empleado.numero_empleado,
+        puesto: empleado.puesto,
+        departamento: empleado.departamento,
+        observaciones: r.observaciones?.trim() ? `Observaciones: ${r.observaciones.trim()}` : "",
+        folio: r.folio,
+        folio_origen: origen?.folio ?? "",
+      });
+      const { intro, cuerpo } = partirPlantilla(plantilla);
+
+      const filasEq: FilaCarta[] = [];
+      for (const it of items) {
+        filasEq.push({ etiqueta: "Código", valor: it.codigo });
+        filasEq.push({ etiqueta: "Equipo", valor: it.descripcion });
+        filasEq.push({ etiqueta: "Serie", valor: it.numero_serie ?? "-" });
+        filasEq.push({ etiqueta: "Condición al devolver", valor: it.condiciones ?? "Buen estado" });
+      }
+
+      bytes = await generarCarta({
+        titulo: "DE DEVOLUCIÓN DE EQUIPO",
+        fecha: fechaCorta(r.fecha),
+        folio: r.folio,
+        empresa: getConfig("empresa"),
+        direccion: getConfig("direccion"),
+        filasUsuario: filasUsuario(empleado),
+        intro,
+        filasEquipo: filasEq,
+        cuerpo,
+        firma: r.firma_empleado,
+        etiquetaIzq: "Nombre, Firma y No. de empleado que entrega",
+        etiquetaDer: getConfig("firma_sistemas", ETIQ_SISTEMAS),
+        sustituye: false,
+      });
+    } else {
+      const config = CARTAS[r.clase as ClaseCarta];
+      if (!config) return { ok: false, error: "La responsiva tiene un tipo de carta desconocido." };
+
+      const item = db.prepare("SELECT equipo_id FROM responsiva_items WHERE responsiva_id = ?").get(r.id) as
+        | { equipo_id: number }
+        | undefined;
+      const equipo = item
+        ? (db.prepare("SELECT * FROM equipos WHERE id = ?").get(item.equipo_id) as Equipo | undefined)
+        : undefined;
+
+      bytes = await bytesAsignacion({
+        clase: r.clase as ClaseCarta,
+        folio: r.folio,
+        fecha: r.fecha,
+        observaciones: r.observaciones,
+        concepto: r.concepto,
+        monto: r.monto,
+        firmaEmpleado: r.firma_empleado,
+        firmaAutoridad: r.firma_autoridad,
+        firmante: r.firma_autoridad
+          ? {
+              nombre: r.firma_autoridad_nombre,
+              puesto: r.firma_autoridad_puesto,
+              ausencia: !!r.firma_autoridad_ausencia,
+            }
+          : null,
+        empleado,
+        equipo,
+      });
+    }
+
+    const ruta = guardarPdf(r.folio, bytes);
+    db.prepare("UPDATE responsivas SET pdf_path = ? WHERE id = ?").run(ruta, r.id);
+    registrarBitacora("REGENERAR_RESPONSIVA", `Se rehízo el documento de ${r.folio}`, { folio: r.folio }, false);
+
+    revalidar();
+    revalidatePath("/empleados");
+    return {
+      ok: true,
+      mensaje: r.pdf_firmado
+        ? `${r.folio} se rehizo con los datos de hoy. El escaneo firmado no se tocó: sigue siendo el documento válido.`
+        : `${r.folio} se rehizo con los datos de hoy. Vuelve a imprimirla para recoger la firma.`,
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudo rehacer el documento: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}

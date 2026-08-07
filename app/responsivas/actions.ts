@@ -1624,3 +1624,34 @@ export async function unirResponsivas(conservarId: number, eliminarId: number): 
   }
 }
 
+
+/**
+ * Une de golpe los pares partidos que se marquen. Conserva el folio de la carta
+ * que trae el equipo: es la que se imprimió y firmaron, así que es la que debe
+ * seguir existiendo.
+ */
+export async function unirParesPartidos(
+  pares: { conservarId: number; eliminarId: number }[]
+): Promise<ResultadoAccion> {
+  try {
+    if (!pares.length) return { ok: false, error: "No marcaste ningún par." };
+    const unidos: string[] = [];
+    const fallidos: string[] = [];
+    for (const par of pares) {
+      const res = await unirResponsivas(par.conservarId, par.eliminarId);
+      if (res.ok) unidos.push(res.mensaje ?? "");
+      else fallidos.push(res.error ?? "no se pudo");
+    }
+    revalidar();
+    revalidatePath("/empleados");
+    const bloque = (t: string, l: string[]) => (l.length ? `\n\n${t}:\n· ${l.join("\n· ")}` : "");
+    return {
+      ok: true,
+      mensaje:
+        `Se unieron ${unidos.length} de ${pares.length} par(es).` + bloque("Detalle", unidos) + bloque("Sin unir", fallidos),
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudieron unir: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}

@@ -8,6 +8,8 @@ import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
 import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
 import { CambiarClaseLista, EditarClaseBtn } from "../../components/ClaseResponsiva";
 import CorregirResponsivaBtn from "../../components/CorregirResponsivaBtn";
+import AvisoParesPartidos from "../../components/AvisoParesPartidos";
+import { paresPartidos } from "../../lib/pendientes";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -78,6 +80,8 @@ export default async function PaginaResponsivas({
     )
     .all(...valores) as ResponsivaLista[];
 
+  // Pares donde el escaneo entró como carta aparte: una con firma, otra con equipo.
+  const partidas = paresPartidos();
   const totalDuplicados = responsivas.filter((r) => (r.es_duplicado ?? 0) > 0).length;
   // Solo las de asignación cambian de tipo: la devolución hereda el de su carta.
   const asignaciones = responsivas.filter((r) => r.tipo === "ASIGNACION");
@@ -117,6 +121,8 @@ export default async function PaginaResponsivas({
           documento con <b>Subir firmada</b> del renglón.
         </div>
       ) : null}
+
+      <AvisoParesPartidos pares={partidas} />
 
       {totalDuplicados > 0 ? (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

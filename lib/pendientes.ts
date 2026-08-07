@@ -216,3 +216,51 @@ export function responsivasDeLote(lote: string): ResponsivaDeLote[] {
     )
     .all(lote) as ResponsivaDeLote[];
 }
+
+/**
+ * Cartas partidas en dos: la misma entrega quedó como un par donde una tiene la
+ * firma (el escaneo se cargó aparte) y la otra el equipo. Pasa al subir una
+ * carga masiva sin decir que la página era de una carta que ya existía.
+ */
+export type ParPartido = {
+  empleado_id: number;
+  empleado_numero: string;
+  empleado_nombre: string;
+  clase: string;
+  /** La generada por el sistema: tiene el equipo pero le falta la firma. */
+  sin_firma_id: number;
+  sin_firma_folio: string;
+  sin_firma_fecha: string;
+  equipos: string | null;
+  /** El escaneo que entró como carta aparte: firmada pero sin equipo. */
+  firmada_id: number;
+  firmada_folio: string;
+  firmada_fecha: string;
+};
+
+export function paresPartidos(): ParPartido[] {
+  return db
+    .prepare(
+      `SELECT s.empleado_id, em.numero_empleado AS empleado_numero, em.nombre AS empleado_nombre, s.clase,
+              s.id AS sin_firma_id, s.folio AS sin_firma_folio, s.fecha AS sin_firma_fecha,
+              (SELECT GROUP_CONCAT(e.codigo, ', ') FROM responsiva_items ri
+                 JOIN equipos e ON e.id = ri.equipo_id WHERE ri.responsiva_id = s.id) AS equipos,
+              f.id AS firmada_id, f.folio AS firmada_folio, f.fecha AS firmada_fecha
+       FROM responsivas s
+       JOIN responsivas f
+         ON f.empleado_id = s.empleado_id AND f.clase = s.clase AND f.id != s.id
+        AND f.tipo = 'ASIGNACION' AND f.estado = 'VIGENTE'
+        -- la otra sí tiene documento firmado…
+        AND (COALESCE(f.pdf_firmado,'') != '' OR f.origen = 'CARGADA')
+        -- …y ningún equipo ligado, que es lo que la delata
+        AND NOT EXISTS (SELECT 1 FROM responsiva_items ri2 WHERE ri2.responsiva_id = f.id)
+       JOIN empleados em ON em.id = s.empleado_id
+       WHERE s.tipo = 'ASIGNACION' AND s.estado = 'VIGENTE'
+         AND COALESCE(s.pdf_firmado,'') = '' AND COALESCE(s.origen,'SISTEMA') != 'CARGADA'
+         AND COALESCE(s.firma_empleado,'') = ''
+         AND EXISTS (SELECT 1 FROM responsiva_items ri3 WHERE ri3.responsiva_id = s.id)
+       GROUP BY s.id
+       ORDER BY em.nombre ASC`
+    )
+    .all() as ParPartido[];
+}

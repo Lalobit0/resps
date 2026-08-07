@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  buscarParaFusion,
   camposFusion,
   candidatosFusion,
   fusionarEquiposManual,
@@ -10,7 +11,7 @@ import {
   type EquipoFusionable,
 } from "../app/inventario/actions";
 import { ETIQUETA_TIPO } from "../lib/constants";
-import { Badge, btnGhost, btnPrimary } from "./ui";
+import { Badge, btnGhost, btnPrimary, inputCls } from "./ui";
 
 /**
  * Une dos registros que son el mismo aparato: uno suele traer la responsiva y
@@ -39,6 +40,9 @@ export default function FusionarEquipoBtn({
   const [lado, setLado] = useState<Record<string, "a" | "b">>({});
   const [conservar, setConservar] = useState<"a" | "b">("a");
   const [error, setError] = useState("");
+  /** Búsqueda a mano, para cuando las sugerencias no traen el que se busca. */
+  const [busqueda, setBusqueda] = useState("");
+  const [hallados, setHallados] = useState<EquipoFusionable[]>([]);
   const [pendiente, iniciar] = useTransition();
 
   const abrir = () => {
@@ -120,6 +124,29 @@ export default function FusionarEquipoBtn({
     });
   };
 
+  const buscar = () => {
+    setError("");
+    iniciar(async () => {
+      const res = await buscarParaFusion(equipoId, busqueda);
+      if (res.ok) setHallados(res.equipos ?? []);
+      else setError(res.error ?? "No se pudo buscar.");
+    });
+  };
+
+  /** Los datos del aparato, para no tener que adivinar cuál es cuál. */
+  const ficha = (e: EquipoFusionable) => (
+    <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px]">
+      {e.ficha.map((f) => (
+        <div key={f.etiqueta} className="contents">
+          <dt className="text-soft">{f.etiqueta}:</dt>
+          <dd className="mono truncate text-ink" title={f.valor}>
+            {f.valor}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+
   const resumen = (e: EquipoFusionable) => (
     <div className="text-xs text-soft">
       <div className="mono text-sm font-bold text-kraft-dark">{e.codigo}</div>
@@ -175,13 +202,53 @@ export default function FusionarEquipoBtn({
 
             {!pareja ? (
               <>
+                {base ? (
+                  <div className="mb-3 rounded-md border border-kraft/50 bg-kraft/5 p-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-kraft-dark">Este es el equipo</p>
+                    {resumen(base)}
+                    {ficha(base)}
+                  </div>
+                ) : null}
+
                 <p className="mb-2 text-sm font-semibold text-ink">
-                  ¿Con cuál se junta <span className="mono">{codigo}</span>?
+                  ¿Con cuál se junta <span className="mono">{codigo}</span>? Compara los datos de arriba con los de
+                  abajo; si el que buscas no aparece, búscalo por código o serie.
                 </p>
+
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <input
+                    className={`${inputCls} max-w-sm`}
+                    placeholder="Buscar cualquier equipo por código, marca, modelo o serie…"
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") buscar();
+                    }}
+                  />
+                  <button className={btnGhost} onClick={buscar} disabled={pendiente || busqueda.trim().length < 2}>
+                    Buscar
+                  </button>
+                </div>
+
+                {hallados.length ? (
+                  <div className="mb-3 grid gap-2 sm:grid-cols-2">
+                    {hallados.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => elegirPareja(c)}
+                        className="rounded-md border border-line bg-white p-3 text-left hover:border-kraft hover:bg-paper/60"
+                      >
+                        {resumen(c)}
+                        {ficha(c)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 {pendiente && !candidatos.length ? <p className="text-sm text-soft">Buscando parecidos…</p> : null}
                 {!pendiente && !candidatos.length ? (
                   <p className="rounded-md border border-dashed border-line bg-paper/60 px-4 py-6 text-center text-sm text-soft">
-                    No se encontró ningún registro parecido a este equipo.
+                    No se encontró ningún registro parecido. Búscalo arriba por código, marca, modelo o serie.
                   </p>
                 ) : null}
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -193,6 +260,7 @@ export default function FusionarEquipoBtn({
                       className="rounded-md border border-line bg-white p-3 text-left hover:border-kraft hover:bg-paper/60"
                     >
                       {resumen(c)}
+                      {ficha(c)}
                       <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-kraft-dark">{c.motivo}</p>
                     </button>
                   ))}

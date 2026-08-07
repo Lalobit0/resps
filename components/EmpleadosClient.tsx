@@ -313,19 +313,14 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                   </td>
                   <td className={celda}>
                     <Link href={`/empleados/${e.id}`} className="flex flex-wrap items-center gap-1" title="Ver su histórico">
-                      {(e.computo ?? 0) > 0 ? (
-                        <Badge tono="verde">PC {e.computo}</Badge>
-                      ) : (
-                        <span
-                          className="inline-block rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
-                          title="No tiene equipo de cómputo asignado"
-                        >
-                          Sin PC
-                        </span>
-                      )}
+                      {(e.computo ?? 0) > 0 ? <Badge tono="verde">PC {e.computo}</Badge> : null}
                       {(e.celular ?? 0) > 0 ? <Badge tono="petrol">CEL {e.celular}</Badge> : null}
                       {(e.radio ?? 0) > 0 ? <Badge tono="ambar">RADIO {e.radio}</Badge> : null}
                       {(e.otro ?? 0) > 0 ? <Badge tono="gris">OTRO {e.otro}</Badge> : null}
+                      {/* Sin nada entregado la celda quedaría vacía y parecería un error. */}
+                      {!(e.computo ?? 0) && !(e.celular ?? 0) && !(e.radio ?? 0) && !(e.otro ?? 0) ? (
+                        <span className="text-xs text-soft">—</span>
+                      ) : null}
                     </Link>
                   </td>
                   <td className={`${celda} text-center`}>

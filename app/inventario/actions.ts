@@ -1069,23 +1069,55 @@ export async function candidatosFusion(
 export async function buscarParaFusion(
   equipoId: number,
   texto: string
-): Promise<ResultadoAccion & { equipos?: EquipoFusionable[] }> {
+): Promise<ResultadoAccion & { equipos?: EquipoFusionable[]; aviso?: string }> {
   try {
     const q = (texto || "").trim();
     if (q.length < 2) return { ok: true, equipos: [] };
     const like = `%${q}%`;
-    const filas = db
-      .prepare(
-        `SELECT * FROM equipos
-         WHERE id != ? AND (codigo LIKE ? OR marca LIKE ? OR modelo LIKE ? OR numero_serie LIKE ? OR detalles LIKE ?)
-         ORDER BY codigo ASC LIMIT 20`
-      )
-      .all(equipoId, like, like, like, like, like) as Equipo[];
+
+    // Se admite buscar por el folio de una carta: devuelve los equipos que
+    // ampara. Es lo que la gente escribe cuando tiene la responsiva delante.
+    const esFolio = /^(RESP|VALE|HIST)-/i.test(q);
+    let aviso = "";
+    let filas: Equipo[] = [];
+
+    if (esFolio) {
+      const carta = db.prepare("SELECT id, folio FROM responsivas WHERE folio LIKE ? LIMIT 1").get(like) as
+        | { id: number; folio: string }
+        | undefined;
+      if (carta) {
+        filas = db
+          .prepare(
+            `SELECT e.* FROM equipos e JOIN responsiva_items ri ON ri.equipo_id = e.id
+             WHERE ri.responsiva_id = ? AND e.id != ? ORDER BY e.codigo ASC`
+          )
+          .all(carta.id, equipoId) as Equipo[];
+        aviso = filas.length
+          ? `${carta.folio} es una carta responsiva; abajo va el equipo que ampara. ` +
+            `Ojo: aquí se unen equipos repetidos del inventario, no cartas. Para unir dos cartas, cierra esto y usa ` +
+            `“Corregir” en el renglón de la carta.`
+          : `${carta.folio} es una carta responsiva y no tiene ningún equipo ligado, por eso no aparece nada. ` +
+            `Aquí se unen equipos repetidos del inventario. Si lo que quieres es unir esa carta con otra, cierra esto ` +
+            `y usa “Corregir” en su renglón.`;
+      } else {
+        aviso = `No existe ninguna carta con el folio “${q}”. Y de todos modos, aquí se unen equipos del inventario: ` +
+          `busca por código, marca, modelo o serie.`;
+      }
+    } else {
+      filas = db
+        .prepare(
+          `SELECT * FROM equipos
+           WHERE id != ? AND (codigo LIKE ? OR marca LIKE ? OR modelo LIKE ? OR numero_serie LIKE ? OR detalles LIKE ?)
+           ORDER BY codigo ASC LIMIT 20`
+        )
+        .all(equipoId, like, like, like, like, like) as Equipo[];
+    }
 
     const res = await candidatosFusion(equipoId);
     const yaSugeridos = new Set((res.candidatos ?? []).map((c) => c.id));
     return {
       ok: true,
+      aviso,
       equipos: filas
         .filter((e) => !yaSugeridos.has(e.id))
         .map((e) => {

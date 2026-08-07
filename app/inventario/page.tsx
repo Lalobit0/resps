@@ -9,7 +9,7 @@ import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
 import AvisoPorLigar from "../../components/AvisoPorLigar";
 import { revisarCelulares } from "../../lib/celulares";
 import ExportarBotones from "../../components/ExportarBotones";
-import { PageHeader, btnGhost, inputCls } from "../../components/ui";
+import { PageHeader, btnGhost, btnPrimary, inputCls } from "../../components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -141,12 +141,17 @@ export default async function PaginaInventario({
       {totalSinResp > 0 ? (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
           <span>
-            📄 Hay <b>{totalSinResp}</b> equipo(s) entregados <b>sin carta responsiva</b>. Genera la responsiva para que el
-            empleado la firme.
+            📄 Hay <b>{totalSinResp}</b> equipo(s) entregados <b>sin carta responsiva</b>. Genéralas todas juntas, imprime
+            el paquete y recoge las firmas de una vuelta.
           </span>
-          <a href={soloSinResp ? "/inventario" : "/inventario?sinresp=1"} className={btnGhost}>
-            {soloSinResp ? "Ver todo el inventario" : "Ver los que faltan"}
-          </a>
+          <span className="flex flex-wrap gap-2">
+            <a href="/responsivas/generar" className={btnPrimary}>
+              ✎ Generar en lote
+            </a>
+            <a href={soloSinResp ? "/inventario" : "/inventario?sinresp=1"} className={btnGhost}>
+              {soloSinResp ? "Ver todo el inventario" : "Ver los que faltan"}
+            </a>
+          </span>
         </div>
       ) : null}
 

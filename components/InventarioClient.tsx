@@ -8,6 +8,7 @@ import { dinero, fechaCorta } from "../lib/helpers";
 import type { Conflicto } from "../lib/duplicados";
 import { eliminarEquipo, guardarEquipo, importarEscaneoComputo, importarInventario, ligarConSuResponsiva, type ResultadoEscaneo as ResultadoEscaneoDatos } from "../app/inventario/actions";
 import ResultadoEscaneo from "./ResultadoEscaneo";
+import FusionarEquipoBtn from "./FusionarEquipoBtn";
 import SelectConOtro from "./SelectConOtro";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
@@ -499,6 +500,7 @@ export default function InventarioClient({
                       <Link className={mini} href={`/mantenimientos?equipo=${e.id}`}>
                         Historial
                       </Link>
+                      <FusionarEquipoBtn equipoId={e.id} codigo={e.codigo} className={mini} etiqueta="Fusionar" />
                       <button
                         className={miniDanger}
                         disabled={pendiente}

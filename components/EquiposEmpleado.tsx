@@ -9,6 +9,7 @@ import { fechaCorta } from "../lib/helpers";
 import type { ResponsivaDeEquipo } from "./InventarioClient";
 import { quitarEquipoAEmpleado } from "../app/empleados/actions";
 import { eliminarEquipo } from "../app/inventario/actions";
+import FusionarEquipoBtn from "./FusionarEquipoBtn";
 import { Badge, Card, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "./ui";
 
 const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
@@ -139,6 +140,12 @@ export default function EquiposEmpleado({
                           + Responsiva
                         </Link>
                       ) : null}
+                      <FusionarEquipoBtn
+                        equipoId={e.id}
+                        codigo={e.codigo}
+                        className={mini}
+                        etiqueta="Fusionar"
+                      />
                       <button
                         className={mini}
                         disabled={pendiente}

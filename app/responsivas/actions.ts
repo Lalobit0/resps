@@ -7,8 +7,9 @@ import { db, getConfig, STORAGE_DIR, STORAGE_ELIMINADAS } from "../../lib/db";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
-import { CAMPOS_DETALLE, CARTAS, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, ETIQUETA_CLASE, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
+import { CAMPOS_DETALLE, CARTAS, CLASE_POR_TIPO, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, ETIQUETA_CLASE, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
+import { responsivasSinFirmaDe, type ResponsivaSinFirma } from "../../lib/pendientes";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -126,7 +127,7 @@ async function bytesAsignacion(datos: {
   });
 }
 
-export async function crearResponsiva(datos: {
+export type DatosNuevaResponsiva = {
   clase: ClaseCarta;
   empleadoId: number;
   equipoId: number | null;
@@ -139,7 +140,15 @@ export async function crearResponsiva(datos: {
   firmanteAutoridad?: Firmante | null;
   concepto?: string;
   monto?: string;
-}): Promise<ResultadoAccion> {
+  /** Tanda de generación masiva, cuando viene de ahí. */
+  lote?: string;
+};
+
+/**
+ * El alta de una carta. Aparte para que la generación masiva la use en bucle
+ * sin recargar la caché de todas las pantallas en cada vuelta.
+ */
+async function crearUnaResponsiva(datos: DatosNuevaResponsiva): Promise<ResultadoAccion> {
   try {
     const config = CARTAS[datos.clase];
     if (!config) return { ok: false, error: "Selecciona un tipo de carta válido." };
@@ -207,6 +216,7 @@ export async function crearResponsiva(datos: {
           montoNum
         );
       const rid = Number(info.lastInsertRowid);
+      if (datos.lote) db.prepare("UPDATE responsivas SET lote=? WHERE id=?").run(datos.lote, rid);
       if (equipo) {
         db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion) VALUES (?,?,?)").run(
           rid,
@@ -245,11 +255,132 @@ export async function crearResponsiva(datos: {
       throw errorPdf;
     }
 
-    revalidar();
     return { ok: true, id, folio };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo generar la responsiva. Revisa la consola del servidor." };
+  }
+}
+
+export async function crearResponsiva(datos: DatosNuevaResponsiva): Promise<ResultadoAccion> {
+  const res = await crearUnaResponsiva(datos);
+  if (res.ok) revalidar();
+  return res;
+}
+
+// ---------- Generación masiva: imprimir, firmar en papel y subir ----------
+
+/** Nombre de la tanda, con fecha y hora para reconocerla de un vistazo. */
+function nombreDeLote(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const base = `L-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  let nombre = base;
+  for (let n = 2; db.prepare("SELECT 1 FROM responsivas WHERE lote = ? LIMIT 1").get(nombre); n += 1) {
+    nombre = `${base}-${n}`;
+  }
+  return nombre;
+}
+
+export type ResultadoGeneracion = {
+  lote: string;
+  generadas: { folio: string; empleado: string; equipo: string }[];
+  omitidas: { equipo: string; empleado: string; motivo: string }[];
+};
+
+/**
+ * Genera de golpe la carta de cada equipo entregado que no la tenía. Quedan sin
+ * firma: se imprimen todas juntas, se firman en papel y luego se sube el
+ * escaneo (el lote conserva el orden para poder repartirlo página por página).
+ */
+export async function generarResponsivasEnLote(
+  equipoIds: number[],
+  opciones: { fecha?: string; observaciones?: string } = {}
+): Promise<ResultadoAccion & { resultado?: ResultadoGeneracion }> {
+  try {
+    const ids = [...new Set(equipoIds.filter((n) => Number.isInteger(n) && n > 0))];
+    if (!ids.length) return { ok: false, error: "Selecciona al menos un equipo." };
+
+    const hoy = hoyISO();
+    const pedida = (opciones.fecha ?? "").trim();
+    if (pedida && !/^\d{4}-\d{2}-\d{2}$/.test(pedida)) return { ok: false, error: "La fecha de las cartas no es válida." };
+    if (pedida && pedida > hoy) return { ok: false, error: "La fecha de las cartas no puede ser posterior a hoy." };
+
+    const lote = nombreDeLote();
+    const generadas: ResultadoGeneracion["generadas"] = [];
+    const omitidas: ResultadoGeneracion["omitidas"] = [];
+
+    for (const equipoId of ids) {
+      const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(equipoId) as Equipo | undefined;
+      if (!eq) {
+        omitidas.push({ equipo: `#${equipoId}`, empleado: "—", motivo: "El equipo ya no existe en el inventario." });
+        continue;
+      }
+      const empleado = eq.asignado_a
+        ? (db.prepare("SELECT * FROM empleados WHERE id = ?").get(eq.asignado_a) as Empleado | undefined)
+        : undefined;
+      if (!empleado) {
+        omitidas.push({ equipo: eq.codigo, empleado: "—", motivo: "El equipo no tiene empleado asignado." });
+        continue;
+      }
+
+      const clase = CLASE_POR_TIPO[eq.tipo as TipoEquipo];
+      if (!clase) {
+        omitidas.push({ equipo: eq.codigo, empleado: empleado.nombre, motivo: `No hay carta para el tipo “${eq.tipo}”.` });
+        continue;
+      }
+
+      // Pudo generarse mientras se revisaba la lista: no se duplica.
+      const yaTiene = db
+        .prepare(
+          `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+           WHERE ri.equipo_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE' AND r.empleado_id = ?`
+        )
+        .get(eq.id, empleado.id) as { folio: string } | undefined;
+      if (yaTiene) {
+        omitidas.push({ equipo: eq.codigo, empleado: empleado.nombre, motivo: `Ya tenía la responsiva ${yaTiene.folio}.` });
+        continue;
+      }
+
+      const res = await crearUnaResponsiva({
+        clase,
+        empleadoId: empleado.id,
+        equipoId: eq.id,
+        observaciones: opciones.observaciones ?? "",
+        firma: "",
+        fecha: pedida || hoy,
+        lote,
+      });
+      if (res.ok && res.folio) {
+        generadas.push({
+          folio: res.folio,
+          empleado: `${empleado.numero_empleado} · ${empleado.nombre}`,
+          equipo: `${eq.codigo} · ${eq.marca} ${eq.modelo}`.trim(),
+        });
+      } else {
+        omitidas.push({ equipo: eq.codigo, empleado: empleado.nombre, motivo: res.error ?? "No se pudo generar." });
+      }
+    }
+
+    if (!generadas.length) {
+      return {
+        ok: false,
+        error: omitidas[0]?.motivo ? `No se generó ninguna carta. ${omitidas[0].motivo}` : "No se generó ninguna carta.",
+        resultado: { lote, generadas, omitidas },
+      };
+    }
+
+    registrarBitacora(
+      "GENERAR_LOTE",
+      `Se generaron ${generadas.length} responsivas sin firma en el lote ${lote}`,
+      { lote, folios: generadas.map((g) => g.folio) },
+      false
+    );
+    revalidar();
+    return { ok: true, resultado: { lote, generadas, omitidas } };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudieron generar las responsivas: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 
@@ -457,7 +588,15 @@ function codigoEquipo(prefijo: string): string {
 
 type NuevoEquipo = { tipo?: string; marca?: string; modelo?: string; numero_serie?: string; detalles?: Record<string, string> };
 
-export async function cargarResponsivaFirmada(formData: FormData): Promise<ResultadoAccion> {
+/** Cartas que el sistema ya generó para ese empleado y siguen sin firma. */
+export async function pendientesDeFirmaDe(empleadoId: number): Promise<{ pendientes: ResponsivaSinFirma[] }> {
+  if (!Number.isInteger(empleadoId) || empleadoId <= 0) return { pendientes: [] };
+  return { pendientes: responsivasSinFirmaDe(empleadoId) };
+}
+
+export async function cargarResponsivaFirmada(
+  formData: FormData
+): Promise<ResultadoAccion & { pendiente?: { id: number; folio: string } }> {
   try {
     const archivo = formData.get("archivo") as File | null;
     if (!archivo || typeof archivo.arrayBuffer !== "function") {
@@ -515,6 +654,28 @@ export async function cargarResponsivaFirmada(formData: FormData): Promise<Resul
           error: otro
             ? `${ocupado.codigo} está asignado a ${otro.numero_empleado} ${otro.nombre}. Registra su devolución antes de cargarle la carta a otra persona.`
             : `${ocupado.codigo} está en estado ${ocupado.estado.toLowerCase()}: no se le puede cargar una responsiva.`,
+        };
+      }
+    }
+
+    // Antes de dar de alta una carta nueva: ¿no será la firma de una que el
+    // sistema ya generó y sigue esperando? Es el error fácil de cometer y deja
+    // dos cartas del mismo equipo. Se avisa con el folio y solo se sigue
+    // adelante si la persona confirma que es otra distinta.
+    if (String(formData.get("forzarNueva") || "") !== "1") {
+      const pendientes = responsivasSinFirmaDe(empleado.id);
+      const codigos = new Set(equipos.map((e) => e.codigo));
+      const choca =
+        pendientes.find((p) => (p.equipos ?? "").split(", ").some((c) => codigos.has(c))) ??
+        (codigos.size === 0 ? pendientes.find((p) => p.clase === clase) : undefined);
+      if (choca) {
+        return {
+          ok: false,
+          pendiente: { id: choca.id, folio: choca.folio },
+          error:
+            `${empleado.nombre} ya tiene la responsiva ${choca.folio} (${ETIQUETA_CLASE[choca.clase] ?? choca.clase}` +
+            `${choca.equipos ? `, ${choca.equipos}` : ""}) generada y esperando su firma. ` +
+            `Si el papel que subiste es esa misma carta, adjúntalo a ${choca.folio} en vez de crear otra.`,
         };
       }
     }
@@ -637,28 +798,21 @@ export async function eliminarResponsiva(id: number): Promise<ResultadoAccion> {
 
     const tx = db.transaction(() => {
       // Solo las asignaciones controlan el inventario; una devolución no.
+      //
+      // El equipo NUNCA se borra del inventario: el aparato existe físicamente y
+      // lo que se está tirando es el papel, no la máquina. Se deja disponible
+      // para volver a entregarlo. (Antes se intentaba borrar y siempre tronaba:
+      // la responsiva se queda en la papelera, así que sus renglones seguían
+      // apuntando al equipo y SQLite lo impedía por llave foránea.)
       if (r.tipo === "ASIGNACION") {
         for (const it of items) {
           const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(it.equipo_id) as Equipo | undefined;
           if (!eq) continue;
-          // ¿Otro documento vigente usa este equipo?
-          const otras = db
-            .prepare(
-              `SELECT COUNT(*) AS c FROM responsiva_items ri JOIN responsivas r2 ON r2.id = ri.responsiva_id
-               WHERE ri.equipo_id = ? AND ri.responsiva_id != ? AND r2.estado != 'ELIMINADA'`
-            )
-            .get(it.equipo_id, id) as { c: number };
-          if (otras.c === 0) {
-            // Nadie más lo usa: se retira del inventario (guardando copia para revertir).
-            snapEquipos.push({ modo: "BORRADO", equipo: eq });
-            db.prepare("DELETE FROM mantenimientos WHERE equipo_id = ?").run(eq.id);
-            db.prepare("DELETE FROM equipos WHERE id = ?").run(eq.id);
-          } else {
-            // Otro documento lo usa: solo se libera si estaba asignado a este empleado.
-            snapEquipos.push({ modo: "LIBERADO", equipoId: eq.id, estadoPrev: eq.estado, asignadoPrev: eq.asignado_a });
-            if (eq.asignado_a === r.empleado_id) {
-              db.prepare("UPDATE equipos SET estado='DISPONIBLE', asignado_a=NULL WHERE id=?").run(eq.id);
-            }
+          snapEquipos.push({ modo: "LIBERADO", equipoId: eq.id, estadoPrev: eq.estado, asignadoPrev: eq.asignado_a });
+          // Solo se libera si seguía a nombre de este empleado; si ya se lo
+          // entregaron a alguien más, esa entrega manda y no se toca.
+          if (eq.asignado_a === r.empleado_id) {
+            db.prepare("UPDATE equipos SET estado='DISPONIBLE', asignado_a=NULL WHERE id=?").run(eq.id);
           }
         }
       }
@@ -679,7 +833,8 @@ export async function eliminarResponsiva(id: number): Promise<ResultadoAccion> {
     return { ok: true };
   } catch (e) {
     console.error(e);
-    return { ok: false, error: "No se pudo eliminar la responsiva." };
+    // Con el motivo a la vista: un "no se pudo" a secas no dice qué arreglar.
+    return { ok: false, error: `No se pudo eliminar la responsiva: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 
@@ -811,9 +966,35 @@ export type RenglonLote = {
   equipoIds: number[];
   equiposTexto: string | null;
   aviso: string;
+  /**
+   * Cartas de ese empleado que el sistema ya generó y siguen sin firma: casi
+   * siempre la página es una de ellas, y darla de alta otra vez la duplicaría.
+   */
+  sugerencias: SugerenciaFirma[];
+  /** El usuario confirmó que la página no es ninguna de las pendientes. */
+  forzarNueva?: boolean;
 };
 
+export type SugerenciaFirma = { id: number; folio: string; clase: string; fecha: string; equipos: string | null };
+
 export type ResultadoLote = { total: number; renglones: RenglonLote[] };
+
+/** Las cartas sin firma de un empleado, en el formato corto del lote. */
+function sugerenciasDe(empleadoId: number | null | undefined): SugerenciaFirma[] {
+  if (!empleadoId) return [];
+  return responsivasSinFirmaDe(empleadoId).map((r) => ({
+    id: r.id,
+    folio: r.folio,
+    clase: r.clase,
+    fecha: r.fecha,
+    equipos: r.equipos,
+  }));
+}
+
+/** Sugerencias para el empleado que se elige a mano en la pantalla del lote. */
+export async function sugerenciasFirmaDe(empleadoId: number): Promise<{ sugerencias: SugerenciaFirma[] }> {
+  return { sugerencias: sugerenciasDe(empleadoId) };
+}
 
 /** Carpeta temporal donde viven las páginas separadas hasta que se confirman. */
 const DIR_LOTE = path.join(process.cwd(), "storage", "lote");
@@ -912,6 +1093,9 @@ export async function analizarLoteResponsivas(formData: FormData): Promise<Resul
           equipoIds: equipos.map((e) => e.id),
           equiposTexto: equipos.length ? equipos.map((e) => e.codigo).join(", ") : null,
           aviso,
+          // Si la carta no se reconoció por folio pero sí sabemos de quién es,
+          // se ofrecen sus cartas pendientes: lo más probable es que sea una.
+          sugerencias: existente ? [] : sugerenciasDe(empleado?.id),
         });
       }
     }
@@ -930,12 +1114,22 @@ export async function analizarLoteResponsivas(formData: FormData): Promise<Resul
  * adjunta como su firma, y si no, se da de alta como responsiva cargada.
  */
 export async function confirmarLoteResponsivas(
-  renglones: { clave: string; empleadoId: number | null; responsivaId: number | null; clase: string; fecha: string | null; equipoIds: number[] }[]
+  renglones: {
+    clave: string;
+    empleadoId: number | null;
+    responsivaId: number | null;
+    clase: string;
+    fecha: string | null;
+    equipoIds: number[];
+    /** El usuario confirmó que es una carta distinta de las que ya esperan firma. */
+    forzarNueva?: boolean;
+  }[]
 ): Promise<ResultadoAccion> {
   try {
     const nuevas: string[] = [];
     const firmadas: string[] = [];
     const omitidas: string[] = [];
+    const frenadas: string[] = [];
 
     for (const r of renglones) {
       const origen = path.join(DIR_LOTE, r.clave);
@@ -968,10 +1162,26 @@ export async function confirmarLoteResponsivas(
         omitidas.push(`${r.clave}: falta elegir el tipo de carta`);
         continue;
       }
-      const empleado = db.prepare("SELECT id FROM empleados WHERE id = ?").get(r.empleadoId) as { id: number } | undefined;
+      const empleado = db.prepare("SELECT id, nombre FROM empleados WHERE id = ?").get(r.empleadoId) as
+        | { id: number; nombre: string }
+        | undefined;
       if (!empleado) {
         omitidas.push(`${r.clave}: el empleado ya no existe`);
         continue;
+      }
+
+      // Antes de dar de alta: si ese empleado ya tiene una carta del mismo tipo
+      // esperando firma, esta página casi seguro ES esa. Se frena y se dice
+      // cuál, en vez de dejar dos cartas iguales en su histórico.
+      if (!r.forzarNueva) {
+        const pendiente = responsivasSinFirmaDe(empleado.id).find((p) => p.clase === r.clase);
+        if (pendiente) {
+          frenadas.push(
+            `${empleado.nombre}: ya tiene ${pendiente.folio} (${ETIQUETA_CLASE[pendiente.clase] ?? pendiente.clase}` +
+              `${pendiente.equipos ? `, ${pendiente.equipos}` : ""}) esperando firma. Márcala como “Es esta” o confirma que es otra distinta.`
+          );
+          continue;
+        }
       }
 
       const clase = r.clase;
@@ -1025,15 +1235,19 @@ export async function confirmarLoteResponsivas(
       nuevas.push(`${creada.folio} → ${emp ? `${emp.numero_empleado} ${emp.nombre}` : "empleado"}`);
     }
 
-    // La carpeta temporal ya no hace falta.
-    try {
-      fs.rmSync(DIR_LOTE, { recursive: true, force: true });
-    } catch {
-      // que quede basura temporal no debe romper la carga
+    // La carpeta temporal solo se tira cuando ya no queda nada que reintentar:
+    // si algo se frenó, esas páginas siguen ahí para corregirlas y guardarlas.
+    if (!frenadas.length) {
+      try {
+        fs.rmSync(DIR_LOTE, { recursive: true, force: true });
+      } catch {
+        // que quede basura temporal no debe romper la carga
+      }
     }
 
     revalidar();
     const partes = [`${nuevas.length} responsiva(s) nueva(s)`, `${firmadas.length} adjuntada(s) a su folio`];
+    if (frenadas.length) partes.push(`${frenadas.length} sin guardar para no duplicar`);
     if (omitidas.length) partes.push(`${omitidas.length} sin guardar`);
     // Se listan los folios: así se puede comprobar que quedaron guardadas.
     const bloque = (t: string, l: string[]) => (l.length ? `\n\n${t}:\n· ${l.join("\n· ")}` : "");
@@ -1043,6 +1257,7 @@ export async function confirmarLoteResponsivas(
         `Carga masiva lista: ${partes.join(", ")}.` +
         bloque("Se dieron de alta", nuevas) +
         bloque("Se adjuntaron como firmadas", firmadas) +
+        bloque("No se guardaron para no duplicar (siguen en la lista)", frenadas) +
         bloque("No se guardaron", omitidas) +
         "\n\nLas puedes ver en Responsivas (filtra por tipo de carta) o en la ficha de cada empleado.",
     };
@@ -1124,5 +1339,319 @@ export async function cambiarClaseVarias(ids: number[], clase: string): Promise<
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo cambiar el tipo de carta." };
+  }
+}
+
+// ---------- Corregir una carta ya guardada ----------
+
+/**
+ * Al cargar escaneos pasan dos cosas que hay que poder arreglar sin borrar y
+ * volver a capturar: que la carta quede sin su equipo (el OCR no encontró la
+ * serie) y que se dé de alta una carta que en realidad era la firma de otra
+ * que ya existía. Estas dos acciones resuelven justo eso.
+ */
+
+export type EquipoDeCarta = {
+  id: number;
+  codigo: string;
+  tipo: string;
+  marca: string;
+  modelo: string;
+  numero_serie: string | null;
+  estado: string;
+  asignado_a: number | null;
+  /** Ya está en esta responsiva. */
+  ligado: boolean;
+  /** Está entregado a otra persona: ligarlo aquí sería un error. */
+  deOtro: string | null;
+};
+
+/** Equipos que se pueden ligar a una carta: los del empleado y los libres. */
+export async function equiposParaResponsiva(
+  responsivaId: number
+): Promise<ResultadoAccion & { equipos?: EquipoDeCarta[]; empleado?: string; folio?: string }> {
+  try {
+    const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(responsivaId) as Responsiva | undefined;
+    if (!r) return { ok: false, error: "La responsiva ya no existe." };
+    const empleado = db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(r.empleado_id) as
+      | { numero_empleado: string; nombre: string }
+      | undefined;
+
+    const ligados = new Set(
+      (db.prepare("SELECT equipo_id FROM responsiva_items WHERE responsiva_id = ?").all(responsivaId) as {
+        equipo_id: number;
+      }[]).map((x) => x.equipo_id)
+    );
+
+    // Los suyos y los disponibles; los de otra persona se muestran al final
+    // marcados, para que se vea por qué no conviene elegirlos.
+    const lista = db
+      .prepare(
+        `SELECT e.*, em.numero_empleado AS emp_num, em.nombre AS emp_nom
+         FROM equipos e LEFT JOIN empleados em ON em.id = e.asignado_a
+         WHERE e.asignado_a = ? OR e.estado = 'DISPONIBLE' OR e.id IN (SELECT equipo_id FROM responsiva_items WHERE responsiva_id = ?)
+         ORDER BY (e.asignado_a = ?) DESC, e.tipo ASC, e.codigo ASC`
+      )
+      .all(r.empleado_id, responsivaId, r.empleado_id) as (Equipo & { emp_num: string | null; emp_nom: string | null })[];
+
+    return {
+      ok: true,
+      folio: r.folio,
+      empleado: empleado ? `${empleado.numero_empleado} ${empleado.nombre}` : "",
+      equipos: lista.map((e) => ({
+        id: e.id,
+        codigo: e.codigo,
+        tipo: e.tipo,
+        marca: e.marca,
+        modelo: e.modelo,
+        numero_serie: e.numero_serie,
+        estado: e.estado,
+        asignado_a: e.asignado_a,
+        ligado: ligados.has(e.id),
+        deOtro: e.asignado_a && e.asignado_a !== r.empleado_id ? `${e.emp_num ?? ""} ${e.emp_nom ?? ""}`.trim() : null,
+      })),
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudieron leer los equipos." };
+  }
+}
+
+/**
+ * Deja la carta con exactamente los equipos indicados. Los que entran quedan
+ * asignados al empleado; los que salen vuelven a estar disponibles si nadie
+ * más los ampara.
+ */
+export async function ligarEquiposAResponsiva(responsivaId: number, equipoIds: number[]): Promise<ResultadoAccion> {
+  try {
+    const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(responsivaId) as Responsiva | undefined;
+    if (!r) return { ok: false, error: "La responsiva ya no existe." };
+    if (r.estado === "ELIMINADA") return { ok: false, error: "Esa responsiva está en la papelera." };
+    if (r.tipo !== "ASIGNACION") return { ok: false, error: "Solo se editan los equipos de las cartas de asignación." };
+
+    const ids = [...new Set(equipoIds.filter((n) => Number.isInteger(n) && n > 0))];
+    const equipos = ids.length
+      ? (db.prepare(`SELECT * FROM equipos WHERE id IN (${ids.map(() => "?").join(",")})`).all(...ids) as Equipo[])
+      : [];
+    if (equipos.length !== ids.length) return { ok: false, error: "Alguno de los equipos ya no existe." };
+
+    const ajeno = equipos.find((e) => e.asignado_a && e.asignado_a !== r.empleado_id);
+    if (ajeno) {
+      const otro = db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(ajeno.asignado_a) as
+        | { numero_empleado: string; nombre: string }
+        | undefined;
+      return {
+        ok: false,
+        error: `${ajeno.codigo} está entregado a ${otro ? `${otro.numero_empleado} ${otro.nombre}` : "otra persona"}. Registra su devolución antes de ligarlo a esta carta.`,
+      };
+    }
+
+    const antes = (db.prepare("SELECT equipo_id FROM responsiva_items WHERE responsiva_id = ?").all(responsivaId) as {
+      equipo_id: number;
+    }[]).map((x) => x.equipo_id);
+    const quitados = antes.filter((id) => !ids.includes(id));
+    const puestos = ids.filter((id) => !antes.includes(id));
+
+    db.transaction(() => {
+      for (const id of quitados) {
+        db.prepare("DELETE FROM responsiva_items WHERE responsiva_id = ? AND equipo_id = ?").run(responsivaId, id);
+        // Solo se suelta si ninguna otra carta viva lo ampara.
+        const otras = db
+          .prepare(
+            `SELECT COUNT(*) AS c FROM responsiva_items ri JOIN responsivas r2 ON r2.id = ri.responsiva_id
+             WHERE ri.equipo_id = ? AND r2.estado = 'VIGENTE' AND r2.tipo = 'ASIGNACION'`
+          )
+          .get(id) as { c: number };
+        if (!otras.c) db.prepare("UPDATE equipos SET estado='DISPONIBLE', asignado_a=NULL WHERE id=?").run(id);
+      }
+      for (const equipo of equipos.filter((e) => puestos.includes(e.id))) {
+        db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion) VALUES (?,?,?)").run(
+          responsivaId,
+          equipo.id,
+          descripcionEquipo(equipo)
+        );
+        if (r.estado === "VIGENTE") {
+          db.prepare("UPDATE equipos SET estado='ASIGNADO', asignado_a=? WHERE id=?").run(r.empleado_id, equipo.id);
+        }
+      }
+    })();
+
+    if (puestos.length || quitados.length) {
+      registrarBitacora(
+        "EQUIPOS_RESPONSIVA",
+        `Se ajustaron los equipos de ${r.folio}` +
+          (puestos.length ? `; se ligaron ${equipos.filter((e) => puestos.includes(e.id)).map((e) => e.codigo).join(", ")}` : "") +
+          (quitados.length ? `; se quitaron ${quitados.length}` : ""),
+        { responsivaId, antes, despues: ids },
+        false
+      );
+    }
+
+    revalidar();
+    revalidatePath("/empleados");
+    return {
+      ok: true,
+      mensaje: puestos.length || quitados.length ? `${r.folio} quedó con ${ids.length} equipo(s).` : "No hubo cambios.",
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudieron ligar los equipos: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/** Las otras cartas de asignación del mismo empleado, para poder unirlas. */
+export type CartaHermana = {
+  id: number;
+  folio: string;
+  clase: string;
+  fecha: string;
+  equipos: string | null;
+  firmada: boolean;
+  origen: string;
+};
+
+export async function cartasHermanas(
+  responsivaId: number
+): Promise<ResultadoAccion & { candidatas?: CartaHermana[] }> {
+  const r = db.prepare("SELECT empleado_id, clase FROM responsivas WHERE id = ?").get(responsivaId) as
+    | { empleado_id: number; clase: string }
+    | undefined;
+  if (!r) return { ok: false, error: "La responsiva ya no existe." };
+  const filas = db
+    .prepare(
+      `SELECT r.id, r.folio, r.clase, r.fecha, r.origen,
+              CASE WHEN COALESCE(r.pdf_firmado,'') != '' OR r.origen = 'CARGADA' THEN 1 ELSE 0 END AS firmada,
+              (SELECT GROUP_CONCAT(e.codigo, ', ') FROM responsiva_items ri
+                 JOIN equipos e ON e.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
+       FROM responsivas r
+       WHERE r.empleado_id = ? AND r.id != ? AND r.tipo = 'ASIGNACION' AND r.estado != 'ELIMINADA'
+       -- Primero las del mismo tipo de carta: son las que de verdad se parecen.
+       ORDER BY (r.clase = ?) DESC, r.fecha DESC, r.id DESC`
+    )
+    .all(r.empleado_id, responsivaId, r.clase) as (Omit<CartaHermana, "firmada"> & { firmada: number })[];
+  return { ok: true, candidatas: filas.map((f) => ({ ...f, firmada: !!f.firmada })) };
+}
+
+/**
+ * Une dos cartas que en realidad son la misma entrega: una trae la firma y la
+ * otra el equipo, que es como quedan cuando el escaneo se cargó aparte. En la
+ * que se conserva terminan las dos cosas y la otra se va a la papelera.
+ */
+export async function unirResponsivas(conservarId: number, eliminarId: number): Promise<ResultadoAccion> {
+  try {
+    if (conservarId === eliminarId) return { ok: false, error: "Son la misma carta." };
+    const queda = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(conservarId) as Responsiva | undefined;
+    const sobra = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(eliminarId) as Responsiva | undefined;
+    if (!queda || !sobra) return { ok: false, error: "Alguna de las dos cartas ya no existe." };
+    if (queda.estado === "ELIMINADA") return { ok: false, error: "La carta que quieres conservar está en la papelera." };
+    if (queda.empleado_id !== sobra.empleado_id) {
+      return { ok: false, error: "Las dos cartas tienen que ser del mismo empleado." };
+    }
+
+    const hecho: string[] = [];
+
+    // 1) La firma: si la que se conserva no la tiene, se trae la de la otra.
+    const firmaQueda = queda.pdf_firmado || (queda.origen === "CARGADA" ? queda.pdf_path : null);
+    const firmaSobra = sobra.pdf_firmado || (sobra.origen === "CARGADA" ? sobra.pdf_path : null);
+    if (!firmaQueda && firmaSobra) {
+      const abs = path.isAbsolute(firmaSobra) ? firmaSobra : path.join(process.cwd(), firmaSobra);
+      if (fs.existsSync(abs)) {
+        const ext = (firmaSobra.split(".").pop() || "pdf").toLowerCase();
+        const destinoRel = path.join("storage", "responsivas", `${queda.folio}-firmada.${ext}`);
+        fs.mkdirSync(path.join(process.cwd(), "storage", "responsivas"), { recursive: true });
+        fs.copyFileSync(abs, path.join(process.cwd(), destinoRel));
+        db.prepare("UPDATE responsivas SET pdf_firmado = ?, fecha_firma = ? WHERE id = ?").run(
+          destinoRel,
+          sobra.fecha_firma || hoyISO(),
+          queda.id
+        );
+        hecho.push(`quedó con la firma de ${sobra.folio}`);
+      }
+    }
+
+    // 2) Los equipos que solo estaban en la otra pasan a la que se conserva.
+    const mios = new Set(
+      (db.prepare("SELECT equipo_id FROM responsiva_items WHERE responsiva_id = ?").all(queda.id) as {
+        equipo_id: number;
+      }[]).map((x) => x.equipo_id)
+    );
+    const suyos = db
+      .prepare("SELECT equipo_id, descripcion, condiciones FROM responsiva_items WHERE responsiva_id = ?")
+      .all(sobra.id) as { equipo_id: number; descripcion: string; condiciones: string | null }[];
+    const movidos: string[] = [];
+    db.transaction(() => {
+      for (const it of suyos) {
+        // El renglón sobrante se quita siempre: así la otra se puede borrar.
+        db.prepare("DELETE FROM responsiva_items WHERE responsiva_id = ? AND equipo_id = ?").run(sobra.id, it.equipo_id);
+        if (mios.has(it.equipo_id)) continue;
+        db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion, condiciones) VALUES (?,?,?,?)").run(
+          queda.id,
+          it.equipo_id,
+          it.descripcion,
+          it.condiciones
+        );
+        const eq = db.prepare("SELECT codigo FROM equipos WHERE id = ?").get(it.equipo_id) as { codigo: string } | undefined;
+        if (eq) movidos.push(eq.codigo);
+        if (queda.estado === "VIGENTE") {
+          db.prepare("UPDATE equipos SET estado='ASIGNADO', asignado_a=? WHERE id=?").run(queda.empleado_id, it.equipo_id);
+        }
+      }
+    })();
+    if (movidos.length) hecho.push(`se le ligaron ${movidos.join(", ")}`);
+
+    registrarBitacora(
+      "UNIR_RESPONSIVAS",
+      `Se unió ${sobra.folio} con ${queda.folio}${hecho.length ? `: ${hecho.join(" y ")}` : ""}`,
+      { conservada: queda.folio, eliminada: sobra.folio, equipos: movidos },
+      false
+    );
+
+    // La sobrante se va por el camino normal: papelera y bitácora reversible.
+    const borrado = await eliminarResponsiva(sobra.id);
+
+    revalidar();
+    revalidatePath("/empleados");
+    const resumen = hecho.length ? ` (${hecho.join(" y ")})` : "";
+    return {
+      ok: true,
+      mensaje: borrado.ok
+        ? `Quedó ${queda.folio}${resumen}. ${sobra.folio} se fue a la papelera.`
+        : `Quedó ${queda.folio}${resumen}, pero ${sobra.folio} no se pudo mandar a la papelera: ${borrado.error}`,
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudieron unir: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+
+/**
+ * Une de golpe los pares partidos que se marquen. Conserva el folio de la carta
+ * que trae el equipo: es la que se imprimió y firmaron, así que es la que debe
+ * seguir existiendo.
+ */
+export async function unirParesPartidos(
+  pares: { conservarId: number; eliminarId: number }[]
+): Promise<ResultadoAccion> {
+  try {
+    if (!pares.length) return { ok: false, error: "No marcaste ningún par." };
+    const unidos: string[] = [];
+    const fallidos: string[] = [];
+    for (const par of pares) {
+      const res = await unirResponsivas(par.conservarId, par.eliminarId);
+      if (res.ok) unidos.push(res.mensaje ?? "");
+      else fallidos.push(res.error ?? "no se pudo");
+    }
+    revalidar();
+    revalidatePath("/empleados");
+    const bloque = (t: string, l: string[]) => (l.length ? `\n\n${t}:\n· ${l.join("\n· ")}` : "");
+    return {
+      ok: true,
+      mensaje:
+        `Se unieron ${unidos.length} de ${pares.length} par(es).` + bloque("Detalle", unidos) + bloque("Sin unir", fallidos),
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudieron unir: ${e instanceof Error ? e.message : String(e)}` };
   }
 }

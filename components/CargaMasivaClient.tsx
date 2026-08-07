@@ -5,16 +5,41 @@ import { useRouter } from "next/navigation";
 import type { Empleado } from "../lib/types";
 import { CLASES_CARTA, ETIQUETA_CLASE } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
-import { analizarLoteResponsivas, confirmarLoteResponsivas, type RenglonLote } from "../app/responsivas/actions";
+import {
+  analizarLoteResponsivas,
+  confirmarLoteResponsivas,
+  sugerenciasFirmaDe,
+  type RenglonLote,
+  type SugerenciaFirma,
+} from "../app/responsivas/actions";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
+
+/** Una carta ya generada, cuando se está subiendo el escaneo de un lote. */
+export type CartaDeLote = {
+  id: number;
+  folio: string;
+  clase: string;
+  firmada: number;
+  empleado: string;
+};
 
 /**
  * Carga masiva: un PDF con muchas responsivas se separa en una por página, el
  * sistema propone de quién es cada una y aquí se revisa antes de guardar.
  * Lo que no pudo identificar se asigna a mano en la misma tabla.
+ *
+ * Cuando se llega desde un lote generado, el escaneo se reparte solo: las
+ * cartas salieron impresas en un orden conocido y regresan en ese mismo orden,
+ * así que la página 1 es la primera carta, la 2 la segunda, y así.
  */
-export default function CargaMasivaClient({ empleados }: { empleados: Empleado[] }) {
+export default function CargaMasivaClient({
+  empleados,
+  lote = null,
+}: {
+  empleados: Empleado[];
+  lote?: { nombre: string; cartas: CartaDeLote[] } | null;
+}) {
   const router = useRouter();
   const ref = useRef<HTMLInputElement>(null);
   const [renglones, setRenglones] = useState<RenglonLote[] | null>(null);
@@ -22,7 +47,58 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
   const [viendo, setViendo] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [avisoLote, setAvisoLote] = useState("");
   const [pendiente, iniciar] = useTransition();
+
+  /**
+   * Reparte las páginas del escaneo entre las cartas del lote, por orden. Solo
+   * se hace si las cuentas cuadran: si no, es mejor asignarlas a mano que
+   * adjudicar la firma de alguien a otra persona.
+   */
+  const emparejarConLote = (rs: RenglonLote[]): { renglones: RenglonLote[]; aviso: string } => {
+    if (!lote) return { renglones: rs, aviso: "" };
+    const pendientesLote = lote.cartas.filter((c) => !c.firmada);
+    const objetivo =
+      rs.length === lote.cartas.length ? lote.cartas : rs.length === pendientesLote.length ? pendientesLote : null;
+
+    if (!objetivo) {
+      return {
+        renglones: rs,
+        aviso:
+          `El escaneo trae ${rs.length} página(s) y el lote ${lote.nombre} tiene ${lote.cartas.length} carta(s) ` +
+          `(${pendientesLote.length} sin firmar). Como no coinciden, no se repartió solo: revisa cada página y ` +
+          `asígnala a mano.`,
+      };
+    }
+
+    const yaTomadas = new Set(rs.map((r) => r.responsivaId).filter((v): v is number => !!v));
+    let puestas = 0;
+    const salida = rs.map((r, i) => {
+      // Si se alcanzó a leer el folio en el papel, ese dato manda sobre el orden.
+      if (r.responsivaId) return r;
+      const carta = objetivo[i];
+      if (!carta || yaTomadas.has(carta.id)) return r;
+      yaTomadas.add(carta.id);
+      puestas += 1;
+      return {
+        ...r,
+        responsivaId: carta.id,
+        folio: carta.folio,
+        clase: carta.clase,
+        empleadoTexto: carta.empleado,
+        comoSeIdentifico: `el orden de impresión del lote ${lote.nombre}`,
+        aviso: "",
+      };
+    });
+
+    return {
+      renglones: salida,
+      aviso: puestas
+        ? `Se repartieron ${puestas} página(s) entre las cartas del lote ${lote.nombre} según el orden en que se ` +
+          `imprimieron. Ábrelas con 👁 Ver para comprobar que cada firma es de quien dice antes de guardar.`
+        : "",
+    };
+  };
 
   const analizar = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const archivos = Array.from(ev.target.files ?? []);
@@ -30,6 +106,7 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     if (!archivos.length) return;
     setError("");
     setMensaje("");
+    setAvisoLote("");
     setRenglones(null);
     setViendo(null);
     const fd = new FormData();
@@ -37,8 +114,11 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
     iniciar(async () => {
       try {
         const res = await analizarLoteResponsivas(fd);
-        if (res.ok && res.lote) setRenglones(res.lote.renglones);
-        else setError(res.error ?? "No se pudo leer el PDF.");
+        if (res.ok && res.lote) {
+          const { renglones: rs, aviso } = emparejarConLote(res.lote.renglones);
+          setRenglones(rs);
+          setAvisoLote(aviso);
+        } else setError(res.error ?? "No se pudo leer el PDF.");
       } catch {
         // Si el servidor corta la subida (archivo enorme) no hay respuesta que leer.
         setError(
@@ -57,7 +137,7 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
   const claseATodas = (clase: string) =>
     setRenglones((rs) => (rs ? rs.map((r) => (r.responsivaId ? r : { ...r, clase })) : rs));
 
-  const cambiarEmpleado = (clave: string, id: number | null) =>
+  const cambiarEmpleado = (clave: string, id: number | null) => {
     setRenglones((rs) =>
       rs
         ? rs.map((r) =>
@@ -68,11 +148,51 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
                   empleadoTexto: id ? empleados.find((e) => e.id === id)?.nombre ?? "" : null,
                   comoSeIdentifico: id ? "elegido a mano" : "",
                   aviso: id ? "" : r.aviso,
+                  sugerencias: [],
+                  forzarNueva: false,
                 }
               : r
           )
         : rs
     );
+    // Al elegir empleado se traen sus cartas sin firma: si la página es una de
+    // ellas hay que adjuntarla, no dar de alta otra igual.
+    if (!id) return;
+    sugerenciasFirmaDe(id)
+      .then(({ sugerencias }) =>
+        setRenglones((rs) => (rs ? rs.map((r) => (r.clave === clave ? { ...r, sugerencias } : r)) : rs))
+      )
+      .catch(() => undefined);
+  };
+
+  /** Marca la página como la firma de una carta que ya existe. */
+  const adjuntarA = (clave: string, sug: SugerenciaFirma) =>
+    setRenglones((rs) =>
+      rs
+        ? rs.map((r) =>
+            r.clave === clave
+              ? {
+                  ...r,
+                  responsivaId: sug.id,
+                  folio: sug.folio,
+                  clase: sug.clase,
+                  comoSeIdentifico: "elegida a mano de sus cartas pendientes",
+                  aviso: "",
+                }
+              : r
+          )
+        : rs
+    );
+
+  /** Deshace lo anterior: vuelve a ser una carta por dar de alta. */
+  const soltarAdjunto = (clave: string) =>
+    setRenglones((rs) =>
+      rs ? rs.map((r) => (r.clave === clave ? { ...r, responsivaId: null, folio: null, comoSeIdentifico: "" } : r)) : rs
+    );
+
+  /** "Sí, es otra distinta": deja crearla aunque haya cartas pendientes. */
+  const marcarComoOtra = (clave: string) =>
+    setRenglones((rs) => (rs ? rs.map((r) => (r.clave === clave ? { ...r, forzarNueva: true } : r)) : rs));
 
   const guardar = () => {
     if (!renglones) return;
@@ -92,6 +212,7 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
             clase: r.clase,
             fecha: r.fecha,
             equipoIds: r.equipoIds,
+            forzarNueva: r.forzarNueva,
           }))
         );
         if (res.ok) {
@@ -108,6 +229,9 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
   };
 
   const faltan = renglones?.filter((r) => !r.responsivaId && (!r.empleadoId || !r.clase)).length ?? 0;
+  /** Páginas de un empleado que ya tiene cartas sin firma, y aún no se decide. */
+  const porDecidir =
+    renglones?.filter((r) => !r.responsivaId && !r.forzarNueva && (r.sugerencias?.length ?? 0) > 0).length ?? 0;
   const indiceAbierta = renglones?.findIndex((r) => r.clave === viendo) ?? -1;
   const abierta = indiceAbierta >= 0 ? renglones?.[indiceAbierta] ?? null : null;
   /** Salta a otra carta sin cerrar el visor: así se revisan de corrido. */
@@ -117,6 +241,19 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
 
   return (
     <div className="space-y-5">
+      {lote ? (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+          <p className="font-semibold">
+            Subiendo las firmadas del lote <span className="mono">{lote.nombre}</span> — {lote.cartas.length} carta(s),{" "}
+            {lote.cartas.filter((c) => !c.firmada).length} sin firmar.
+          </p>
+          <p className="mt-1">
+            Escanea el paquete completo <b>en el mismo orden en que se imprimió</b> y súbelo aquí: cada página se
+            asigna sola a su carta. Si escaneaste solo las que faltaban, también cuadra.
+          </p>
+        </div>
+      ) : null}
+
       <Card>
         <h2 className="mb-2 text-base font-bold text-ink">1. Sube el PDF con las responsivas</h2>
         <p className="mb-3 text-sm text-soft">
@@ -136,6 +273,9 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
       ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+      ) : null}
+      {avisoLote ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">{avisoLote}</div>
       ) : null}
 
       {renglones ? (
@@ -159,6 +299,14 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
               {pendiente ? "Guardando…" : "Guardar las identificadas"}
             </button>
           </div>
+
+          {porDecidir > 0 ? (
+            <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <b>{porDecidir}</b> página(s) son de empleados que ya tienen cartas generadas esperando firma. En cada una,
+              marca <b>“Es esta”</b> para adjuntar el escaneo a la carta que ya existe, o <b>“es una carta distinta”</b>{" "}
+              si de verdad es otra. Mientras no lo decidas, esas no se guardan (así no se duplican).
+            </div>
+          ) : null}
 
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-line bg-paper/60 px-3 py-2 text-xs">
             <span className="font-semibold text-ink">Todas son de:</span>
@@ -226,7 +374,17 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
                     </td>
                     <td className={tdCls}>
                       {r.responsivaId ? (
-                        <span className="text-sm">{r.empleadoTexto ?? "—"}</span>
+                        <div className="space-y-1">
+                          <span className="text-sm">{r.empleadoTexto ?? "—"}</span>
+                          {r.comoSeIdentifico.includes("pendientes") ? (
+                            <button
+                              className="block text-[11px] text-soft underline hover:text-ink"
+                              onClick={() => soltarAdjunto(r.clave)}
+                            >
+                              No es esa: elegir de nuevo
+                            </button>
+                          ) : null}
+                        </div>
                       ) : (
                         <div className="space-y-1">
                           {r.aviso ? <p className="text-xs text-amber-800">{r.aviso}</p> : null}
@@ -240,6 +398,46 @@ export default function CargaMasivaClient({ empleados }: { empleados: Empleado[]
                               onChange={(id) => cambiarEmpleado(r.clave, id)}
                             />
                           </div>
+
+                          {r.sugerencias?.length && !r.forzarNueva ? (
+                            <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 p-2">
+                              <p className="text-[11px] font-bold text-amber-900">
+                                Ya tiene {r.sugerencias.length} carta(s) esperando firma. ¿Es alguna de estas?
+                              </p>
+                              <div className="mt-1 space-y-1">
+                                {r.sugerencias.map((s) => (
+                                  <div key={s.id} className="flex flex-wrap items-center gap-1.5">
+                                    <span className="mono text-[11px] font-semibold text-kraft-dark">{s.folio}</span>
+                                    <span className="text-[11px] text-soft">
+                                      {ETIQUETA_CLASE[s.clase] ?? s.clase} · {fechaCorta(s.fecha)}
+                                      {s.equipos ? ` · ${s.equipos}` : ""}
+                                    </span>
+                                    <button
+                                      className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                                      onClick={() => adjuntarA(r.clave, s)}
+                                    >
+                                      Es esta
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <button
+                                className="mt-1 text-[11px] text-amber-900 underline hover:text-ink"
+                                onClick={() => marcarComoOtra(r.clave)}
+                              >
+                                Ninguna: es una carta distinta
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {r.forzarNueva ? (
+                            <p className="text-[11px] text-soft">
+                              Se dará de alta como carta nueva.{" "}
+                              <button className="underline hover:text-ink" onClick={() => cambiarEmpleado(r.clave, r.empleadoId)}>
+                                deshacer
+                              </button>
+                            </p>
+                          ) : null}
                         </div>
                       )}
                     </td>

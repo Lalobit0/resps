@@ -7,6 +7,10 @@ import ExportarBotones from "../../components/ExportarBotones";
 import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
 import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
 import { CambiarClaseLista, EditarClaseBtn } from "../../components/ClaseResponsiva";
+import CorregirResponsivaBtn from "../../components/CorregirResponsivaBtn";
+import AvisoParesPartidos from "../../components/AvisoParesPartidos";
+import VerPdfBtn from "../../components/VerPdfBtn";
+import { paresPartidos } from "../../lib/pendientes";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +27,8 @@ export default async function PaginaResponsivas({
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const nueva = typeof sp.nueva === "string" ? sp.nueva : "";
   const orden = typeof sp.orden === "string" ? sp.orden : "recientes";
+  // "sin" = pendientes de subir firmadas, "con" = las que ya tienen su escaneo.
+  const firma = typeof sp.firma === "string" ? sp.firma : "";
 
   const ORDENES: Record<string, string> = {
     recientes: "r.fecha DESC, r.id DESC",
@@ -50,14 +56,30 @@ export default async function PaginaResponsivas({
     condiciones.push("(r.folio LIKE ? OR em.nombre LIKE ? OR em.numero_empleado LIKE ?)");
     valores.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
+  // Una carta cuenta como firmada si trae el escaneo o llegó ya firmada.
+  const FIRMADA_SQL = "(COALESCE(r.pdf_firmado,'') != '' OR r.origen = 'CARGADA')";
+  if (firma === "sin") condiciones.push(`NOT ${FIRMADA_SQL}`);
+  if (firma === "con") condiciones.push(FIRMADA_SQL);
   const where = `WHERE ${condiciones.join(" AND ")}`;
 
   const responsivas = db
     .prepare(
       `SELECT r.*, em.nombre AS empleado_nombre, em.numero_empleado AS empleado_numero,
         (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos,
-        (SELECT COUNT(*) FROM responsivas rd WHERE rd.empleado_id = r.empleado_id AND rd.clase = r.clase AND rd.fecha = r.fecha
-           AND rd.tipo = 'ASIGNACION' AND rd.estado != 'ELIMINADA' AND rd.id != r.id) AS es_duplicado
+        (SELECT COUNT(*) FROM responsivas rd
+          WHERE rd.empleado_id = r.empleado_id AND rd.clase = r.clase
+            AND rd.tipo = 'ASIGNACION' AND rd.estado != 'ELIMINADA' AND rd.id != r.id
+            AND (
+              -- misma persona, mismo tipo y mismo día: la de siempre
+              rd.fecha = r.fecha
+              -- o dos cartas vigentes del mismo tipo donde alguna no trae equipo
+              -- (el caso del escaneo cargado aparte de la carta que ya existía)
+              OR (rd.estado = 'VIGENTE' AND r.estado = 'VIGENTE'
+                  AND (NOT EXISTS (SELECT 1 FROM responsiva_items ri2 WHERE ri2.responsiva_id = rd.id)
+                       OR NOT EXISTS (SELECT 1 FROM responsiva_items ri3 WHERE ri3.responsiva_id = r.id)
+                       OR EXISTS (SELECT 1 FROM responsiva_items a JOIN responsiva_items b ON a.equipo_id = b.equipo_id
+                                   WHERE a.responsiva_id = rd.id AND b.responsiva_id = r.id)))
+            )) AS es_duplicado
        FROM responsivas r
        JOIN empleados em ON em.id = r.empleado_id
        ${where}
@@ -65,6 +87,8 @@ export default async function PaginaResponsivas({
     )
     .all(...valores) as ResponsivaLista[];
 
+  // Pares donde el escaneo entró como carta aparte: una con firma, otra con equipo.
+  const partidas = paresPartidos();
   const totalDuplicados = responsivas.filter((r) => (r.es_duplicado ?? 0) > 0).length;
   // Solo las de asignación cambian de tipo: la devolución hereda el de su carta.
   const asignaciones = responsivas.filter((r) => r.tipo === "ASIGNACION");
@@ -78,6 +102,9 @@ export default async function PaginaResponsivas({
         <a href="/api/archivero" className={btnGhost} title="Descarga todas las responsivas en un ZIP, por departamento y empleado">
           🗄️ Archivero (ZIP)
         </a>
+        <Link href="/responsivas/generar" className={btnGhost}>
+          ✎✎ Generar en lote
+        </Link>
         <Link href="/responsivas/lote" className={btnGhost}>
           ↥↥ Carga masiva
         </Link>
@@ -97,10 +124,21 @@ export default async function PaginaResponsivas({
 
       {totalSinFirma > 0 ? (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          ✍️ Hay <b>{totalSinFirma}</b> responsiva(s) <b>sin firmar</b>. Imprímelas, recoge las firmas y sube el
-          documento con <b>Subir firmada</b> del renglón.
+          <span className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              ✍️ Hay <b>{totalSinFirma}</b> responsiva(s) <b>sin firmar</b> en esta lista. Imprímelas, recoge las firmas
+              y sube el documento con <b>Subir firmada</b> del renglón.
+            </span>
+            {firma !== "sin" ? (
+              <Link href="/responsivas?firma=sin" className={btnGhost}>
+                Ver solo las que faltan
+              </Link>
+            ) : null}
+          </span>
         </div>
       ) : null}
+
+      <AvisoParesPartidos pares={partidas} />
 
       {totalDuplicados > 0 ? (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -135,6 +173,11 @@ export default async function PaginaResponsivas({
           <option value="">Todos los estados</option>
           <option value="VIGENTE">Vigente</option>
           <option value="CERRADA">Cerrada</option>
+        </select>
+        <select name="firma" defaultValue={firma} className={`${inputCls} max-w-[180px]`}>
+          <option value="">Firmadas y sin firmar</option>
+          <option value="sin">Solo sin firmar</option>
+          <option value="con">Solo firmadas</option>
         </select>
         <select name="orden" defaultValue={orden} className={`${inputCls} max-w-[230px]`}>
           <option value="recientes">Más recientes primero</option>
@@ -200,9 +243,12 @@ export default async function PaginaResponsivas({
                   <td className={tdCls}>
                     <div className="flex flex-wrap gap-1.5">
                       {r.pdf_path || r.pdf_firmado ? (
-                        <a href={`/api/pdf/${r.id}`} target="_blank" className={btnGhost}>
-                          Ver PDF
-                        </a>
+                        <VerPdfBtn
+                          id={r.id}
+                          folio={r.folio}
+                          className={btnGhost}
+                          subtitulo={`${r.empleado_numero} ${r.empleado_nombre} · ${fechaCorta(r.fecha)}`}
+                        />
                       ) : null}
                       {faltaFirma(r) ? (
                         <>
@@ -213,6 +259,7 @@ export default async function PaginaResponsivas({
                         </>
                       ) : null}
                       <EditarClaseBtn id={r.id} folio={r.folio} clase={r.clase} tipo={r.tipo} />
+                      <CorregirResponsivaBtn id={r.id} folio={r.folio} tipo={r.tipo} />
                       {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE" ? (
                         <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                           Registrar devolución

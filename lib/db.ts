@@ -233,6 +233,9 @@ function migrar(db: Database.Database) {
   // La responsiva se imprime, se firma en papel y se sube escaneada.
   agregarColumna(db, "responsivas", "pdf_firmado", "TEXT");
   agregarColumna(db, "responsivas", "fecha_firma", "TEXT");
+  // Tanda en la que se generó de golpe, para reimprimirla completa y para
+  // repartir después el escaneo de las cartas firmadas página por página.
+  agregarColumna(db, "responsivas", "lote", "TEXT");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
 }

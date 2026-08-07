@@ -3,7 +3,6 @@ import { db } from "../lib/db";
 import type { MantenimientoConEquipo, ResponsivaLista } from "../lib/types";
 import { diasPara, dinero, fechaCorta } from "../lib/helpers";
 import { ETIQUETA_TIPO, TIPOS_EQUIPO } from "../lib/constants";
-import { totalSinResponsiva } from "../lib/pendientes";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary } from "../components/ui";
 
 export const dynamic = "force-dynamic";
@@ -36,8 +35,6 @@ export default async function PaginaInicio() {
     )
     .all() as { precio: string | null }[];
   const costoLineas = lineas.reduce((s, l) => s + (Number((l.precio ?? "").replace(/[^\d.]/g, "")) || 0), 0);
-
-  const faltanResponsiva = totalSinResponsiva();
 
   const vigentes = (db
     .prepare("SELECT COUNT(*) AS c FROM responsivas WHERE tipo='ASIGNACION' AND estado='VIGENTE'")
@@ -85,22 +82,6 @@ export default async function PaginaInicio() {
         </Link>
       </PageHeader>
 
-      {faltanResponsiva > 0 ? (
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-          <span>
-            📄 <b>{faltanResponsiva}</b> equipo(s) entregados <b>sin carta responsiva</b>. Genéralas todas juntas e
-            imprime el paquete para recoger las firmas.
-          </span>
-          <span className="flex flex-wrap gap-2">
-            <Link href="/responsivas/generar" className={btnPrimary}>
-              ✎ Generar en lote
-            </Link>
-            <Link href="/inventario?sinresp=1" className={btnGhost}>
-              Ver cuáles
-            </Link>
-          </span>
-        </div>
-      ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {tarjetas.map((t) => (

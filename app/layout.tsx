@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import "./globals.css";
 import Nav from "../components/Nav";
+import CampanaAvisos from "../components/CampanaAvisos";
 
 export const metadata: Metadata = {
   title: "Control TI · Sultana Packaging",
@@ -24,6 +26,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </aside>
           <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-10">
+            {/* La campana vive arriba a la derecha, sobre el contenido. */}
+            <div className="mb-2 flex justify-end">
+              <Suspense fallback={null}>
+                <CampanaAvisos />
+              </Suspense>
+            </div>
             <div className="w-full">{children}</div>
           </main>
         </div>

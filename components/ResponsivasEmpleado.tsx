@@ -7,6 +7,7 @@ import EliminarResponsivaBtn from "./EliminarResponsivaBtn";
 import SubirFirmadaBtn from "./SubirFirmadaBtn";
 import { EditarClaseBtn } from "./ClaseResponsiva";
 import VerPdfBtn from "./VerPdfBtn";
+import RegenerarResponsivaBtn from "./RegenerarResponsivaBtn";
 import CorregirResponsivaBtn from "./CorregirResponsivaBtn";
 import { Badge, Card, Empty, btnGhost, tdCls, thCls } from "./ui";
 
@@ -97,6 +98,13 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
                   )}
                   <EditarClaseBtn id={r.id} folio={r.folio} clase={r.clase} tipo={r.tipo} className={btnGhost} />
                   <CorregirResponsivaBtn id={r.id} folio={r.folio} tipo={r.tipo} className={btnGhost} />
+                  <RegenerarResponsivaBtn
+                    id={r.id}
+                    folio={r.folio}
+                    origen={r.origen}
+                    firmada={!!r.pdf_firmado}
+                    className={btnGhost}
+                  />
                   {puedeDevolver(r) ? (
                     <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
                       Devolución

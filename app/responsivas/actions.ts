@@ -1499,72 +1499,128 @@ export async function ligarEquiposAResponsiva(responsivaId: number, equipoIds: n
   }
 }
 
-/** Cartas del mismo empleado que siguen sin firma, para reasignarles un escaneo. */
-export async function candidatasParaFirma(
+/** Las otras cartas de asignación del mismo empleado, para poder unirlas. */
+export type CartaHermana = {
+  id: number;
+  folio: string;
+  clase: string;
+  fecha: string;
+  equipos: string | null;
+  firmada: boolean;
+  origen: string;
+};
+
+export async function cartasHermanas(
   responsivaId: number
-): Promise<ResultadoAccion & { candidatas?: SugerenciaFirma[] }> {
-  const r = db.prepare("SELECT empleado_id FROM responsivas WHERE id = ?").get(responsivaId) as
-    | { empleado_id: number }
+): Promise<ResultadoAccion & { candidatas?: CartaHermana[] }> {
+  const r = db.prepare("SELECT empleado_id, clase FROM responsivas WHERE id = ?").get(responsivaId) as
+    | { empleado_id: number; clase: string }
     | undefined;
   if (!r) return { ok: false, error: "La responsiva ya no existe." };
-  return { ok: true, candidatas: sugerenciasDe(r.empleado_id).filter((c) => c.id !== responsivaId) };
+  const filas = db
+    .prepare(
+      `SELECT r.id, r.folio, r.clase, r.fecha, r.origen,
+              CASE WHEN COALESCE(r.pdf_firmado,'') != '' OR r.origen = 'CARGADA' THEN 1 ELSE 0 END AS firmada,
+              (SELECT GROUP_CONCAT(e.codigo, ', ') FROM responsiva_items ri
+                 JOIN equipos e ON e.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
+       FROM responsivas r
+       WHERE r.empleado_id = ? AND r.id != ? AND r.tipo = 'ASIGNACION' AND r.estado != 'ELIMINADA'
+       -- Primero las del mismo tipo de carta: son las que de verdad se parecen.
+       ORDER BY (r.clase = ?) DESC, r.fecha DESC, r.id DESC`
+    )
+    .all(r.empleado_id, responsivaId, r.clase) as (Omit<CartaHermana, "firmada"> & { firmada: number })[];
+  return { ok: true, candidatas: filas.map((f) => ({ ...f, firmada: !!f.firmada })) };
 }
 
 /**
- * Toma el escaneo de una carta que se cargó de más y lo usa como la firma de
- * la carta buena, que era la que estaba esperando. La duplicada se va a la
- * papelera (queda en la bitácora, con su equipo liberado).
+ * Une dos cartas que en realidad son la misma entrega: una trae la firma y la
+ * otra el equipo, que es como quedan cuando el escaneo se cargó aparte. En la
+ * que se conserva terminan las dos cosas y la otra se va a la papelera.
  */
-export async function usarComoFirmaDeOtra(cargadaId: number, destinoId: number): Promise<ResultadoAccion> {
+export async function unirResponsivas(conservarId: number, eliminarId: number): Promise<ResultadoAccion> {
   try {
-    if (cargadaId === destinoId) return { ok: false, error: "Son la misma carta." };
-    const cargada = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(cargadaId) as Responsiva | undefined;
-    const destino = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(destinoId) as Responsiva | undefined;
-    if (!cargada || !destino) return { ok: false, error: "Alguna de las dos cartas ya no existe." };
-    if (destino.estado === "ELIMINADA") return { ok: false, error: "La carta de destino está en la papelera." };
-    if (cargada.empleado_id !== destino.empleado_id) {
+    if (conservarId === eliminarId) return { ok: false, error: "Son la misma carta." };
+    const queda = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(conservarId) as Responsiva | undefined;
+    const sobra = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(eliminarId) as Responsiva | undefined;
+    if (!queda || !sobra) return { ok: false, error: "Alguna de las dos cartas ya no existe." };
+    if (queda.estado === "ELIMINADA") return { ok: false, error: "La carta que quieres conservar está en la papelera." };
+    if (queda.empleado_id !== sobra.empleado_id) {
       return { ok: false, error: "Las dos cartas tienen que ser del mismo empleado." };
     }
 
-    const origenRel = cargada.pdf_firmado || cargada.pdf_path;
-    if (!origenRel) return { ok: false, error: "Esa carta no tiene ningún documento que pasar." };
-    const origenAbs = path.isAbsolute(origenRel) ? origenRel : path.join(process.cwd(), origenRel);
-    if (!fs.existsSync(origenAbs)) return { ok: false, error: "No se encontró el archivo de esa carta." };
+    const hecho: string[] = [];
 
-    const ext = (origenRel.split(".").pop() || "pdf").toLowerCase();
-    const destinoRel = path.join("storage", "responsivas", `${destino.folio}-firmada.${ext}`);
-    fs.mkdirSync(path.join(process.cwd(), "storage", "responsivas"), { recursive: true });
-    fs.copyFileSync(origenAbs, path.join(process.cwd(), destinoRel));
+    // 1) La firma: si la que se conserva no la tiene, se trae la de la otra.
+    const firmaQueda = queda.pdf_firmado || (queda.origen === "CARGADA" ? queda.pdf_path : null);
+    const firmaSobra = sobra.pdf_firmado || (sobra.origen === "CARGADA" ? sobra.pdf_path : null);
+    if (!firmaQueda && firmaSobra) {
+      const abs = path.isAbsolute(firmaSobra) ? firmaSobra : path.join(process.cwd(), firmaSobra);
+      if (fs.existsSync(abs)) {
+        const ext = (firmaSobra.split(".").pop() || "pdf").toLowerCase();
+        const destinoRel = path.join("storage", "responsivas", `${queda.folio}-firmada.${ext}`);
+        fs.mkdirSync(path.join(process.cwd(), "storage", "responsivas"), { recursive: true });
+        fs.copyFileSync(abs, path.join(process.cwd(), destinoRel));
+        db.prepare("UPDATE responsivas SET pdf_firmado = ?, fecha_firma = ? WHERE id = ?").run(
+          destinoRel,
+          sobra.fecha_firma || hoyISO(),
+          queda.id
+        );
+        hecho.push(`quedó con la firma de ${sobra.folio}`);
+      }
+    }
 
-    db.prepare("UPDATE responsivas SET pdf_firmado = ?, fecha_firma = ? WHERE id = ?").run(
-      destinoRel,
-      hoyISO(),
-      destinoId
+    // 2) Los equipos que solo estaban en la otra pasan a la que se conserva.
+    const mios = new Set(
+      (db.prepare("SELECT equipo_id FROM responsiva_items WHERE responsiva_id = ?").all(queda.id) as {
+        equipo_id: number;
+      }[]).map((x) => x.equipo_id)
     );
+    const suyos = db
+      .prepare("SELECT equipo_id, descripcion, condiciones FROM responsiva_items WHERE responsiva_id = ?")
+      .all(sobra.id) as { equipo_id: number; descripcion: string; condiciones: string | null }[];
+    const movidos: string[] = [];
+    db.transaction(() => {
+      for (const it of suyos) {
+        // El renglón sobrante se quita siempre: así la otra se puede borrar.
+        db.prepare("DELETE FROM responsiva_items WHERE responsiva_id = ? AND equipo_id = ?").run(sobra.id, it.equipo_id);
+        if (mios.has(it.equipo_id)) continue;
+        db.prepare("INSERT INTO responsiva_items (responsiva_id, equipo_id, descripcion, condiciones) VALUES (?,?,?,?)").run(
+          queda.id,
+          it.equipo_id,
+          it.descripcion,
+          it.condiciones
+        );
+        const eq = db.prepare("SELECT codigo FROM equipos WHERE id = ?").get(it.equipo_id) as { codigo: string } | undefined;
+        if (eq) movidos.push(eq.codigo);
+        if (queda.estado === "VIGENTE") {
+          db.prepare("UPDATE equipos SET estado='ASIGNADO', asignado_a=? WHERE id=?").run(queda.empleado_id, it.equipo_id);
+        }
+      }
+    })();
+    if (movidos.length) hecho.push(`se le ligaron ${movidos.join(", ")}`);
+
     registrarBitacora(
-      "RESPONSIVA_FIRMADA",
-      `El escaneo de ${cargada.folio} se usó como la firma de ${destino.folio}`,
-      { origen: cargada.folio, destino: destino.folio, archivo: destinoRel },
+      "UNIR_RESPONSIVAS",
+      `Se unió ${sobra.folio} con ${queda.folio}${hecho.length ? `: ${hecho.join(" y ")}` : ""}`,
+      { conservada: queda.folio, eliminada: sobra.folio, equipos: movidos },
       false
     );
 
-    // La duplicada se elimina por el camino normal: papelera, equipo liberado
-    // y movimiento reversible desde la bitácora.
-    const borrado = await eliminarResponsiva(cargadaId);
-    if (!borrado.ok) {
-      return {
-        ok: true,
-        mensaje:
-          `${destino.folio} quedó firmada con ese documento, pero ${cargada.folio} no se pudo mandar a la papelera: ` +
-          `${borrado.error}. Bórrala a mano.`,
-      };
-    }
+    // La sobrante se va por el camino normal: papelera y bitácora reversible.
+    const borrado = await eliminarResponsiva(sobra.id);
 
     revalidar();
     revalidatePath("/empleados");
-    return { ok: true, mensaje: `${destino.folio} quedó firmada y ${cargada.folio} se fue a la papelera.` };
+    const resumen = hecho.length ? ` (${hecho.join(" y ")})` : "";
+    return {
+      ok: true,
+      mensaje: borrado.ok
+        ? `Quedó ${queda.folio}${resumen}. ${sobra.folio} se fue a la papelera.`
+        : `Quedó ${queda.folio}${resumen}, pero ${sobra.folio} no se pudo mandar a la papelera: ${borrado.error}`,
+    };
   } catch (e) {
     console.error(e);
-    return { ok: false, error: `No se pudo reasignar el documento: ${e instanceof Error ? e.message : String(e)}` };
+    return { ok: false, error: `No se pudieron unir: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
+

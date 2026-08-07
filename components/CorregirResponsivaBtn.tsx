@@ -3,12 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
-  candidatasParaFirma,
+  cartasHermanas,
   equiposParaResponsiva,
   ligarEquiposAResponsiva,
-  usarComoFirmaDeOtra,
+  unirResponsivas,
+  type CartaHermana,
   type EquipoDeCarta,
-  type SugerenciaFirma,
 } from "../app/responsivas/actions";
 import { ETIQUETA_CLASE, ETIQUETA_TIPO } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
@@ -35,7 +35,7 @@ export default function CorregirResponsivaBtn({
   const [equipos, setEquipos] = useState<EquipoDeCarta[]>([]);
   const [empleado, setEmpleado] = useState("");
   const [elegidos, setElegidos] = useState<Set<number>>(new Set());
-  const [candidatas, setCandidatas] = useState<SugerenciaFirma[]>([]);
+  const [candidatas, setCandidatas] = useState<CartaHermana[]>([]);
   const [filtro, setFiltro] = useState("");
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
@@ -49,7 +49,7 @@ export default function CorregirResponsivaBtn({
     setError("");
     setMensaje("");
     iniciar(async () => {
-      const [eq, cand] = await Promise.all([equiposParaResponsiva(id), candidatasParaFirma(id)]);
+      const [eq, cand] = await Promise.all([equiposParaResponsiva(id), cartasHermanas(id)]);
       if (eq.ok && eq.equipos) {
         setEquipos(eq.equipos);
         setEmpleado(eq.empleado ?? "");
@@ -79,22 +79,29 @@ export default function CorregirResponsivaBtn({
     });
   };
 
-  const reasignar = (destino: SugerenciaFirma) => {
+  /**
+   * Une las dos en una sola. `conservarEsta` decide qué folio sobrevive: en la
+   * que se queda terminan la firma y los equipos de las dos.
+   */
+  const unir = (otra: CartaHermana, conservarEsta: boolean) => {
+    const queda = conservarEsta ? folio : otra.folio;
+    const sobra = conservarEsta ? otra.folio : folio;
     if (
       !confirm(
-        `El documento de ${folio} pasará a ser la firma de ${destino.folio}.\n\n` +
-          `${folio} se irá a la papelera y su equipo quedará disponible (podrás revertirlo desde la bitácora).\n\n¿Continuar?`
+        `Quedará una sola carta: ${queda}.\n\n` +
+          `Se le pasa la firma y los equipos de ${sobra}, y ${sobra} se va a la papelera ` +
+          `(queda en la bitácora, se puede revertir).\n\n¿Continuar?`
       )
     )
       return;
     setError("");
     setMensaje("");
     iniciar(async () => {
-      const res = await usarComoFirmaDeOtra(id, destino.id);
+      const res = conservarEsta ? await unirResponsivas(id, otra.id) : await unirResponsivas(otra.id, id);
       if (res.ok) {
         setAbierto(false);
         router.refresh();
-      } else setError(res.error ?? "No se pudo reasignar.");
+      } else setError(res.error ?? "No se pudieron unir.");
     });
   };
 
@@ -189,34 +196,49 @@ export default function CorregirResponsivaBtn({
             {/* 2. Reasignar el documento a la carta que sí lo esperaba */}
             {candidatas.length ? (
               <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3">
-                <h3 className="text-sm font-bold text-amber-900">¿Este documento era la firma de otra carta?</h3>
+                <h3 className="text-sm font-bold text-amber-900">¿Alguna de estas es la misma entrega?</h3>
                 <p className="mt-0.5 text-xs text-amber-900">
-                  Es lo que pasa cuando se sube un escaneo y se da de alta una carta nueva, aunque la buena ya estaba
-                  esperando firma. Elige cuál era: el documento pasa a esa carta y <b>{folio}</b> se va a la papelera.
+                  Pasa cuando el escaneo se dio de alta aparte: una carta se queda con la firma y la otra con el equipo.
+                  Al unirlas queda <b>una sola</b>, con la firma y los equipos de las dos. Elige cuál folio conservar —
+                  normalmente el de la carta que imprimiste y firmaron.
                 </p>
                 <div className="mt-2 space-y-1.5">
                   {candidatas.map((c) => (
-                    <div
-                      key={c.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-white px-3 py-2"
-                    >
-                      <div className="text-xs">
-                        <span className="mono text-sm font-bold text-kraft-dark">{c.folio}</span>{" "}
-                        <span className="text-soft">
-                          · {ETIQUETA_CLASE[c.clase] ?? c.clase} · {fechaCorta(c.fecha)}
-                          {c.equipos ? ` · ${c.equipos}` : ""}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
+                    <div key={c.id} className="rounded-md border border-amber-200 bg-white px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs">
+                          <span className="mono text-sm font-bold text-kraft-dark">{c.folio}</span>{" "}
+                          <span className="text-soft">
+                            · {ETIQUETA_CLASE[c.clase] ?? c.clase} · {fechaCorta(c.fecha)}
+                          </span>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                            {c.firmada ? <Badge tono="verde">Firmada</Badge> : <Badge tono="rojo">Sin firmar</Badge>}
+                            {c.equipos ? (
+                              <span className="mono text-[11px] text-soft">{c.equipos}</span>
+                            ) : (
+                              <Badge tono="ambar">Sin equipo</Badge>
+                            )}
+                          </div>
+                        </div>
                         <a href={`/api/pdf/${c.id}`} target="_blank" rel="noreferrer" className={btnGhost}>
                           Ver
                         </a>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1.5 border-t border-amber-100 pt-2">
+                        <span className="text-[11px] text-soft">Unir y conservar el folio:</span>
                         <button
-                          className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                          className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
                           disabled={pendiente}
-                          onClick={() => reasignar(c)}
+                          onClick={() => unir(c, false)}
                         >
-                          Era esta
+                          {c.folio}
+                        </button>
+                        <button
+                          className="rounded border border-line bg-white px-2 py-0.5 text-[11px] font-semibold text-ink hover:bg-paper"
+                          disabled={pendiente}
+                          onClick={() => unir(c, true)}
+                        >
+                          {folio} (esta)
                         </button>
                       </div>
                     </div>
@@ -225,7 +247,7 @@ export default function CorregirResponsivaBtn({
               </div>
             ) : (
               <p className="mt-4 text-xs text-soft">
-                Este empleado no tiene otras cartas esperando firma, así que no hay a cuál reasignar el documento.
+                Este empleado no tiene otras cartas de asignación con las que unir esta.
               </p>
             )}
 

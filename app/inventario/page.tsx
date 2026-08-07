@@ -24,6 +24,10 @@ export default async function PaginaInventario({
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const orden = typeof sp.orden === "string" ? sp.orden : "codigo";
   const soloDup = sp.dup === "1";
+  // Los avisos ya no viven en la pantalla: se llega a ellos desde la campana,
+  // y cada uno abre aquí su barra con el botón de la acción.
+  const soloLigar = sp.ligar === "1";
+  const verFaltanCel = sp.faltancel === "1";
   const soloSinResp = sp.sinresp === "1";
   // ?editar=<id> abre directo el formulario de ese equipo (se usa desde la ficha del empleado).
   const editarId = typeof sp.editar === "string" && Number(sp.editar) > 0 ? Number(sp.editar) : null;
@@ -112,6 +116,7 @@ export default async function PaginaInventario({
   let equipos = encontrados;
   if (soloDup) equipos = equipos.filter((e) => duplicados[e.id]);
   if (soloSinResp) equipos = equipos.filter((e) => sinResponsiva.has(e.id));
+  if (soloLigar) equipos = equipos.filter((e) => porLigarPorEquipo[e.id]);
 
   // Cartas responsivas de cada equipo, para consultarlas desde el inventario.
   const filas = db
@@ -136,9 +141,9 @@ export default async function PaginaInventario({
         </span>
       </PageHeader>
 
-      <AvisoCelularesFaltantes faltan={revisionCel.faltan} total={revisionCel.total} />
+      {verFaltanCel ? <AvisoCelularesFaltantes faltan={revisionCel.faltan} total={revisionCel.total} /> : null}
 
-      {totalSinResp > 0 ? (
+      {soloSinResp && totalSinResp > 0 ? (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
           <span>
             📄 Hay <b>{totalSinResp}</b> equipo(s) entregados <b>sin carta responsiva</b>. Genéralas todas juntas, imprime
@@ -155,13 +160,14 @@ export default async function PaginaInventario({
         </div>
       ) : null}
 
-      <AvisoPorLigar pendientes={porLigar} />
+      {soloLigar ? <AvisoPorLigar pendientes={porLigar} /> : null}
 
-      <AvisoDuplicados total={totalDuplicados} desglose={desglose} soloDup={soloDup} />
+      {soloDup ? <AvisoDuplicados total={totalDuplicados} desglose={desglose} soloDup={soloDup} /> : null}
 
       <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
         {soloDup ? <input type="hidden" name="dup" value="1" /> : null}
         {soloSinResp ? <input type="hidden" name="sinresp" value="1" /> : null}
+        {soloLigar ? <input type="hidden" name="ligar" value="1" /> : null}
         <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, IMEI, línea, asignado…" className={`${inputCls} max-w-xs`} />
         <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[190px]`}>
           <option value="">Todos los tipos</option>

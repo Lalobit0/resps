@@ -30,6 +30,8 @@ export default async function PaginaResponsivas({
   const orden = typeof sp.orden === "string" ? sp.orden : "recientes";
   // "sin" = pendientes de subir firmadas, "con" = las que ya tienen su escaneo.
   const firma = typeof sp.firma === "string" ? sp.firma : "";
+  // Las cartas partidas se revisan desde la campana, no en cada visita.
+  const verPartidas = sp.partidas === "1";
 
   const ORDENES: Record<string, string> = {
     recientes: "r.fecha DESC, r.id DESC",
@@ -89,7 +91,7 @@ export default async function PaginaResponsivas({
     .all(...valores) as ResponsivaLista[];
 
   // Pares donde el escaneo entró como carta aparte: una con firma, otra con equipo.
-  const partidas = paresPartidos();
+  const partidas = sp.partidas === "1" ? paresPartidos() : [];
   const totalDuplicados = responsivas.filter((r) => (r.es_duplicado ?? 0) > 0).length;
   // Solo las de asignación cambian de tipo: la devolución hereda el de su carta.
   const asignaciones = responsivas.filter((r) => r.tipo === "ASIGNACION");
@@ -123,7 +125,7 @@ export default async function PaginaResponsivas({
         </div>
       ) : null}
 
-      {totalSinFirma > 0 ? (
+      {firma === "sin" && totalSinFirma > 0 ? (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <span className="flex flex-wrap items-center justify-between gap-3">
             <span>
@@ -139,14 +141,9 @@ export default async function PaginaResponsivas({
         </div>
       ) : null}
 
-      <AvisoParesPartidos pares={partidas} />
+      {verPartidas ? <AvisoParesPartidos pares={partidas} /> : null}
 
-      {totalDuplicados > 0 ? (
-        <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          ⚠️ Se detectaron <b>{totalDuplicados}</b> responsiva(s) que parecen duplicadas (mismo empleado, tipo y fecha).
-          Revísalas y elimina la que sobre; la eliminación va a la papelera y se puede revertir.
-        </div>
-      ) : null}
+
 
       {asignaciones.length > 0 ? (
         <CambiarClaseLista

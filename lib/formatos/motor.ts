@@ -260,18 +260,21 @@ export async function generarFormato(hojas: Hoja[], titulo: string): Promise<Uin
       }
       if (actual) lineas.push(actual);
       const alto = 12 + lineas.length * 10;
-      y -= 18;
-      page.drawRectangle({ x: M, y: y - alto, width: ANCHO, height: alto, color: RELLENO, borderColor: LINEA, borderWidth: 0.7 });
-      lineas.forEach((l, i) => texto(l, M + 6, y - 12 - i * 10, 7.5, font, GRIS));
+      // Se ancla arriba del pie: si el formato es largo, no se encima con él.
+      const tope = 56 + alto;
+      const yBloque = Math.min(y - 18, Math.max(tope, y - 18));
+      const yFinal = Math.max(tope, Math.min(yBloque, y - 18));
+      page.drawRectangle({ x: M, y: yFinal - alto, width: ANCHO, height: alto, color: RELLENO, borderColor: LINEA, borderWidth: 0.7 });
+      lineas.forEach((l, i) => texto(l, M + 6, yFinal - 12 - i * 10, 7.5, font, GRIS));
     }
 
     // ---- Pie ----
-    page.drawLine({ start: { x: M, y: 46 }, end: { x: W - M, y: 46 }, thickness: 0.8, color: LINEA });
+    page.drawLine({ start: { x: M, y: 40 }, end: { x: W - M, y: 40 }, thickness: 0.8, color: LINEA });
     const emp = limpiar(empresa).toUpperCase();
-    texto(emp, (W - bold.widthOfTextAtSize(emp, 8)) / 2, 34, 8, bold, NAVY);
+    texto(emp, (W - bold.widthOfTextAtSize(emp, 8)) / 2, 29, 8, bold, NAVY);
     const dir = limpiar(direccion);
-    texto(dir, Math.max(M, (W - font.widthOfTextAtSize(dir, 6.5)) / 2), 24, 6.5, font, GRIS);
-    texto(hoja.codigo, M, 14, 6.5, font, GRIS);
+    texto(dir, Math.max(M, (W - font.widthOfTextAtSize(dir, 6.5)) / 2), 20, 6.5, font, GRIS);
+    texto(hoja.codigo, M, 10, 6.5, font, GRIS);
   }
 
   return doc.save();

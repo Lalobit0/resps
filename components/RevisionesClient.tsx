@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado } from "../lib/types";
-import type { TipoRevision } from "../lib/formatos/tipos";
+import { camposDe, type CampoExtra, type TipoRevision } from "../lib/formatos/tipos";
 import type { Revision } from "../lib/revisiones";
-import { equiposDelEmpleado, eliminarRevision, guardarRevision } from "../app/revisiones/actions";
+import {
+  equiposDelEmpleado,
+  eliminarRevision,
+  guardarRevision,
+  mantenimientosParaFormato,
+  type MantenimientoParaFormato,
+} from "../app/revisiones/actions";
 import { fechaCorta } from "../lib/helpers";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
@@ -37,6 +43,14 @@ export default function RevisionesClient({
   const [extras, setExtras] = useState<Record<string, string>>({});
   const [observaciones, setObservaciones] = useState("");
   const [filtro, setFiltro] = useState("");
+  /** Mantenimientos ya registrados, para no recapturar lo mismo en el FSI-03. */
+  const [mantenimientos, setMantenimientos] = useState<MantenimientoParaFormato[]>([]);
+  /**
+   * Equipo elegido antes de que llegue la lista del empleado. Sin esto, al
+   * partir de un mantenimiento el equipo se perdía: cambiar el empleado
+   * recarga sus equipos y borraba la selección que ya venía hecha.
+   */
+  const equipoPedido = useRef<number | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
   const [pendiente, iniciar] = useTransition();
@@ -51,6 +65,12 @@ export default function RevisionesClient({
     equiposDelEmpleado(empleadoId)
       .then(({ equipos }) => {
         setEquipos(equipos);
+        const pedido = equipoPedido.current;
+        if (pedido && equipos.some((e) => e.id === pedido)) {
+          setEquipoId(pedido);
+          equipoPedido.current = null;
+          return;
+        }
         setEquipoId(equipos.length === 1 ? equipos[0].id : null);
       })
       .catch(() => undefined);
@@ -64,12 +84,35 @@ export default function RevisionesClient({
     setFecha(hoy);
     setError("");
     setMensaje("");
+    setMantenimientos([]);
+    if (t.desdeMantenimiento) {
+      mantenimientosParaFormato()
+        .then(({ mantenimientos }) => setMantenimientos(mantenimientos))
+        .catch(() => undefined);
+    }
+  };
+
+  /** Trae de un mantenimiento del módulo lo que el formato ya sabe. */
+  const tomarDeMantenimiento = (id: number) => {
+    const m = mantenimientos.find((x) => x.id === id);
+    if (!m) return;
+    equipoPedido.current = m.equipoId;
+    if (m.empleadoId) setEmpleadoId(m.empleadoId);
+    setEquipoId(m.equipoId);
+    setFecha(m.fecha?.slice(0, 10) || hoy);
+    if (m.tecnico) setRealizadaPor(m.tecnico);
+    setExtras((p) => ({
+      ...p,
+      tipo_mantenimiento: m.tipo,
+      condiciones: m.descripcion,
+    }));
+    setObservaciones([m.descripcion, m.notas].filter(Boolean).join(" — "));
   };
 
   const marcarTodos = (valor: string) => {
     if (!tipo) return;
     const nuevo: Record<string, string> = {};
-    for (const p of tipo.puntos) nuevo[p] = valor;
+    for (const g of tipo.grupos) for (const p of g.puntos) nuevo[`${g.titulo}:${p}`] = valor;
     setPuntos(nuevo);
   };
 
@@ -91,6 +134,7 @@ export default function RevisionesClient({
       if (res.ok) {
         setMensaje(res.mensaje ?? "Listo.");
         setTipo(null);
+        equipoPedido.current = null;
         setEmpleadoId(null);
         router.refresh();
         if (res.id) window.open(`/api/revision/${res.id}`, "_blank");
@@ -138,11 +182,7 @@ export default function RevisionesClient({
                 <span className="mono shrink-0 text-[11px] text-soft">{t.codigo}</span>
               </div>
               <p className="mt-1 text-xs text-soft">{t.descripcion}</p>
-              {!t.confirmado ? (
-                <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
-                  Los campos están puestos por lógica: falta cotejarlos contra el formato oficial.
-                </p>
-              ) : null}
+
             </div>
             <button className={`${btnPrimary} mt-3 w-full`} onClick={() => abrir(t)}>
               Registrar y generar
@@ -167,6 +207,27 @@ export default function RevisionesClient({
 
             {error ? (
               <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
+            ) : null}
+
+            {tipo.desdeMantenimiento && mantenimientos.length ? (
+              <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 p-3">
+                <Label>¿Es de un mantenimiento ya registrado?</Label>
+                <select
+                  className={inputCls}
+                  defaultValue=""
+                  onChange={(e) => e.target.value && tomarDeMantenimiento(Number(e.target.value))}
+                >
+                  <option value="">— Capturarlo desde cero —</option>
+                  {mantenimientos.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.texto}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-sky-900">
+                  Trae el equipo, el empleado, la fecha, el técnico y lo que se reportó. Lo demás se completa aquí.
+                </p>
+              </div>
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
@@ -206,7 +267,7 @@ export default function RevisionesClient({
                   onChange={(e) => setRealizadaPor(e.target.value)}
                 />
               </div>
-              {tipo.extras.map((x) => (
+              {camposDe(tipo).filter((x: CampoExtra) => x.tipo !== "auto").map((x: CampoExtra) => (
                 <div key={x.clave} className={x.tipo === "area" ? "sm:col-span-2" : ""}>
                   <Label>{x.etiqueta}</Label>
                   {x.tipo === "opciones" ? (
@@ -216,7 +277,7 @@ export default function RevisionesClient({
                       onChange={(e) => setExtras({ ...extras, [x.clave]: e.target.value })}
                     >
                       <option value="">— Elige —</option>
-                      {(x.opciones ?? []).map((o) => (
+                      {(x.opciones ?? []).map((o: string) => (
                         <option key={o} value={o}>
                           {o}
                         </option>
@@ -241,7 +302,7 @@ export default function RevisionesClient({
               ))}
             </div>
 
-            <div className="mt-4">
+            <div className={`mt-4 ${tipo.grupos.length ? "" : "hidden"}`}>
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="text-sm font-bold text-ink">Puntos revisados</span>
                 <button className={btnGhost} onClick={() => marcarTodos("Si")}>
@@ -251,32 +312,46 @@ export default function RevisionesClient({
                   Todos en No
                 </button>
               </div>
-              <div className="grid gap-1.5 sm:grid-cols-2">
-                {tipo.puntos.map((p) => (
-                  <div
-                    key={p}
-                    className={`flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 ${
-                      puntos[p] === "No" ? "border-red-200 bg-red-50" : puntos[p] ? "border-emerald-200 bg-emerald-50" : "border-line bg-white"
-                    }`}
-                  >
-                    <span className="text-sm text-ink">{p}</span>
-                    <div className="flex shrink-0 gap-1">
-                      {["Si", "No"].map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => setPuntos({ ...puntos, [p]: v })}
-                          className={`rounded border px-2 py-0.5 text-xs font-semibold ${
-                            puntos[p] === v
-                              ? v === "Si"
-                                ? "border-emerald-400 bg-emerald-100 text-emerald-900"
-                                : "border-red-300 bg-red-100 text-red-800"
-                              : "border-line bg-white text-soft hover:bg-paper"
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      ))}
+              <div className="space-y-3">
+                {tipo.grupos.map((g) => (
+                  <div key={g.titulo}>
+                    <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-soft">{g.titulo}</p>
+                    <div className="grid gap-1.5 sm:grid-cols-2">
+                      {g.puntos.map((p) => {
+                        const clave = `${g.titulo}:${p}`;
+                        return (
+                          <div
+                            key={clave}
+                            className={`flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 ${
+                              puntos[clave] === "No"
+                                ? "border-red-200 bg-red-50"
+                                : puntos[clave]
+                                  ? "border-emerald-200 bg-emerald-50"
+                                  : "border-line bg-white"
+                            }`}
+                          >
+                            <span className="text-sm text-ink">{p}</span>
+                            <div className="flex shrink-0 gap-1">
+                              {["Si", "No"].map((v) => (
+                                <button
+                                  key={v}
+                                  type="button"
+                                  onClick={() => setPuntos({ ...puntos, [clave]: v })}
+                                  className={`rounded border px-2 py-0.5 text-xs font-semibold ${
+                                    puntos[clave] === v
+                                      ? v === "Si"
+                                        ? "border-emerald-400 bg-emerald-100 text-emerald-900"
+                                        : "border-red-300 bg-red-100 text-red-800"
+                                      : "border-line bg-white text-soft hover:bg-paper"
+                                  }`}
+                                >
+                                  {v}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

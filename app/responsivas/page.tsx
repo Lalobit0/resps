@@ -9,6 +9,7 @@ import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
 import { CambiarClaseLista, EditarClaseBtn } from "../../components/ClaseResponsiva";
 import CorregirResponsivaBtn from "../../components/CorregirResponsivaBtn";
 import AvisoParesPartidos from "../../components/AvisoParesPartidos";
+import VerPdfBtn from "../../components/VerPdfBtn";
 import { paresPartidos } from "../../lib/pendientes";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
@@ -26,6 +27,8 @@ export default async function PaginaResponsivas({
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const nueva = typeof sp.nueva === "string" ? sp.nueva : "";
   const orden = typeof sp.orden === "string" ? sp.orden : "recientes";
+  // "sin" = pendientes de subir firmadas, "con" = las que ya tienen su escaneo.
+  const firma = typeof sp.firma === "string" ? sp.firma : "";
 
   const ORDENES: Record<string, string> = {
     recientes: "r.fecha DESC, r.id DESC",
@@ -53,6 +56,10 @@ export default async function PaginaResponsivas({
     condiciones.push("(r.folio LIKE ? OR em.nombre LIKE ? OR em.numero_empleado LIKE ?)");
     valores.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
+  // Una carta cuenta como firmada si trae el escaneo o llegó ya firmada.
+  const FIRMADA_SQL = "(COALESCE(r.pdf_firmado,'') != '' OR r.origen = 'CARGADA')";
+  if (firma === "sin") condiciones.push(`NOT ${FIRMADA_SQL}`);
+  if (firma === "con") condiciones.push(FIRMADA_SQL);
   const where = `WHERE ${condiciones.join(" AND ")}`;
 
   const responsivas = db
@@ -117,8 +124,17 @@ export default async function PaginaResponsivas({
 
       {totalSinFirma > 0 ? (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          ✍️ Hay <b>{totalSinFirma}</b> responsiva(s) <b>sin firmar</b>. Imprímelas, recoge las firmas y sube el
-          documento con <b>Subir firmada</b> del renglón.
+          <span className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              ✍️ Hay <b>{totalSinFirma}</b> responsiva(s) <b>sin firmar</b> en esta lista. Imprímelas, recoge las firmas
+              y sube el documento con <b>Subir firmada</b> del renglón.
+            </span>
+            {firma !== "sin" ? (
+              <Link href="/responsivas?firma=sin" className={btnGhost}>
+                Ver solo las que faltan
+              </Link>
+            ) : null}
+          </span>
         </div>
       ) : null}
 
@@ -157,6 +173,11 @@ export default async function PaginaResponsivas({
           <option value="">Todos los estados</option>
           <option value="VIGENTE">Vigente</option>
           <option value="CERRADA">Cerrada</option>
+        </select>
+        <select name="firma" defaultValue={firma} className={`${inputCls} max-w-[180px]`}>
+          <option value="">Firmadas y sin firmar</option>
+          <option value="sin">Solo sin firmar</option>
+          <option value="con">Solo firmadas</option>
         </select>
         <select name="orden" defaultValue={orden} className={`${inputCls} max-w-[230px]`}>
           <option value="recientes">Más recientes primero</option>
@@ -222,9 +243,12 @@ export default async function PaginaResponsivas({
                   <td className={tdCls}>
                     <div className="flex flex-wrap gap-1.5">
                       {r.pdf_path || r.pdf_firmado ? (
-                        <a href={`/api/pdf/${r.id}`} target="_blank" className={btnGhost}>
-                          Ver PDF
-                        </a>
+                        <VerPdfBtn
+                          id={r.id}
+                          folio={r.folio}
+                          className={btnGhost}
+                          subtitulo={`${r.empleado_numero} ${r.empleado_nombre} · ${fechaCorta(r.fecha)}`}
+                        />
                       ) : null}
                       {faltaFirma(r) ? (
                         <>

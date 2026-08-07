@@ -197,18 +197,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <p className="text-xs text-soft">
           {filtrados.length} de {empleados.length} empleados · haz clic en un nombre para ver su histórico.
         </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <a
-            href={`/api/bitacora-remota${filtroDepto ? `?depto=${encodeURIComponent(filtroDepto)}` : ""}`}
-            target="_blank"
-            rel="noreferrer"
-            className={btnGhost}
-            title="Hojas del FSI-04 con los datos del usuario y su equipo ya puestos, para llenar en cada revisión remota"
-          >
-            🖥️ Bitácora remota (FSI-04)
-          </a>
-          <ExportarBotones tabla="empleados" params={{ q: busqueda, depto: filtroDepto, clase: filtroClase, computo: filtroComputo, estado: filtroEstado }} />
-        </div>
+        <ExportarBotones tabla="empleados" params={{ q: busqueda, depto: filtroDepto, clase: filtroClase, computo: filtroComputo, estado: filtroEstado }} />
       </div>
 
       {form ? (

@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/lineas", etiqueta: "Líneas telefónicas" },
   { href: "/responsivas", etiqueta: "Responsivas" },
   { href: "/mantenimientos", etiqueta: "Mantenimientos" },
+  { href: "/revisiones", etiqueta: "Revisiones-IT" },
   { href: "/bitacora", etiqueta: "Bitácora" },
   // Firma digital en pausa: la responsiva se firma en papel y se sube escaneada.
   // Para volver a activarla basta con descomentar este renglón.

@@ -1,7 +1,7 @@
 import { db, getConfig } from "./db";
 import { fechaCorta, fechaLarga } from "./helpers";
 import { generarFormato, type Bloque, type Hoja } from "./formatos/motor";
-import { tipoRevision, type TipoRevision } from "./formatos/tipos";
+import { tipoRevision, camposDe, type CampoExtra, type TipoRevision } from "./formatos/tipos";
 
 /** Una revisión ya capturada, con todo lo que el documento necesita. */
 export type Revision = {
@@ -72,79 +72,137 @@ function detallesDe(json: string | null): Record<string, string> {
   }
 }
 
+/** Lo que el sistema sabe del equipo y llena solo en los campos "auto". */
+export function valorAutomatico(r: Revision, origen: CampoExtra["origen"]): string {
+  const det = detallesDe(r.equipo_detalles);
+  switch (origen) {
+    case "procesador":
+      return det.procesador ?? "";
+    case "ram":
+      return det.ram ?? "";
+    case "so":
+      return det.sistema_operativo ?? "";
+    case "hostname":
+      return [det.nombre_computadora, det.ip].filter(Boolean).join(" / ");
+    case "activo":
+      return det.activo ?? "";
+    case "serie":
+      return r.equipo_serie ?? "";
+    case "marca_modelo":
+      return `${r.equipo_marca ?? ""} ${r.equipo_modelo ?? ""}`.trim();
+    case "tipo_equipo":
+      return r.equipo_codigo ? `${r.equipo_codigo}` : "";
+    case "ubicacion":
+      return [r.empleado_departamento, r.empleado_area].filter(Boolean).join(" / ");
+    default:
+      return "";
+  }
+}
+
 /** Arma la hoja del documento con lo que se capturó. */
 export function hojaDeRevision(r: Revision): Hoja {
   const tipo = tipoRevision(r.tipo);
   const datos = detallesDe(r.datos);
   const det = detallesDe(r.equipo_detalles);
-  const marcas: Record<string, string> = {};
-  for (const p of tipo?.puntos ?? []) marcas[p] = datos[`punto:${p}`] ?? "";
 
-  const bloques: Bloque[] = [
-    { tipo: "seccion", texto: "DATOS DEL USUARIO" },
-    {
-      tipo: "campos",
-      campos: [
-        { etiqueta: "Nombre", valor: r.empleado_nombre, ancho: 0.62 },
-        { etiqueta: "Num. de empleado", valor: r.empleado_numero, ancho: 0.38 },
-      ],
-    },
-    {
-      tipo: "campos",
-      campos: [
-        {
-          etiqueta: "Area de trabajo",
-          valor: [r.empleado_departamento, r.empleado_area].filter(Boolean).join(" / "),
-          ancho: 0.38,
-        },
-        { etiqueta: "Cargo", valor: r.empleado_puesto, ancho: 0.32 },
-        { etiqueta: "Correo", valor: r.empleado_correo, ancho: 0.3 },
-      ],
-    },
-    { tipo: "espacio", alto: 8 },
-    { tipo: "seccion", texto: "DATOS DEL EQUIPO" },
-    {
-      tipo: "campos",
-      campos: [
-        { etiqueta: "Marca y Modelo", valor: `${r.equipo_marca ?? ""} ${r.equipo_modelo ?? ""}`.trim(), ancho: 0.4 },
-        { etiqueta: "Identificador del Equipo", valor: det.nombre_computadora || r.equipo_codigo, ancho: 0.3 },
-        { etiqueta: "Serie", valor: r.equipo_serie, ancho: 0.3 },
-      ],
-    },
-    {
-      tipo: "campos",
-      campos: [
-        { etiqueta: "Fecha", valor: fechaCorta(r.fecha), ancho: 0.24 },
-        { etiqueta: "Folio", valor: r.folio, ancho: 0.26 },
-        {
-          etiqueta: tipo?.extras.find((x) => x.clave === "tipo_revision")?.etiqueta ?? "Tipo de revisión",
-          valor: datos.tipo_revision,
-          ancho: 0.5,
-        },
-      ],
-    },
-  ];
+  const valorDe = (c: CampoExtra): string =>
+    (datos[c.clave] ?? "").trim() || (c.tipo === "auto" ? valorAutomatico(r, c.origen) : "");
 
-  // Los campos propios del formato que no sean de área grande.
-  const extrasCortos = (tipo?.extras ?? []).filter((x) => x.clave !== "tipo_revision" && x.tipo !== "area");
-  if (extrasCortos.length) {
+  const bloques: Bloque[] = [];
+
+  // Los formatos que lo llevan abren con quién es el usuario y qué equipo es.
+  if (tipo?.encabezadoEstandar !== false) {
+    bloques.push(
+      { tipo: "seccion", texto: "DATOS DEL USUARIO" },
+      {
+        tipo: "campos",
+        campos: [
+          { etiqueta: "Nombre", valor: r.empleado_nombre, ancho: 0.62 },
+          { etiqueta: "Num. de empleado", valor: r.empleado_numero, ancho: 0.38 },
+        ],
+      },
+      {
+        tipo: "campos",
+        campos: [
+          {
+            etiqueta: "Area de trabajo",
+            valor: [r.empleado_departamento, r.empleado_area].filter(Boolean).join(" / "),
+            ancho: 0.38,
+          },
+          { etiqueta: "Cargo", valor: r.empleado_puesto, ancho: 0.32 },
+          { etiqueta: "Correo", valor: r.empleado_correo, ancho: 0.3 },
+        ],
+      },
+      { tipo: "espacio", alto: 6 },
+      { tipo: "seccion", texto: "DATOS DEL EQUIPO" },
+      {
+        tipo: "campos",
+        campos: [
+          { etiqueta: "Marca y Modelo", valor: `${r.equipo_marca ?? ""} ${r.equipo_modelo ?? ""}`.trim(), ancho: 0.4 },
+          { etiqueta: "Identificador del Equipo", valor: det.nombre_computadora || r.equipo_codigo, ancho: 0.3 },
+          { etiqueta: "Serie", valor: r.equipo_serie, ancho: 0.3 },
+        ],
+      }
+    );
+  } else {
+    // El FSI-05 abre con sus datos generales.
+    bloques.push(
+      { tipo: "seccion", texto: "DATOS GENERALES" },
+      {
+        tipo: "campos",
+        campos: [
+          { etiqueta: "Fecha de solicitud", valor: fechaCorta(r.fecha), ancho: 0.25 },
+          { etiqueta: "Folio", valor: r.folio, ancho: 0.25 },
+          { etiqueta: "Usuario del equipo", valor: `${r.empleado_numero ?? ""} ${r.empleado_nombre ?? ""}`.trim(), ancho: 0.5 },
+        ],
+      }
+    );
+  }
+
+  if (tipo?.encabezadoEstandar !== false) {
     bloques.push({
       tipo: "campos",
-      campos: extrasCortos.map((x) => ({
-        etiqueta: x.etiqueta,
-        valor: datos[x.clave],
-        ancho: 1 / extrasCortos.length,
-      })),
+      campos: [
+        { etiqueta: "Fecha", valor: fechaCorta(r.fecha), ancho: 0.3 },
+        { etiqueta: "Folio", valor: r.folio, ancho: 0.3 },
+        { etiqueta: "Realizada por", valor: r.realizada_por ?? "", ancho: 0.4 },
+      ],
     });
   }
 
-  if (tipo?.puntos.length) {
-    bloques.push({ tipo: "espacio", alto: 8 });
-    bloques.push({ tipo: "seccion", texto: "PUNTOS REVISADOS" });
-    bloques.push({ tipo: "puntos", puntos: tipo.puntos, marcas });
+  // Las secciones propias del formato.
+  for (const sec of tipo?.secciones ?? []) {
+    const cortos = sec.campos.filter((c) => c.tipo !== "area");
+    const areas = sec.campos.filter((c) => c.tipo === "area");
+    bloques.push({ tipo: "espacio", alto: 6 });
+    bloques.push({ tipo: "seccion", texto: sec.titulo });
+    // Se reparten en renglones según el ancho que declara cada campo.
+    let fila: { etiqueta: string; valor: string; ancho: number }[] = [];
+    let suma = 0;
+    for (const c of cortos) {
+      const ancho = c.ancho ?? 0.5;
+      if (suma + ancho > 1.001 && fila.length) {
+        bloques.push({ tipo: "campos", campos: fila });
+        fila = [];
+        suma = 0;
+      }
+      fila.push({ etiqueta: c.etiqueta, valor: valorDe(c), ancho });
+      suma += ancho;
+    }
+    if (fila.length) bloques.push({ tipo: "campos", campos: fila });
+    for (const a of areas) bloques.push({ tipo: "texto", etiqueta: `${a.etiqueta}:`, alto: 46, contenido: valorDe(a) });
   }
 
-  bloques.push({ tipo: "espacio", alto: 8 });
+  // Los puntos de revisión, con lo que se marcó.
+  for (const g of tipo?.grupos ?? []) {
+    const marcas: Record<string, string> = {};
+    for (const p of g.puntos) marcas[p] = datos[`punto:${g.titulo}:${p}`] ?? datos[`punto:${p}`] ?? "";
+    bloques.push({ tipo: "espacio", alto: 6 });
+    bloques.push({ tipo: "seccion", texto: g.titulo });
+    bloques.push({ tipo: "puntos", puntos: g.puntos, marcas, columnas: g.puntos.length > 6 ? 2 : 1 });
+  }
+
+  bloques.push({ tipo: "espacio", alto: 6 });
   bloques.push({ tipo: "seccion", texto: "RESULTADO" });
   bloques.push({
     tipo: "casillas",
@@ -158,12 +216,7 @@ export function hojaDeRevision(r: Revision): Hoja {
       { etiqueta: "Realizada por", ancho: 0.6, valor: r.realizada_por ?? undefined },
     ],
   });
-
-  // Las áreas de texto capturadas.
-  for (const x of (tipo?.extras ?? []).filter((e) => e.tipo === "area")) {
-    bloques.push({ tipo: "texto", etiqueta: `${x.etiqueta}:`, alto: 56, contenido: datos[x.clave] });
-  }
-  bloques.push({ tipo: "texto", etiqueta: "Observaciones:", alto: 68, contenido: r.observaciones ?? "" });
+  bloques.push({ tipo: "texto", etiqueta: "Observaciones:", alto: 56, contenido: r.observaciones ?? "" });
 
   return {
     codigo: tipo?.codigo ?? r.tipo,

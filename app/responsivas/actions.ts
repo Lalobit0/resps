@@ -966,9 +966,35 @@ export type RenglonLote = {
   equipoIds: number[];
   equiposTexto: string | null;
   aviso: string;
+  /**
+   * Cartas de ese empleado que el sistema ya generó y siguen sin firma: casi
+   * siempre la página es una de ellas, y darla de alta otra vez la duplicaría.
+   */
+  sugerencias: SugerenciaFirma[];
+  /** El usuario confirmó que la página no es ninguna de las pendientes. */
+  forzarNueva?: boolean;
 };
 
+export type SugerenciaFirma = { id: number; folio: string; clase: string; fecha: string; equipos: string | null };
+
 export type ResultadoLote = { total: number; renglones: RenglonLote[] };
+
+/** Las cartas sin firma de un empleado, en el formato corto del lote. */
+function sugerenciasDe(empleadoId: number | null | undefined): SugerenciaFirma[] {
+  if (!empleadoId) return [];
+  return responsivasSinFirmaDe(empleadoId).map((r) => ({
+    id: r.id,
+    folio: r.folio,
+    clase: r.clase,
+    fecha: r.fecha,
+    equipos: r.equipos,
+  }));
+}
+
+/** Sugerencias para el empleado que se elige a mano en la pantalla del lote. */
+export async function sugerenciasFirmaDe(empleadoId: number): Promise<{ sugerencias: SugerenciaFirma[] }> {
+  return { sugerencias: sugerenciasDe(empleadoId) };
+}
 
 /** Carpeta temporal donde viven las páginas separadas hasta que se confirman. */
 const DIR_LOTE = path.join(process.cwd(), "storage", "lote");
@@ -1067,6 +1093,9 @@ export async function analizarLoteResponsivas(formData: FormData): Promise<Resul
           equipoIds: equipos.map((e) => e.id),
           equiposTexto: equipos.length ? equipos.map((e) => e.codigo).join(", ") : null,
           aviso,
+          // Si la carta no se reconoció por folio pero sí sabemos de quién es,
+          // se ofrecen sus cartas pendientes: lo más probable es que sea una.
+          sugerencias: existente ? [] : sugerenciasDe(empleado?.id),
         });
       }
     }
@@ -1085,12 +1114,22 @@ export async function analizarLoteResponsivas(formData: FormData): Promise<Resul
  * adjunta como su firma, y si no, se da de alta como responsiva cargada.
  */
 export async function confirmarLoteResponsivas(
-  renglones: { clave: string; empleadoId: number | null; responsivaId: number | null; clase: string; fecha: string | null; equipoIds: number[] }[]
+  renglones: {
+    clave: string;
+    empleadoId: number | null;
+    responsivaId: number | null;
+    clase: string;
+    fecha: string | null;
+    equipoIds: number[];
+    /** El usuario confirmó que es una carta distinta de las que ya esperan firma. */
+    forzarNueva?: boolean;
+  }[]
 ): Promise<ResultadoAccion> {
   try {
     const nuevas: string[] = [];
     const firmadas: string[] = [];
     const omitidas: string[] = [];
+    const frenadas: string[] = [];
 
     for (const r of renglones) {
       const origen = path.join(DIR_LOTE, r.clave);
@@ -1123,10 +1162,26 @@ export async function confirmarLoteResponsivas(
         omitidas.push(`${r.clave}: falta elegir el tipo de carta`);
         continue;
       }
-      const empleado = db.prepare("SELECT id FROM empleados WHERE id = ?").get(r.empleadoId) as { id: number } | undefined;
+      const empleado = db.prepare("SELECT id, nombre FROM empleados WHERE id = ?").get(r.empleadoId) as
+        | { id: number; nombre: string }
+        | undefined;
       if (!empleado) {
         omitidas.push(`${r.clave}: el empleado ya no existe`);
         continue;
+      }
+
+      // Antes de dar de alta: si ese empleado ya tiene una carta del mismo tipo
+      // esperando firma, esta página casi seguro ES esa. Se frena y se dice
+      // cuál, en vez de dejar dos cartas iguales en su histórico.
+      if (!r.forzarNueva) {
+        const pendiente = responsivasSinFirmaDe(empleado.id).find((p) => p.clase === r.clase);
+        if (pendiente) {
+          frenadas.push(
+            `${empleado.nombre}: ya tiene ${pendiente.folio} (${ETIQUETA_CLASE[pendiente.clase] ?? pendiente.clase}` +
+              `${pendiente.equipos ? `, ${pendiente.equipos}` : ""}) esperando firma. Márcala como “Es esta” o confirma que es otra distinta.`
+          );
+          continue;
+        }
       }
 
       const clase = r.clase;
@@ -1180,15 +1235,19 @@ export async function confirmarLoteResponsivas(
       nuevas.push(`${creada.folio} → ${emp ? `${emp.numero_empleado} ${emp.nombre}` : "empleado"}`);
     }
 
-    // La carpeta temporal ya no hace falta.
-    try {
-      fs.rmSync(DIR_LOTE, { recursive: true, force: true });
-    } catch {
-      // que quede basura temporal no debe romper la carga
+    // La carpeta temporal solo se tira cuando ya no queda nada que reintentar:
+    // si algo se frenó, esas páginas siguen ahí para corregirlas y guardarlas.
+    if (!frenadas.length) {
+      try {
+        fs.rmSync(DIR_LOTE, { recursive: true, force: true });
+      } catch {
+        // que quede basura temporal no debe romper la carga
+      }
     }
 
     revalidar();
     const partes = [`${nuevas.length} responsiva(s) nueva(s)`, `${firmadas.length} adjuntada(s) a su folio`];
+    if (frenadas.length) partes.push(`${frenadas.length} sin guardar para no duplicar`);
     if (omitidas.length) partes.push(`${omitidas.length} sin guardar`);
     // Se listan los folios: así se puede comprobar que quedaron guardadas.
     const bloque = (t: string, l: string[]) => (l.length ? `\n\n${t}:\n· ${l.join("\n· ")}` : "");
@@ -1198,6 +1257,7 @@ export async function confirmarLoteResponsivas(
         `Carga masiva lista: ${partes.join(", ")}.` +
         bloque("Se dieron de alta", nuevas) +
         bloque("Se adjuntaron como firmadas", firmadas) +
+        bloque("No se guardaron para no duplicar (siguen en la lista)", frenadas) +
         bloque("No se guardaron", omitidas) +
         "\n\nLas puedes ver en Responsivas (filtra por tipo de carta) o en la ficha de cada empleado.",
     };

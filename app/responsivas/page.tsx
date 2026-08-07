@@ -56,8 +56,20 @@ export default async function PaginaResponsivas({
     .prepare(
       `SELECT r.*, em.nombre AS empleado_nombre, em.numero_empleado AS empleado_numero,
         (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos,
-        (SELECT COUNT(*) FROM responsivas rd WHERE rd.empleado_id = r.empleado_id AND rd.clase = r.clase AND rd.fecha = r.fecha
-           AND rd.tipo = 'ASIGNACION' AND rd.estado != 'ELIMINADA' AND rd.id != r.id) AS es_duplicado
+        (SELECT COUNT(*) FROM responsivas rd
+          WHERE rd.empleado_id = r.empleado_id AND rd.clase = r.clase
+            AND rd.tipo = 'ASIGNACION' AND rd.estado != 'ELIMINADA' AND rd.id != r.id
+            AND (
+              -- misma persona, mismo tipo y mismo día: la de siempre
+              rd.fecha = r.fecha
+              -- o dos cartas vigentes del mismo tipo donde alguna no trae equipo
+              -- (el caso del escaneo cargado aparte de la carta que ya existía)
+              OR (rd.estado = 'VIGENTE' AND r.estado = 'VIGENTE'
+                  AND (NOT EXISTS (SELECT 1 FROM responsiva_items ri2 WHERE ri2.responsiva_id = rd.id)
+                       OR NOT EXISTS (SELECT 1 FROM responsiva_items ri3 WHERE ri3.responsiva_id = r.id)
+                       OR EXISTS (SELECT 1 FROM responsiva_items a JOIN responsiva_items b ON a.equipo_id = b.equipo_id
+                                   WHERE a.responsiva_id = rd.id AND b.responsiva_id = r.id)))
+            )) AS es_duplicado
        FROM responsivas r
        JOIN empleados em ON em.id = r.empleado_id
        ${where}

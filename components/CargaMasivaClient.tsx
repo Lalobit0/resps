@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import type { Empleado } from "../lib/types";
 import { CLASES_CARTA, ETIQUETA_CLASE } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
-import { analizarLoteResponsivas, confirmarLoteResponsivas, type RenglonLote } from "../app/responsivas/actions";
+import {
+  analizarLoteResponsivas,
+  confirmarLoteResponsivas,
+  sugerenciasFirmaDe,
+  type RenglonLote,
+  type SugerenciaFirma,
+} from "../app/responsivas/actions";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
 
@@ -131,7 +137,7 @@ export default function CargaMasivaClient({
   const claseATodas = (clase: string) =>
     setRenglones((rs) => (rs ? rs.map((r) => (r.responsivaId ? r : { ...r, clase })) : rs));
 
-  const cambiarEmpleado = (clave: string, id: number | null) =>
+  const cambiarEmpleado = (clave: string, id: number | null) => {
     setRenglones((rs) =>
       rs
         ? rs.map((r) =>
@@ -142,11 +148,51 @@ export default function CargaMasivaClient({
                   empleadoTexto: id ? empleados.find((e) => e.id === id)?.nombre ?? "" : null,
                   comoSeIdentifico: id ? "elegido a mano" : "",
                   aviso: id ? "" : r.aviso,
+                  sugerencias: [],
+                  forzarNueva: false,
                 }
               : r
           )
         : rs
     );
+    // Al elegir empleado se traen sus cartas sin firma: si la página es una de
+    // ellas hay que adjuntarla, no dar de alta otra igual.
+    if (!id) return;
+    sugerenciasFirmaDe(id)
+      .then(({ sugerencias }) =>
+        setRenglones((rs) => (rs ? rs.map((r) => (r.clave === clave ? { ...r, sugerencias } : r)) : rs))
+      )
+      .catch(() => undefined);
+  };
+
+  /** Marca la página como la firma de una carta que ya existe. */
+  const adjuntarA = (clave: string, sug: SugerenciaFirma) =>
+    setRenglones((rs) =>
+      rs
+        ? rs.map((r) =>
+            r.clave === clave
+              ? {
+                  ...r,
+                  responsivaId: sug.id,
+                  folio: sug.folio,
+                  clase: sug.clase,
+                  comoSeIdentifico: "elegida a mano de sus cartas pendientes",
+                  aviso: "",
+                }
+              : r
+          )
+        : rs
+    );
+
+  /** Deshace lo anterior: vuelve a ser una carta por dar de alta. */
+  const soltarAdjunto = (clave: string) =>
+    setRenglones((rs) =>
+      rs ? rs.map((r) => (r.clave === clave ? { ...r, responsivaId: null, folio: null, comoSeIdentifico: "" } : r)) : rs
+    );
+
+  /** "Sí, es otra distinta": deja crearla aunque haya cartas pendientes. */
+  const marcarComoOtra = (clave: string) =>
+    setRenglones((rs) => (rs ? rs.map((r) => (r.clave === clave ? { ...r, forzarNueva: true } : r)) : rs));
 
   const guardar = () => {
     if (!renglones) return;
@@ -166,6 +212,7 @@ export default function CargaMasivaClient({
             clase: r.clase,
             fecha: r.fecha,
             equipoIds: r.equipoIds,
+            forzarNueva: r.forzarNueva,
           }))
         );
         if (res.ok) {
@@ -182,6 +229,9 @@ export default function CargaMasivaClient({
   };
 
   const faltan = renglones?.filter((r) => !r.responsivaId && (!r.empleadoId || !r.clase)).length ?? 0;
+  /** Páginas de un empleado que ya tiene cartas sin firma, y aún no se decide. */
+  const porDecidir =
+    renglones?.filter((r) => !r.responsivaId && !r.forzarNueva && (r.sugerencias?.length ?? 0) > 0).length ?? 0;
   const indiceAbierta = renglones?.findIndex((r) => r.clave === viendo) ?? -1;
   const abierta = indiceAbierta >= 0 ? renglones?.[indiceAbierta] ?? null : null;
   /** Salta a otra carta sin cerrar el visor: así se revisan de corrido. */
@@ -250,6 +300,14 @@ export default function CargaMasivaClient({
             </button>
           </div>
 
+          {porDecidir > 0 ? (
+            <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <b>{porDecidir}</b> página(s) son de empleados que ya tienen cartas generadas esperando firma. En cada una,
+              marca <b>“Es esta”</b> para adjuntar el escaneo a la carta que ya existe, o <b>“es una carta distinta”</b>{" "}
+              si de verdad es otra. Mientras no lo decidas, esas no se guardan (así no se duplican).
+            </div>
+          ) : null}
+
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-line bg-paper/60 px-3 py-2 text-xs">
             <span className="font-semibold text-ink">Todas son de:</span>
             {CLASES_CARTA.map((c) => (
@@ -316,7 +374,17 @@ export default function CargaMasivaClient({
                     </td>
                     <td className={tdCls}>
                       {r.responsivaId ? (
-                        <span className="text-sm">{r.empleadoTexto ?? "—"}</span>
+                        <div className="space-y-1">
+                          <span className="text-sm">{r.empleadoTexto ?? "—"}</span>
+                          {r.comoSeIdentifico.includes("pendientes") ? (
+                            <button
+                              className="block text-[11px] text-soft underline hover:text-ink"
+                              onClick={() => soltarAdjunto(r.clave)}
+                            >
+                              No es esa: elegir de nuevo
+                            </button>
+                          ) : null}
+                        </div>
                       ) : (
                         <div className="space-y-1">
                           {r.aviso ? <p className="text-xs text-amber-800">{r.aviso}</p> : null}
@@ -330,6 +398,46 @@ export default function CargaMasivaClient({
                               onChange={(id) => cambiarEmpleado(r.clave, id)}
                             />
                           </div>
+
+                          {r.sugerencias?.length && !r.forzarNueva ? (
+                            <div className="mt-1 rounded-md border border-amber-300 bg-amber-50 p-2">
+                              <p className="text-[11px] font-bold text-amber-900">
+                                Ya tiene {r.sugerencias.length} carta(s) esperando firma. ¿Es alguna de estas?
+                              </p>
+                              <div className="mt-1 space-y-1">
+                                {r.sugerencias.map((s) => (
+                                  <div key={s.id} className="flex flex-wrap items-center gap-1.5">
+                                    <span className="mono text-[11px] font-semibold text-kraft-dark">{s.folio}</span>
+                                    <span className="text-[11px] text-soft">
+                                      {ETIQUETA_CLASE[s.clase] ?? s.clase} · {fechaCorta(s.fecha)}
+                                      {s.equipos ? ` · ${s.equipos}` : ""}
+                                    </span>
+                                    <button
+                                      className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                                      onClick={() => adjuntarA(r.clave, s)}
+                                    >
+                                      Es esta
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <button
+                                className="mt-1 text-[11px] text-amber-900 underline hover:text-ink"
+                                onClick={() => marcarComoOtra(r.clave)}
+                              >
+                                Ninguna: es una carta distinta
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {r.forzarNueva ? (
+                            <p className="text-[11px] text-soft">
+                              Se dará de alta como carta nueva.{" "}
+                              <button className="underline hover:text-ink" onClick={() => cambiarEmpleado(r.clave, r.empleadoId)}>
+                                deshacer
+                              </button>
+                            </p>
+                          ) : null}
                         </div>
                       )}
                     </td>

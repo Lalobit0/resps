@@ -9,6 +9,7 @@ import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
 import { CAMPOS_DETALLE, CARTAS, CLASE_POR_TIPO, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, ETIQUETA_CLASE, TIPO_DEFAULTS, TIPOS_EQUIPO, rolAutoridad, type ClaseCarta, type TipoEquipo } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
+import { responsivasSinFirmaDe, type ResponsivaSinFirma } from "../../lib/pendientes";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -587,7 +588,15 @@ function codigoEquipo(prefijo: string): string {
 
 type NuevoEquipo = { tipo?: string; marca?: string; modelo?: string; numero_serie?: string; detalles?: Record<string, string> };
 
-export async function cargarResponsivaFirmada(formData: FormData): Promise<ResultadoAccion> {
+/** Cartas que el sistema ya generó para ese empleado y siguen sin firma. */
+export async function pendientesDeFirmaDe(empleadoId: number): Promise<{ pendientes: ResponsivaSinFirma[] }> {
+  if (!Number.isInteger(empleadoId) || empleadoId <= 0) return { pendientes: [] };
+  return { pendientes: responsivasSinFirmaDe(empleadoId) };
+}
+
+export async function cargarResponsivaFirmada(
+  formData: FormData
+): Promise<ResultadoAccion & { pendiente?: { id: number; folio: string } }> {
   try {
     const archivo = formData.get("archivo") as File | null;
     if (!archivo || typeof archivo.arrayBuffer !== "function") {
@@ -645,6 +654,28 @@ export async function cargarResponsivaFirmada(formData: FormData): Promise<Resul
           error: otro
             ? `${ocupado.codigo} está asignado a ${otro.numero_empleado} ${otro.nombre}. Registra su devolución antes de cargarle la carta a otra persona.`
             : `${ocupado.codigo} está en estado ${ocupado.estado.toLowerCase()}: no se le puede cargar una responsiva.`,
+        };
+      }
+    }
+
+    // Antes de dar de alta una carta nueva: ¿no será la firma de una que el
+    // sistema ya generó y sigue esperando? Es el error fácil de cometer y deja
+    // dos cartas del mismo equipo. Se avisa con el folio y solo se sigue
+    // adelante si la persona confirma que es otra distinta.
+    if (String(formData.get("forzarNueva") || "") !== "1") {
+      const pendientes = responsivasSinFirmaDe(empleado.id);
+      const codigos = new Set(equipos.map((e) => e.codigo));
+      const choca =
+        pendientes.find((p) => (p.equipos ?? "").split(", ").some((c) => codigos.has(c))) ??
+        (codigos.size === 0 ? pendientes.find((p) => p.clase === clase) : undefined);
+      if (choca) {
+        return {
+          ok: false,
+          pendiente: { id: choca.id, folio: choca.folio },
+          error:
+            `${empleado.nombre} ya tiene la responsiva ${choca.folio} (${ETIQUETA_CLASE[choca.clase] ?? choca.clase}` +
+            `${choca.equipos ? `, ${choca.equipos}` : ""}) generada y esperando su firma. ` +
+            `Si el papel que subiste es esa misma carta, adjúntalo a ${choca.folio} en vez de crear otra.`,
         };
       }
     }

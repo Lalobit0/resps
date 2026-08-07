@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado, Equipo } from "../lib/types";
 import { CAMPOS_DETALLE, CLASES_CARTA, ETIQUETA_CLASE, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type ClaseCarta, type TipoEquipo } from "../lib/constants";
-import { cargarResponsivaFirmada } from "../app/responsivas/actions";
+import { cargarResponsivaFirmada, pendientesDeFirmaDe, subirResponsivaFirmada } from "../app/responsivas/actions";
+import type { ResponsivaSinFirma } from "../lib/pendientes";
+import { fechaCorta } from "../lib/helpers";
 import { leerResponsiva, type LecturaSeleccionable } from "../lib/ocr";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import VisorTextoSeleccionable from "./VisorTextoSeleccionable";
@@ -60,6 +62,31 @@ export default function CargarResponsivaClient({
   const [previewUrl, setPreviewUrl] = useState("");
   const [lecturaSel, setLecturaSel] = useState<LecturaSeleccionable | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /** Cartas que el sistema ya generó para ese empleado y siguen sin firma. */
+  const [pendientes, setPendientes] = useState<ResponsivaSinFirma[]>([]);
+  /** Si se elige una, el archivo se le adjunta y NO se crea una carta nueva. */
+  const [adjuntarA, setAdjuntarA] = useState<ResponsivaSinFirma | null>(null);
+  /** Folio que propuso el servidor cuando detectó que sería un duplicado. */
+  const [choque, setChoque] = useState<{ id: number; folio: string } | null>(null);
+
+  // Al elegir empleado se revisa si ya tiene cartas esperando firma: subir el
+  // papel aquí sin darse cuenta creaba una segunda carta del mismo equipo.
+  useEffect(() => {
+    let vigente = true;
+    if (!empleadoId) {
+      setPendientes([]);
+      setAdjuntarA(null);
+      return;
+    }
+    pendientesDeFirmaDe(empleadoId)
+      .then((r) => {
+        if (vigente) setPendientes(r.pendientes);
+      })
+      .catch(() => undefined);
+    return () => {
+      vigente = false;
+    };
+  }, [empleadoId]);
 
   const sinEquipo = clase === "WIFI" || clase === "VALE";
   const esPdfPreview = /\.pdf$/i.test(nombreArchivo);
@@ -160,13 +187,35 @@ export default function CargarResponsivaClient({
     }
   };
 
-  const enviar = () => {
+  /** Le pega el escaneo a una carta que ya existe, sin dar de alta otra. */
+  const adjuntar = (responsivaId: number, folio: string) => {
     setError("");
+    const archivo = fileRef.current?.files?.[0];
+    if (!archivo) return setError("Sube el archivo escaneado (PDF o foto).");
+    const fd = new FormData();
+    fd.append("archivo", archivo);
+    iniciar(async () => {
+      try {
+        const res = await subirResponsivaFirmada(responsivaId, fd);
+        if (res.ok) {
+          router.push(`/responsivas?nueva=${folio}`);
+          router.refresh();
+        } else setError(res.error ?? "No se pudo adjuntar.");
+      } catch {
+        setError("El archivo pesa demasiado o se interrumpió la subida.");
+      }
+    });
+  };
+
+  const enviar = (forzarNueva = false) => {
+    setError("");
+    setChoque(null);
     if (!empleadoId) return setError("Selecciona al empleado de la responsiva.");
     const archivo = fileRef.current?.files?.[0];
     if (!archivo) return setError("Sube el archivo escaneado (PDF o foto).");
 
     const fd = new FormData();
+    if (forzarNueva) fd.append("forzarNueva", "1");
     fd.append("archivo", archivo);
     fd.append("empleadoId", String(empleadoId));
     fd.append("clase", clase);
@@ -192,6 +241,7 @@ export default function CargarResponsivaClient({
         router.refresh();
       } else {
         setError(res.error ?? "Error desconocido.");
+        if (res.pendiente) setChoque(res.pendiente);
       }
     });
   };
@@ -297,9 +347,63 @@ export default function CargarResponsivaClient({
                 <BuscadorEmpleado empleados={empleados} value={empleadoId} onChange={setEmpleadoId} />
               </div>
             </div>
+
+            {pendientes.length ? (
+              <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3">
+                <p className="text-sm font-bold text-amber-900">
+                  Este empleado ya tiene {pendientes.length} responsiva(s) esperando su firma
+                </p>
+                <p className="mt-0.5 text-xs text-amber-900">
+                  Si el papel que subiste es una de estas, adjúntalo aquí: se marca como firmada y{" "}
+                  <b>no se crea otra carta</b>. Solo sigue abajo si de verdad es una responsiva distinta.
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  {pendientes.map((p) => {
+                    const elegida = adjuntarA?.id === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 ${
+                          elegida ? "border-emerald-400 bg-emerald-50" : "border-amber-200 bg-white"
+                        }`}
+                      >
+                        <div className="text-xs">
+                          <span className="mono text-sm font-bold text-kraft-dark">{p.folio}</span>{" "}
+                          <span className="text-soft">
+                            · {ETIQUETA_CLASE[p.clase] ?? p.clase} · {fechaCorta(p.fecha)}
+                            {p.equipos ? ` · ${p.equipos}` : ""}
+                          </span>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <a
+                            href={`/api/pdf/${p.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper"
+                          >
+                            Ver la carta
+                          </a>
+                          <button
+                            type="button"
+                            className={
+                              elegida
+                                ? "rounded border border-emerald-400 bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-900"
+                                : "rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                            }
+                            onClick={() => setAdjuntarA(elegida ? null : p)}
+                          >
+                            {elegida ? "✓ Es esta" : "Es esta"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </Card>
 
-          {sinEquipo ? (
+          {adjuntarA ? null : sinEquipo ? (
             <Card>
               <h2 className="mb-1 text-base font-bold text-ink">3. Sin equipo</h2>
               <p className="text-sm text-soft">Esta carta (Wi-Fi / vale) no lleva equipo físico asignado.</p>
@@ -421,34 +525,81 @@ export default function CargarResponsivaClient({
             </Card>
           )}
 
-          <Card>
-            <h2 className="mb-3 text-base font-bold text-ink">4. Datos del documento (opcional)</h2>
-            <div className="space-y-4">
-              <div>
-                <Label>Folio (si el documento ya tiene uno)</Label>
-                <input className={inputCls} value={folio} onChange={(e) => setFolio(e.target.value)} placeholder="Vacío = se genera solo (RESP-2026-…)" />
+          {adjuntarA ? null : (
+            <Card>
+              <h2 className="mb-3 text-base font-bold text-ink">4. Datos del documento (opcional)</h2>
+              <div className="space-y-4">
+                <div>
+                  <Label>Folio (si el documento ya tiene uno)</Label>
+                  <input className={inputCls} value={folio} onChange={(e) => setFolio(e.target.value)} placeholder="Vacío = se genera solo (RESP-2026-…)" />
+                </div>
+                <div>
+                  <Label>Fecha del documento</Label>
+                  <input className={inputCls} type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+                </div>
+                <div>
+                  <Label>Observaciones</Label>
+                  <textarea className={inputCls} rows={2} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} placeholder="Ej. Responsiva histórica cargada desde archivo físico." />
+                </div>
               </div>
-              <div>
-                <Label>Fecha del documento</Label>
-                <input className={inputCls} type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-              </div>
-              <div>
-                <Label>Observaciones</Label>
-                <textarea className={inputCls} rows={2} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} placeholder="Ej. Responsiva histórica cargada desde archivo físico." />
-              </div>
-            </div>
-          </Card>
+            </Card>
+          )}
 
           {error ? (
-            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <p>{error}</p>
+              {choque ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                    disabled={pendiente}
+                    onClick={() => adjuntar(choque.id, choque.folio)}
+                  >
+                    ↥ Adjuntarlo a {choque.folio}
+                  </button>
+                  <button
+                    className="rounded-md border border-line bg-white px-3 py-1 text-xs font-medium text-ink hover:bg-paper"
+                    disabled={pendiente}
+                    onClick={() => enviar(true)}
+                  >
+                    Es otra distinta: crear carta nueva
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
 
-          <button className={`${btnPrimary} w-full py-3 text-base`} onClick={enviar} disabled={pendiente || ocrCargando}>
-            {pendiente ? "Guardando…" : "Guardar responsiva cargada"}
-          </button>
-          <p className="text-center text-xs text-soft">
-            Se guarda el documento firmado y el equipo queda asignado al empleado. Se marca como “Cargada”.
-          </p>
+          {adjuntarA ? (
+            <>
+              <div className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                El archivo se va a adjuntar a <span className="mono font-bold">{adjuntarA.folio}</span>, que ya está en el
+                sistema esperando firma. No se creará ninguna carta nueva ni se moverá el inventario.
+              </div>
+              <button
+                className={`${btnPrimary} w-full py-3 text-base`}
+                onClick={() => adjuntar(adjuntarA.id, adjuntarA.folio)}
+                disabled={pendiente || ocrCargando}
+              >
+                {pendiente ? "Adjuntando…" : `Adjuntar el escaneo a ${adjuntarA.folio}`}
+              </button>
+              <button className={`${btnGhost} w-full`} onClick={() => setAdjuntarA(null)} disabled={pendiente}>
+                Cancelar: es una responsiva distinta
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className={`${btnPrimary} w-full py-3 text-base`}
+                onClick={() => enviar()}
+                disabled={pendiente || ocrCargando}
+              >
+                {pendiente ? "Guardando…" : "Guardar responsiva cargada"}
+              </button>
+              <p className="text-center text-xs text-soft">
+                Se guarda el documento firmado y el equipo queda asignado al empleado. Se marca como “Cargada”.
+              </p>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -12,6 +12,19 @@ import { eliminarEquipo } from "../app/inventario/actions";
 import FusionarEquipoBtn from "./FusionarEquipoBtn";
 import { Badge, Card, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "./ui";
 
+/**
+ * Nombre con el que la máquina se ve en la red (el del escaneo de PCs). Es el
+ * dato con el que se identifica un equipo en soporte, así que va en su columna.
+ */
+function nombreDeEquipo(e: Equipo): string {
+  try {
+    const d = e.detalles ? (JSON.parse(e.detalles) as Record<string, string>) : {};
+    return (d.nombre_computadora ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
 const miniAzul = "rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 hover:bg-sky-100";
 const miniRojo = "rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50";
@@ -69,6 +82,7 @@ export default function EquiposEmpleado({
               <th className={thCls}>Código</th>
               <th className={thCls}>Tipo</th>
               <th className={thCls}>Equipo</th>
+              <th className={thCls}>Nombre del equipo</th>
               <th className={thCls}>Serie</th>
               <th className={thCls}>Detalle</th>
               <th className={thCls}>Estado</th>
@@ -86,6 +100,7 @@ export default function EquiposEmpleado({
                   <td className={tdCls}>
                     {e.marca} {e.modelo}
                   </td>
+                  <td className={`${tdCls} mono text-xs`}>{nombreDeEquipo(e) || "—"}</td>
                   <td className={`${tdCls} mono text-xs`}>{e.numero_serie ?? "—"}</td>
                   <td className={`${tdCls} text-xs text-soft`}>{e.specs ?? "—"}</td>
                   <td className={tdCls}>

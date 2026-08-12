@@ -12,6 +12,7 @@ type EquipoResultado = {
   marca: string;
   modelo: string;
   numero_serie: string | null;
+  nombre_equipo: string | null;
   imei: string | null;
   numero: string | null;
   estado: string;
@@ -47,15 +48,18 @@ export default async function PaginaBuscar({
       .prepare(
         `SELECT e.id, e.codigo, e.tipo, e.marca, e.modelo, e.numero_serie, e.estado,
           json_extract(e.detalles,'$.imei') AS imei, json_extract(e.detalles,'$.numero') AS numero,
+          json_extract(e.detalles,'$.nombre_computadora') AS nombre_equipo,
           em.id AS asignado_id, em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero
          FROM equipos e LEFT JOIN empleados em ON em.id = e.asignado_a
          WHERE e.codigo LIKE ? OR e.marca LIKE ? OR e.modelo LIKE ? OR COALESCE(e.numero_serie,'') LIKE ?
            OR COALESCE(json_extract(e.detalles,'$.imei'),'') LIKE ?
            OR COALESCE(json_extract(e.detalles,'$.imei2'),'') LIKE ?
            OR COALESCE(json_extract(e.detalles,'$.numero'),'') LIKE ?
+           -- El nombre de la máquina en la red: con eso se busca en soporte.
+           OR COALESCE(json_extract(e.detalles,'$.nombre_computadora'),'') LIKE ?
          ORDER BY e.codigo ASC LIMIT 50`
       )
-      .all(like, like, like, like, like, like, like) as EquipoResultado[];
+      .all(like, like, like, like, like, like, like, like) as EquipoResultado[];
 
     empleados = db
       .prepare(
@@ -118,7 +122,7 @@ export default async function PaginaBuscar({
                           {e.marca} {e.modelo}
                         </td>
                         <td className={`${tdCls} mono text-[11px] text-soft`}>
-                          {[e.numero_serie, e.imei, e.numero].filter(Boolean).join(" · ") || "—"}
+                          {[e.nombre_equipo, e.numero_serie, e.imei, e.numero].filter(Boolean).join(" · ") || "—"}
                         </td>
                         <td className={tdCls}>
                           <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>

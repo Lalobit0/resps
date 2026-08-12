@@ -60,11 +60,12 @@ export default async function PaginaInventario({
         OR COALESCE(json_extract(e.detalles,'$.imei'),'') LIKE ?
         OR COALESCE(json_extract(e.detalles,'$.imei2'),'') LIKE ?
         OR REPLACE(COALESCE(json_extract(e.detalles,'$.numero'),''),' ','') LIKE ?
+        OR COALESCE(json_extract(e.detalles,'$.nombre_computadora'),'') LIKE ?
         OR COALESCE(e.specs,'') LIKE ?)`
     );
     const like = `%${q}%`;
     const likeNum = `%${q.replace(/\s/g, "")}%`;
-    valores.push(like, like, like, like, like, like, like, like, likeNum, like);
+    valores.push(like, like, like, like, like, like, like, like, likeNum, like, like);
   }
   const where = condiciones.length ? `WHERE ${condiciones.join(" AND ")}` : "";
 
@@ -168,7 +169,7 @@ export default async function PaginaInventario({
         {soloDup ? <input type="hidden" name="dup" value="1" /> : null}
         {soloSinResp ? <input type="hidden" name="sinresp" value="1" /> : null}
         {soloLigar ? <input type="hidden" name="ligar" value="1" /> : null}
-        <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, IMEI, línea, asignado…" className={`${inputCls} max-w-xs`} />
+        <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, IMEI, línea, nombre de equipo, asignado…" className={`${inputCls} max-w-xs`} />
         <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[190px]`}>
           <option value="">Todos los tipos</option>
           {TIPOS_EQUIPO.map((t) => (

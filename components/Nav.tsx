@@ -36,7 +36,7 @@ export default function Nav() {
       <form action="/buscar" method="get" className="mr-2 shrink-0 md:mb-3 md:mr-0">
         <input
           name="q"
-          placeholder="🔍 Buscar IMEI, serie, empleado…"
+          placeholder="🔍 IMEI, serie, nombre de equipo, empleado…"
           className="w-44 rounded-md border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/50 outline-none focus:border-white/40 md:w-full"
         />
       </form>

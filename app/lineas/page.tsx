@@ -20,8 +20,12 @@ type Linea = {
   condicion: string | null;
   marca: string;
   modelo: string;
+  numero_serie: string | null;
+  asignado_id: number | null;
   asignado_nombre: string | null;
   asignado_numero: string | null;
+  asignado_departamento: string | null;
+  asignado_area: string | null;
 };
 
 function precioANumero(p: string | null): number {
@@ -42,20 +46,24 @@ export default async function PaginaLineas({
   const val: string[] = [];
   if (q) {
     cond.push(
-      "(json_extract(e.detalles,'$.numero') LIKE ? OR json_extract(e.detalles,'$.imei') LIKE ? OR em.nombre LIKE ? OR em.numero_empleado LIKE ? OR e.codigo LIKE ?)"
+      `(json_extract(e.detalles,'$.numero') LIKE ? OR json_extract(e.detalles,'$.imei') LIKE ?
+        OR em.nombre LIKE ? OR em.numero_empleado LIKE ? OR e.codigo LIKE ?
+        OR COALESCE(em.departamento,'') LIKE ? OR e.marca LIKE ? OR e.modelo LIKE ?
+        OR COALESCE(e.numero_serie,'') LIKE ?)`
     );
-    for (let i = 0; i < 5; i++) val.push(`%${q}%`);
+    for (let i = 0; i < 9; i++) val.push(`%${q}%`);
   }
 
   const lineas = db
     .prepare(
-      `SELECT e.id, e.codigo, e.estado, e.marca, e.modelo,
+      `SELECT e.id, e.codigo, e.estado, e.marca, e.modelo, e.numero_serie,
         json_extract(e.detalles,'$.numero') AS numero,
         json_extract(e.detalles,'$.plan') AS plan,
         json_extract(e.detalles,'$.plan_precio') AS precio,
         json_extract(e.detalles,'$.imei') AS imei,
         json_extract(e.detalles,'$.condicion') AS condicion,
-        em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero
+        em.id AS asignado_id, em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero,
+        em.departamento AS asignado_departamento, em.area AS asignado_area
        FROM equipos e LEFT JOIN empleados em ON em.id = e.asignado_a
        WHERE ${cond.join(" AND ")}
        ORDER BY em.numero_empleado IS NULL, CAST(em.numero_empleado AS INTEGER) ASC, e.codigo ASC`
@@ -98,7 +106,7 @@ export default async function PaginaLineas({
         <input
           name="q"
           defaultValue={q}
-          placeholder="Buscar por número, IMEI, empleado o código…"
+          placeholder="Buscar por número, IMEI, empleado, departamento, equipo o código…"
           className="w-full max-w-md rounded-md border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-kraft"
         />
       </form>
@@ -107,41 +115,61 @@ export default async function PaginaLineas({
         <Empty>No hay líneas registradas. Impórtalas o regístralas como equipo de tipo Teléfono / Celular.</Empty>
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[820px] border-collapse">
+          <table className="w-full min-w-[1120px] border-collapse">
             <thead className="border-b border-line bg-paper/70">
               <tr>
                 <th className={thCls}>Código</th>
+                <th className={thCls}>No. empleado</th>
+                <th className={thCls}>Nombre</th>
+                <th className={thCls}>Departamento</th>
                 <th className={thCls}>Número</th>
                 <th className={thCls}>Plan</th>
                 <th className={thCls}>Renta</th>
-                <th className={thCls}>Equipo</th>
+                <th className={thCls}>Teléfono</th>
                 <th className={thCls}>IMEI</th>
-                <th className={thCls}>Asignada a</th>
                 <th className={thCls}>Estado</th>
+                <th className={thCls}>Acciones</th>
               </tr>
             </thead>
             <tbody>
               {lineas.map((l) => (
                 <tr key={l.id} className="border-b border-line/60 last:border-0 hover:bg-paper/40">
                   <td className={`${tdCls} mono text-xs font-semibold`}>{l.codigo}</td>
-                  <td className={`${tdCls} mono text-xs`}>{l.numero ?? "—"}</td>
-                  <td className={`${tdCls} text-xs`}>{l.plan ?? "—"}</td>
-                  <td className={`${tdCls} text-xs`}>{l.precio ?? "—"}</td>
-                  <td className={`${tdCls} text-xs`}>
-                    {l.marca} {l.modelo}
-                  </td>
-                  <td className={`${tdCls} mono text-xs`}>{l.imei ?? "—"}</td>
+                  <td className={`${tdCls} mono text-xs`}>{l.asignado_numero ?? "—"}</td>
                   <td className={`${tdCls} text-xs`}>
                     {l.asignado_nombre ? (
-                      <>
-                        <span className="mono text-kraft-dark">{l.asignado_numero}</span> {l.asignado_nombre}
-                      </>
+                      // Al nombre se le da clic para ir a su histórico.
+                      <Link href={`/empleados/${l.asignado_id}`} className="font-medium text-ink hover:text-kraft hover:underline" title="Ver su histórico">
+                        {l.asignado_nombre}
+                      </Link>
                     ) : (
                       <span className="text-soft">Sin asignar</span>
                     )}
                   </td>
+                  <td className={`${tdCls} text-xs text-soft`}>
+                    {[l.asignado_departamento, l.asignado_area].filter(Boolean).join(" · ") || "—"}
+                  </td>
+                  <td className={`${tdCls} mono text-xs`}>{l.numero ?? "—"}</td>
+                  <td className={`${tdCls} text-xs`}>{l.plan ?? "—"}</td>
+                  <td className={`${tdCls} text-xs`}>{l.precio ?? "—"}</td>
+                  <td className={`${tdCls} text-xs`}>
+                    <span className="font-medium">
+                      {l.marca} {l.modelo}
+                    </span>
+                    {l.numero_serie ? <span className="mono block text-[11px] text-soft">Serie {l.numero_serie}</span> : null}
+                  </td>
+                  <td className={`${tdCls} mono text-xs`}>{l.imei ?? "—"}</td>
                   <td className={tdCls}>
                     <Badge tono={tonoEstadoEquipo(l.estado)}>{ETIQUETA_ESTADO[l.estado] ?? l.estado}</Badge>
+                  </td>
+                  <td className={tdCls}>
+                    <Link
+                      href={`/inventario?editar=${l.id}`}
+                      className="rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper"
+                      title="Editar los datos del teléfono y de la línea"
+                    >
+                      Editar
+                    </Link>
                   </td>
                 </tr>
               ))}

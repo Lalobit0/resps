@@ -3,6 +3,7 @@ import { db } from "../../lib/db";
 import { dinero } from "../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, tdCls, thCls, tonoEstadoEquipo } from "../../components/ui";
 import ExportarBotones from "../../components/ExportarBotones";
+import FiltrosAuto from "../../components/FiltrosAuto";
 import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
 import { revisarCelulares } from "../../lib/celulares";
 import { ETIQUETA_ESTADO } from "../../lib/constants";
@@ -102,14 +103,14 @@ export default async function PaginaLineas({
         </Card>
       </div>
 
-      <form method="get" className="mb-4">
+      <FiltrosAuto className="mb-4">
         <input
           name="q"
           defaultValue={q}
           placeholder="Buscar por número, IMEI, empleado, departamento, equipo o código…"
           className="w-full max-w-md rounded-md border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-kraft"
         />
-      </form>
+      </FiltrosAuto>
 
       {lineas.length === 0 ? (
         <Empty>No hay líneas registradas. Impórtalas o regístralas como equipo de tipo Teléfono / Celular.</Empty>

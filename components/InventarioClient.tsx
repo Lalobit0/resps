@@ -12,6 +12,25 @@ import FusionarEquipoBtn from "./FusionarEquipoBtn";
 import SelectConOtro from "./SelectConOtro";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
+import { EncabezadoTabla, ordenarFilas, useTabla, type ColumnaTabla } from "./tabla";
+
+/** Las columnas del inventario, con su ancho inicial y cómo ordenan. */
+const COLUMNAS: ColumnaTabla[] = [
+  { clave: "codigo", etiqueta: "Código", ancho: 9 },
+  { clave: "tipo", etiqueta: "Tipo", ancho: 8, valores: ["COMPUTO", "CELULAR", "RADIO", "OTRO"] },
+  { clave: "equipo", etiqueta: "Equipo", ancho: 16 },
+  { clave: "serie", etiqueta: "Serie", ancho: 10 },
+  {
+    clave: "estado",
+    etiqueta: "Estado",
+    ancho: 8,
+    valores: ["ASIGNADO", "DISPONIBLE", "SIN RESPONSIVA", "MANTENIMIENTO", "BAJA"],
+  },
+  { clave: "asignado", etiqueta: "Asignado a", ancho: 15 },
+  { clave: "responsivas", etiqueta: "Responsivas", ancho: 12, valores: ["CON", "SIN"] },
+  { clave: "compra", etiqueta: "Compra", ancho: 7 },
+  { clave: "acciones", etiqueta: "Acciones", ancho: 15, ordenable: false },
+];
 
 const tdc = "px-2 py-1.5 text-sm text-ink align-middle";
 const thc = "px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-soft whitespace-nowrap";
@@ -115,6 +134,37 @@ export default function InventarioClient({
   porLigar?: Record<number, { empleado_numero: string; empleado_nombre: string; folio: string }>;
 }) {
   const faltaResponsiva = new Set(sinResponsiva);
+  const { anchos, orden, empezarArrastre, alternarOrden } = useTabla("inventario", COLUMNAS);
+
+  /**
+   * Lo que se compara en cada columna al ordenar. "Sin responsiva" cuenta como
+   * un estado más: es como se busca en la práctica.
+   */
+  const valorColumna = (e: EquipoConAsignado, clave: string): string | number | null => {
+    switch (clave) {
+      case "codigo":
+        return e.codigo;
+      case "tipo":
+        return e.tipo;
+      case "equipo":
+        return `${e.marca} ${e.modelo}`;
+      case "serie":
+        return e.numero_serie ?? "";
+      case "estado":
+        return faltaResponsiva.has(e.id) ? "SIN RESPONSIVA" : e.estado;
+      case "asignado":
+        return e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : "";
+      case "responsivas":
+        return (responsivas[e.id]?.length ?? 0) > 0 ? "CON" : "SIN";
+      case "compra":
+        return e.fecha_compra ?? "";
+      default:
+        return "";
+    }
+  };
+
+  const ordenados = ordenarFilas(equipos, orden, COLUMNAS, valorColumna);
+
   // Con ?editar=<id> el formulario se abre solo: así se puede editar un equipo
   // desde la ficha del empleado sin tener que buscarlo aquí.
   const [form, setForm] = useState<Formulario | null>(() => {
@@ -359,33 +409,16 @@ export default function InventarioClient({
         <Empty>No hay equipos con estos filtros. Registra uno nuevo o importa tu Excel.</Empty>
       ) : (
         <Card className="p-0">
-          <table className="w-full table-fixed border-collapse">
-            <colgroup>
-              <col className="w-[9%]" />
-              <col className="w-[8%]" />
-              <col className="w-[16%]" />
-              <col className="w-[10%]" />
-              <col className="w-[8%]" />
-              <col className="w-[15%]" />
-              <col className="w-[12%]" />
-              <col className="w-[7%]" />
-              <col className="w-[15%]" />
-            </colgroup>
-            <thead className="border-b border-line bg-paper/70">
-              <tr>
-                <th className={thc}>Código</th>
-                <th className={thc}>Tipo</th>
-                <th className={thc}>Equipo</th>
-                <th className={thc}>Serie</th>
-                <th className={thc}>Estado</th>
-                <th className={thc}>Asignado a</th>
-                <th className={thc}>Responsivas</th>
-                <th className={thc}>Compra</th>
-                <th className={thc}>Acciones</th>
-              </tr>
-            </thead>
+          <table className="w-full table-fixed border-collapse" data-tabla="inventario">
+            <EncabezadoTabla
+              columnas={COLUMNAS}
+              anchos={anchos}
+              orden={orden}
+              onOrdenar={alternarOrden}
+              onArrastrar={empezarArrastre}
+            />
             <tbody>
-              {equipos.map((e) => (
+              {ordenados.map((e) => (
                 <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
                   <td className={`${tdc} text-xs font-semibold`}>
                     <div className="flex items-center gap-1">

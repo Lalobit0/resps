@@ -4,6 +4,7 @@ import type { ResponsivaLista } from "../../lib/types";
 import { fechaCorta } from "../../lib/helpers";
 import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "../../components/ui";
 import ExportarBotones from "../../components/ExportarBotones";
+import FiltrosAuto from "../../components/FiltrosAuto";
 import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
 import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
 import { CambiarClaseLista, EditarClaseBtn } from "../../components/ClaseResponsiva";
@@ -152,7 +153,7 @@ export default async function PaginaResponsivas({
         />
       ) : null}
 
-      <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
+      <FiltrosAuto className="mb-5 flex flex-wrap items-end gap-2">
         <input name="q" defaultValue={q} placeholder="Buscar por folio o empleado…" className={`${inputCls} max-w-xs`} />
         <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[170px]`}>
           <option value="">Todos los tipos</option>
@@ -183,13 +184,13 @@ export default async function PaginaResponsivas({
           <option value="emp_asc">No. de empleado (menor a mayor)</option>
           <option value="emp_desc">No. de empleado (mayor a menor)</option>
         </select>
-        <button type="submit" className={btnGhost}>
+        <button type="submit" className="sr-only">
           Filtrar
         </button>
         <div className="ml-auto">
           <ExportarBotones tabla="responsivas" params={{ q, tipo, clase, estado }} />
         </div>
-      </form>
+      </FiltrosAuto>
 
       {responsivas.length === 0 ? (
         <Empty>Todavía no hay responsivas. Genera la primera con “Nueva responsiva”.</Empty>

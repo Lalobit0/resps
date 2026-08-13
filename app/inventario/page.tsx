@@ -9,6 +9,7 @@ import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
 import AvisoPorLigar from "../../components/AvisoPorLigar";
 import { revisarCelulares } from "../../lib/celulares";
 import ExportarBotones from "../../components/ExportarBotones";
+import FiltrosAuto from "../../components/FiltrosAuto";
 import { PageHeader, btnGhost, btnPrimary, inputCls } from "../../components/ui";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ export default async function PaginaInventario({
   const tipo = typeof sp.tipo === "string" ? sp.tipo : "";
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const orden = typeof sp.orden === "string" ? sp.orden : "codigo";
+  // "con" / "sin": si el equipo tiene o no carta responsiva.
+  const resp = typeof sp.resp === "string" ? sp.resp : "";
   const soloDup = sp.dup === "1";
   // Los avisos ya no viven en la pantalla: se llega a ellos desde la campana,
   // y cada uno abre aquí su barra con el botón de la acción.
@@ -118,6 +121,8 @@ export default async function PaginaInventario({
   if (soloDup) equipos = equipos.filter((e) => duplicados[e.id]);
   if (soloSinResp) equipos = equipos.filter((e) => sinResponsiva.has(e.id));
   if (soloLigar) equipos = equipos.filter((e) => porLigarPorEquipo[e.id]);
+  if (resp === "sin") equipos = equipos.filter((e) => sinResponsiva.has(e.id));
+  if (resp === "con") equipos = equipos.filter((e) => !sinResponsiva.has(e.id));
 
   // Cartas responsivas de cada equipo, para consultarlas desde el inventario.
   const filas = db
@@ -165,7 +170,7 @@ export default async function PaginaInventario({
 
       {soloDup ? <AvisoDuplicados total={totalDuplicados} desglose={desglose} soloDup={soloDup} /> : null}
 
-      <form method="get" className="mb-5 flex flex-wrap items-end gap-2">
+      <FiltrosAuto className="mb-5 flex flex-wrap items-end gap-2">
         {soloDup ? <input type="hidden" name="dup" value="1" /> : null}
         {soloSinResp ? <input type="hidden" name="sinresp" value="1" /> : null}
         {soloLigar ? <input type="hidden" name="ligar" value="1" /> : null}
@@ -186,20 +191,19 @@ export default async function PaginaInventario({
             </option>
           ))}
         </select>
-        <select name="orden" defaultValue={orden} className={`${inputCls} max-w-[230px]`}>
-          <option value="codigo">Por código</option>
-          <option value="recientes">Más recientes primero</option>
-          <option value="antiguos">Más antiguos primero</option>
-          <option value="emp_asc">No. de empleado (menor a mayor)</option>
-          <option value="emp_desc">No. de empleado (mayor a menor)</option>
+        <select name="resp" defaultValue={resp} className={`${inputCls} max-w-[200px]`}>
+          <option value="">Con y sin responsiva</option>
+          <option value="con">Con responsiva</option>
+          <option value="sin">Sin responsiva</option>
         </select>
-        <button type="submit" className={btnGhost}>
+        {/* El orden se cambia pulsando el título de la columna. */}
+        <button type="submit" className="sr-only">
           Filtrar
         </button>
         <div className="ml-auto">
           <ExportarBotones tabla="inventario" params={{ q, tipo, estado }} />
         </div>
-      </form>
+      </FiltrosAuto>
 
       <InventarioClient
         equipos={equipos}

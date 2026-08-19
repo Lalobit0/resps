@@ -28,6 +28,12 @@ export default function GenerarLoteClient({
   const [seccion, setSeccion] = useState("");
   const [tipo, setTipo] = useState("");
   const [fecha, setFecha] = useState(hoy);
+  /** Se puede adelantar hasta un año, para dejar preparado el paquete. */
+  const topeAdelante = (() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().slice(0, 10);
+  })();
   const [observaciones, setObservaciones] = useState("");
   const [elegidos, setElegidos] = useState<Set<number>>(new Set());
   const [resultado, setResultado] = useState<ResultadoGeneracion | null>(null);
@@ -195,7 +201,13 @@ export default function GenerarLoteClient({
             </div>
             <div className="min-w-[150px]">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-soft">Fecha de las cartas</label>
-              <input type="date" className={inputCls} max={hoy} value={fecha} onChange={(e) => setFecha(e.target.value)} />
+              <input
+                type="date"
+                className={inputCls}
+                max={topeAdelante}
+                value={fecha}
+                onChange={(e) => setFecha(e.target.value)}
+              />
             </div>
           </div>
 

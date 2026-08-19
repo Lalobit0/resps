@@ -31,6 +31,16 @@ function registrarBitacora(accion: string, descripcion: string, snapshot: unknow
   );
 }
 
+/**
+ * Hasta dónde se admite adelantar la fecha de una carta: un año. Preparar la
+ * de mañana o la de la semana que entra es normal; una de 2126 es un dedazo.
+ */
+function limiteAdelante(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 function siguienteFolio(prefijo: string): string {
   const anio = new Date().getFullYear();
   const r = db
@@ -182,12 +192,15 @@ async function crearUnaResponsiva(datos: DatosNuevaResponsiva): Promise<Resultad
     }
 
     const folio = siguienteFolio(config.esVale ? "VALE" : "RESP");
-    // La fecha se puede ajustar (p. ej. a la de alta del empleado), pero nunca
-    // adelante: una carta con fecha futura no la firmó nadie todavía.
+    // La fecha se ajusta a la entrega real: hacia atrás (la de alta del
+    // empleado, por ejemplo) o hacia adelante, para dejar preparada la carta
+    // que se firma mañana. El único tope es contra el error de dedo.
     const hoy = hoyISO();
     const pedida = (datos.fecha ?? "").trim();
     if (pedida && !/^\d{4}-\d{2}-\d{2}$/.test(pedida)) return { ok: false, error: "La fecha de la carta no es válida." };
-    if (pedida && pedida > hoy) return { ok: false, error: "La fecha de la carta no puede ser posterior a hoy." };
+    if (pedida && pedida > limiteAdelante()) {
+      return { ok: false, error: `La fecha no puede pasar de ${fechaCorta(limiteAdelante())}. Revisa que esté bien escrita.` };
+    }
     const fecha = pedida || hoy;
     const entregadoPor = getConfig("entrega_default", "Departamento de TI");
     // Sin firma de la empresa no hay firmante que registrar.
@@ -304,7 +317,9 @@ export async function generarResponsivasEnLote(
     const hoy = hoyISO();
     const pedida = (opciones.fecha ?? "").trim();
     if (pedida && !/^\d{4}-\d{2}-\d{2}$/.test(pedida)) return { ok: false, error: "La fecha de las cartas no es válida." };
-    if (pedida && pedida > hoy) return { ok: false, error: "La fecha de las cartas no puede ser posterior a hoy." };
+    if (pedida && pedida > limiteAdelante()) {
+      return { ok: false, error: `La fecha no puede pasar de ${fechaCorta(limiteAdelante())}. Revisa que esté bien escrita.` };
+    }
 
     const lote = nombreDeLote();
     const generadas: ResultadoGeneracion["generadas"] = [];

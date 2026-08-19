@@ -69,6 +69,12 @@ export default function NuevaResponsivaClient({
   const [errorEquipo, setErrorEquipo] = useState("");
   const [guardandoEquipo, iniciarEquipo] = useTransition();
   const [fecha, setFecha] = useState(hoyISO());
+  /** Se puede adelantar hasta un año; más allá es un error de captura. */
+  const topeAdelante = (() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() + 1);
+    return d.toISOString().slice(0, 10);
+  })();
   const [observaciones, setObservaciones] = useState("");
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
@@ -261,7 +267,7 @@ export default function NuevaResponsivaClient({
               <input
                 className={`${inputCls} max-w-[190px]`}
                 type="date"
-                max={hoyISO()}
+                max={topeAdelante}
                 value={fecha}
                 onChange={(e) => setFecha(e.target.value)}
               />
@@ -283,7 +289,9 @@ export default function NuevaResponsivaClient({
               ) : null}
             </div>
             <p className="mt-1 text-xs text-soft">
-              Por defecto es la de hoy. Cámbiala si la entrega fue antes.
+              {fecha > hoyISO()
+                ? "Con fecha adelantada: la carta queda preparada para ese día."
+                : "Por defecto es la de hoy. Cámbiala si la entrega fue antes, o adelántala para dejarla lista."}
             </p>
           </div>
         </Card>

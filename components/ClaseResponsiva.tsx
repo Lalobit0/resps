@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CLASES_CARTA, ETIQUETA_CLASE } from "../lib/constants";
-import { cambiarClaseResponsiva, cambiarClaseVarias } from "../app/responsivas/actions";
+import { cambiarClaseResponsiva } from "../app/responsivas/actions";
 import { btnGhost, btnPrimary, inputCls } from "./ui";
 
 /**
@@ -107,68 +107,5 @@ export function EditarClaseBtn({
         </div>
       ) : null}
     </>
-  );
-}
-
-/**
- * Corrige de un golpe el tipo de todas las responsivas que se están viendo.
- * Pensado para una carga masiva que entró con el tipo equivocado: se filtra la
- * lista hasta dejar solo esas y se cambian juntas.
- */
-export function CambiarClaseLista({ ids, resumen }: { ids: number[]; resumen: string }) {
-  const router = useRouter();
-  const [clase, setClase] = useState("");
-  const [mensaje, setMensaje] = useState("");
-  const [error, setError] = useState("");
-  const [pendiente, iniciar] = useTransition();
-
-  const aplicar = () => {
-    if (!clase) {
-      setError("Elige a qué tipo de carta se cambian.");
-      return;
-    }
-    if (
-      !confirm(
-        `Se van a cambiar TODAS las ${ids.length} responsivas que estás viendo a "${ETIQUETA_CLASE[clase] ?? clase}".\n\n` +
-          `${resumen}\n\nSi no son todas las que quieres cambiar, cancela y filtra primero.\n\n¿Continuar?`
-      )
-    )
-      return;
-    setError("");
-    setMensaje("");
-    iniciar(async () => {
-      const res = await cambiarClaseVarias(ids, clase);
-      if (res.ok) {
-        setMensaje(res.mensaje ?? "Listo.");
-        setClase("");
-        router.refresh();
-      } else {
-        setError(res.error ?? "No se pudo cambiar.");
-      }
-    });
-  };
-
-  return (
-    <div className="mb-5 rounded-md border border-line bg-paper/60 px-4 py-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-ink">Corregir varias a la vez:</span>
-        <select className={`${inputCls} max-w-[200px]`} value={clase} onChange={(e) => setClase(e.target.value)}>
-          <option value="">— Elige el tipo —</option>
-          {CLASES_CARTA.map((c) => (
-            <option key={c} value={c}>
-              {ETIQUETA_CLASE[c] ?? c}
-            </option>
-          ))}
-        </select>
-        <button className={btnGhost} disabled={pendiente || !clase} onClick={aplicar}>
-          {pendiente ? "Cambiando…" : `Aplicar a las ${ids.length} de esta lista`}
-        </button>
-        <span className="text-xs text-soft">
-          Filtra arriba para dejar solo las que quieres corregir. Las devoluciones no se tocan.
-        </span>
-      </div>
-      {mensaje ? <p className="mt-2 text-xs text-emerald-800">{mensaje}</p> : null}
-      {error ? <p className="mt-2 text-xs text-red-700">{error}</p> : null}
-    </div>
   );
 }

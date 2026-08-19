@@ -1,17 +1,11 @@
 import Link from "next/link";
 import { db } from "../../lib/db";
 import type { ResponsivaLista } from "../../lib/types";
-import { fechaCorta } from "../../lib/helpers";
-import { Badge, Card, Empty, PageHeader, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "../../components/ui";
+import { Empty, PageHeader, btnGhost, btnPrimary, inputCls } from "../../components/ui";
 import ExportarBotones from "../../components/ExportarBotones";
 import FiltrosAuto from "../../components/FiltrosAuto";
-import EliminarResponsivaBtn from "../../components/EliminarResponsivaBtn";
-import SubirFirmadaBtn from "../../components/SubirFirmadaBtn";
-import { CambiarClaseLista, EditarClaseBtn } from "../../components/ClaseResponsiva";
-import CorregirResponsivaBtn from "../../components/CorregirResponsivaBtn";
 import AvisoParesPartidos from "../../components/AvisoParesPartidos";
-import VerPdfBtn from "../../components/VerPdfBtn";
-import RegenerarResponsivaBtn from "../../components/RegenerarResponsivaBtn";
+import ResponsivasClient from "../../components/ResponsivasClient";
 import { paresPartidos } from "../../lib/pendientes";
 import { ETIQUETA_CLASE } from "../../lib/constants";
 
@@ -93,12 +87,33 @@ export default async function PaginaResponsivas({
 
   // Pares donde el escaneo entró como carta aparte: una con firma, otra con equipo.
   const partidas = sp.partidas === "1" ? paresPartidos() : [];
-  const totalDuplicados = responsivas.filter((r) => (r.es_duplicado ?? 0) > 0).length;
-  // Solo las de asignación cambian de tipo: la devolución hereda el de su carta.
-  const asignaciones = responsivas.filter((r) => r.tipo === "ASIGNACION");
   // La carta se firma en papel: está pendiente mientras no se suba el escaneo.
   const faltaFirma = (r: ResponsivaLista) => r.origen !== "CARGADA" && !r.pdf_firmado;
   const totalSinFirma = responsivas.filter(faltaFirma).length;
+  const total = (db.prepare("SELECT COUNT(*) AS c FROM responsivas WHERE estado != 'ELIMINADA'").get() as { c: number }).c;
+
+  /**
+   * Dirección de la lista cambiando solo lo que se indique. Sirve para quitar
+   * un filtro suelto sin perder los demás.
+   */
+  const conFiltros = (cambios: Record<string, string>) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ q, tipo, clase, estado, firma, ...cambios })) if (v) p.set(k, v);
+    if (verPartidas) p.set("partidas", "1");
+    const cadena = p.toString();
+    return cadena ? `/responsivas?${cadena}` : "/responsivas";
+  };
+
+  // Lo que está filtrando ahora mismo, cada uno con su tachita para quitarlo.
+  const puestos: { etiqueta: string; sin: string }[] = [];
+  if (q) puestos.push({ etiqueta: `Busca “${q}”`, sin: conFiltros({ q: "" }) });
+  if (tipo) puestos.push({ etiqueta: tipo === "ASIGNACION" ? "Asignación" : "Devolución", sin: conFiltros({ tipo: "" }) });
+  if (clase) puestos.push({ etiqueta: ETIQUETA_CLASE[clase] ?? clase, sin: conFiltros({ clase: "" }) });
+  if (estado) puestos.push({ etiqueta: estado === "VIGENTE" ? "Vigente" : "Cerrada", sin: conFiltros({ estado: "" }) });
+  if (firma) puestos.push({ etiqueta: firma === "sin" ? "Sin firmar" : "Firmadas", sin: conFiltros({ firma: "" }) });
+
+  // El desplegable con algo elegido se pinta, para verlo sin abrirlo.
+  const marcado = (v: string) => `${inputCls} ${v ? "border-kraft bg-kraft/10 font-semibold text-ink" : ""}`;
 
   return (
     <>
@@ -118,6 +133,9 @@ export default async function PaginaResponsivas({
         <Link href="/responsivas/nueva" className={btnPrimary}>
           + Nueva responsiva
         </Link>
+        <span className="text-sm text-soft">
+          {responsivas.length} de {total} cartas
+        </span>
       </PageHeader>
 
       {nueva ? (
@@ -128,61 +146,44 @@ export default async function PaginaResponsivas({
 
       {firma === "sin" && totalSinFirma > 0 ? (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <span className="flex flex-wrap items-center justify-between gap-3">
-            <span>
-              ✍️ Hay <b>{totalSinFirma}</b> responsiva(s) <b>sin firmar</b> en esta lista. Imprímelas, recoge las firmas
-              y sube el documento con <b>Subir firmada</b> del renglón.
-            </span>
-            {firma !== "sin" ? (
-              <Link href="/responsivas?firma=sin" className={btnGhost}>
-                Ver solo las que faltan
-              </Link>
-            ) : null}
-          </span>
+          ✍️ Hay <b>{totalSinFirma}</b> responsiva(s) <b>sin firmar</b> en esta lista. Imprímelas, recoge las firmas y
+          sube el documento con <b>Subir firmada</b> del renglón.
         </div>
       ) : null}
 
       {verPartidas ? <AvisoParesPartidos pares={partidas} /> : null}
 
-
-
-      {asignaciones.length > 0 ? (
-        <CambiarClaseLista
-          ids={asignaciones.map((r) => r.id)}
-          resumen={`${asignaciones[0].folio} … ${asignaciones[asignaciones.length - 1].folio}`}
+      <FiltrosAuto className="flex flex-wrap items-center gap-2">
+        {verPartidas ? <input type="hidden" name="partidas" value="1" /> : null}
+        <input
+          key={`q-${q}`}
+          name="q"
+          defaultValue={q}
+          placeholder="🔍 Folio, nombre o número…"
+          className={`${inputCls} w-full max-w-[280px] ${q ? "border-kraft bg-kraft/10" : ""}`}
         />
-      ) : null}
-
-      <FiltrosAuto className="mb-5 flex flex-wrap items-end gap-2">
-        <input name="q" defaultValue={q} placeholder="Buscar por folio o empleado…" className={`${inputCls} max-w-xs`} />
-        <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[170px]`}>
-          <option value="">Todos los tipos</option>
+        <select key={`tipo-${tipo}`} name="tipo" defaultValue={tipo} className={`${marcado(tipo)} max-w-[170px]`} title="Asignación o devolución">
+          <option value="">Tipo: todos</option>
           <option value="ASIGNACION">Asignación</option>
           <option value="DEVOLUCION">Devolución</option>
         </select>
-        <select name="clase" defaultValue={clase} className={`${inputCls} max-w-[190px]`}>
-          <option value="">Todas las cartas</option>
+        <select key={`clase-${clase}`} name="clase" defaultValue={clase} className={`${marcado(clase)} max-w-[200px]`} title="Qué se entregó">
+          <option value="">Carta: todas</option>
           {Object.entries(ETIQUETA_CLASE).map(([valor, etiqueta]) => (
             <option key={valor} value={valor}>
               {etiqueta}
             </option>
           ))}
         </select>
-        <select name="estado" defaultValue={estado} className={`${inputCls} max-w-[160px]`}>
-          <option value="">Todos los estados</option>
+        <select key={`estado-${estado}`} name="estado" defaultValue={estado} className={`${marcado(estado)} max-w-[160px]`} title="Vigente o ya cerrada">
+          <option value="">Estado: todos</option>
           <option value="VIGENTE">Vigente</option>
           <option value="CERRADA">Cerrada</option>
         </select>
-        <select name="firma" defaultValue={firma} className={`${inputCls} max-w-[180px]`}>
-          <option value="">Firmadas y sin firmar</option>
-          <option value="sin">Solo sin firmar</option>
-          <option value="con">Solo firmadas</option>
-        </select>
-        <select name="orden" defaultValue={orden} className={`${inputCls} max-w-[230px]`}>
-          <option value="recientes">Más recientes primero</option>
-          <option value="antiguas">Más antiguas primero</option>
-          <option value="emp_asc">No. de empleado (menor a mayor)</option>
-          <option value="emp_desc">No. de empleado (mayor a menor)</option>
+        <select key={`firma-${firma}`} name="firma" defaultValue={firma} className={`${marcado(firma)} max-w-[170px]`} title="Si ya se subió el escaneo firmado">
+          <option value="">Firma: todas</option>
+          <option value="sin">Sin firmar</option>
+          <option value="con">Firmadas</option>
         </select>
         <button type="submit" className="sr-only">
           Filtrar
@@ -192,88 +193,41 @@ export default async function PaginaResponsivas({
         </div>
       </FiltrosAuto>
 
-      {responsivas.length === 0 ? (
+      <div className="mb-5 mt-2 flex flex-wrap items-center gap-2 text-xs text-soft">
+        {puestos.length ? (
+          <>
+            <span>Filtrando por:</span>
+            {puestos.map((p) => (
+              <Link
+                key={p.etiqueta}
+                href={p.sin}
+                title="Quitar este filtro"
+                className="inline-flex items-center gap-1 rounded-full border border-kraft bg-kraft/10 px-2.5 py-0.5 font-semibold text-ink hover:bg-kraft/20"
+              >
+                {p.etiqueta} <span className="text-soft">✕</span>
+              </Link>
+            ))}
+            <Link href={verPartidas ? "/responsivas?partidas=1" : "/responsivas"} className="underline hover:text-ink">
+              Quitar todos
+            </Link>
+          </>
+        ) : (
+          <span>
+            Los desplegables se aplican solos. También puedes pulsar el título de una columna: <b>Tipo</b>, <b>Carta</b>,{" "}
+            <b>Estado</b> y <b>Firma</b> filtran la lista; los demás la ordenan.
+          </span>
+        )}
+      </div>
+
+      {/* La tabla se queda aunque el filtro no deje nada: si desapareciera, el
+          título de la columna con el que se filtró ya no se podría volver a
+          pulsar para quitarlo. */}
+      {total === 0 ? (
         <Empty>Todavía no hay responsivas. Genera la primera con “Nueva responsiva”.</Empty>
       ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[840px] border-collapse">
-            <thead className="border-b border-line bg-paper/70">
-              <tr>
-                <th className={thCls}>Folio</th>
-                <th className={thCls}>Tipo</th>
-                <th className={thCls}>No.</th>
-                <th className={thCls}>Empleado</th>
-                <th className={thCls}>Equipos</th>
-                <th className={thCls}>Fecha</th>
-                <th className={thCls}>Estado</th>
-                <th className={thCls}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {responsivas.map((r) => (
-                <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
-                  <td className={`${tdCls} mono text-xs font-semibold`}>{r.folio}</td>
-                  <td className={tdCls}>
-                    <div className="flex flex-wrap items-center gap-1">
-                      {r.tipo === "ASIGNACION" ? <Badge tono="petrol">Asignación</Badge> : <Badge tono="kraft">Devolución</Badge>}
-                      {r.origen === "CARGADA" ? <Badge tono="ambar">Cargada</Badge> : null}
-                      {(r.es_duplicado ?? 0) > 0 ? <Badge tono="rojo">Posible duplicado</Badge> : null}
-                      {faltaFirma(r) ? <Badge tono="rojo">Sin firmar</Badge> : null}
-                    </div>
-                    <div className="mt-1 text-[11px] text-soft">{ETIQUETA_CLASE[r.clase] ?? r.clase}</div>
-                  </td>
-                  <td className={`${tdCls} mono text-xs`}>{r.empleado_numero}</td>
-                  <td className={`${tdCls} font-medium`}>
-                    <Link href={`/empleados/${r.empleado_id}`} className="text-ink hover:text-kraft hover:underline" title="Ver histórico">
-                      {r.empleado_nombre}
-                    </Link>
-                  </td>
-                  <td className={`${tdCls} mono text-xs`}>{r.equipos ?? "—"}</td>
-                  <td className={tdCls}>{fechaCorta(r.fecha)}</td>
-                  <td className={tdCls}>
-                    {r.tipo === "DEVOLUCION" ? (
-                      <span className="text-soft">—</span>
-                    ) : r.estado === "VIGENTE" ? (
-                      <Badge tono="verde">Vigente</Badge>
-                    ) : (
-                      <Badge tono="gris">Cerrada</Badge>
-                    )}
-                  </td>
-                  <td className={tdCls}>
-                    <div className="flex flex-wrap gap-1.5">
-                      {r.pdf_path || r.pdf_firmado ? (
-                        <VerPdfBtn
-                          id={r.id}
-                          folio={r.folio}
-                          className={btnGhost}
-                          subtitulo={`${r.empleado_numero} ${r.empleado_nombre} · ${fechaCorta(r.fecha)}`}
-                        />
-                      ) : null}
-                      {faltaFirma(r) ? (
-                        <>
-                          <a href={`/api/pdf/${r.id}?original=1`} target="_blank" className={btnGhost}>
-                            Imprimir
-                          </a>
-                          <SubirFirmadaBtn responsivaId={r.id} folio={r.folio} className={btnGhost} />
-                        </>
-                      ) : null}
-                      <EditarClaseBtn id={r.id} folio={r.folio} clase={r.clase} tipo={r.tipo} />
-                      <CorregirResponsivaBtn id={r.id} folio={r.folio} tipo={r.tipo} />
-                      <RegenerarResponsivaBtn id={r.id} folio={r.folio} origen={r.origen} firmada={!!r.pdf_firmado} />
-                      {r.tipo === "ASIGNACION" && r.estado === "VIGENTE" && r.clase !== "WIFI" && r.clase !== "VALE" ? (
-                        <Link href={`/responsivas/${r.id}/devolucion`} className={btnGhost}>
-                          Registrar devolución
-                        </Link>
-                      ) : null}
-                      <EliminarResponsivaBtn id={r.id} folio={r.folio} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <ResponsivasClient responsivas={responsivas} />
       )}
+
     </>
   );
 }

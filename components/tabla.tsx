@@ -24,6 +24,11 @@ export type ColumnaTabla = {
    * siguiente valor de esta lista.
    */
   valores?: string[];
+  /**
+   * La columna filtra en vez de ordenar: el clic lo atiende quien la usa,
+   * normalmente cambiando la dirección para dejar solo esos renglones.
+   */
+  filtra?: boolean;
   /** Alineación del contenido; solo cambia el título. */
   fin?: boolean;
 };
@@ -161,12 +166,18 @@ export function EncabezadoTabla({
   orden,
   onOrdenar,
   onArrastrar,
+  marcas = {},
+  titulos = {},
 }: {
   columnas: ColumnaTabla[];
   anchos: number[];
   orden: Orden;
   onOrdenar: (c: ColumnaTabla) => void;
   onArrastrar: (i: number) => (ev: React.MouseEvent) => void;
+  /** Texto a un lado del título en las columnas que filtran: el filtro puesto. */
+  marcas?: Record<string, string>;
+  /** Lo que se lee al pasar el mouse; sustituye al texto de siempre. */
+  titulos?: Record<string, string>;
 }) {
   return (
     <>
@@ -178,27 +189,41 @@ export function EncabezadoTabla({
       <thead className="border-b border-line bg-paper/70">
         <tr>
           {columnas.map((c, i) => {
-            const activa = orden?.clave === c.clave;
-            const marca = !activa
-              ? ""
-              : c.valores?.length
-                ? ` · ${c.valores[orden.paso]}`
-                : orden.dir === 1
-                  ? " ↑"
-                  : " ↓";
+            const filtrada = c.filtra && !!marcas[c.clave];
+            const activa = filtrada || orden?.clave === c.clave;
+            // El orden se marca junto al título; el filtro puesto va debajo,
+            // que en una columna angosta no cabe en el mismo renglón.
+            const marca =
+              c.filtra || orden?.clave !== c.clave
+                ? ""
+                : c.valores?.length
+                  ? ` · ${c.valores[orden.paso]}`
+                  : orden.dir === 1
+                    ? " ↑"
+                    : " ↓";
             return (
               <th
                 key={c.clave}
-                className={`relative select-none px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide ${
+                className={`relative select-none overflow-hidden px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide ${
                   activa ? "text-kraft-dark" : "text-soft"
                 } ${c.ordenable === false ? "" : "cursor-pointer hover:text-ink"}`}
                 onClick={() => onOrdenar(c)}
-                title={c.ordenable === false ? undefined : "Ordenar por esta columna"}
+                title={
+                  c.ordenable === false
+                    ? undefined
+                    : (titulos[c.clave] ?? (c.filtra ? "Pulsa para filtrar por esta columna" : "Ordenar por esta columna"))
+                }
               >
-                <span className="truncate">
+                <span className="block truncate">
                   {c.etiqueta}
                   {marca}
+                  {c.filtra ? <span className="ml-1">▾</span> : null}
                 </span>
+                {filtrada ? (
+                  <span className="mt-0.5 block truncate text-[10px] font-semibold normal-case text-kraft-dark">
+                    {marcas[c.clave]}
+                  </span>
+                ) : null}
                 {i < columnas.length - 1 ? (
                   <span
                     onMouseDown={onArrastrar(i)}

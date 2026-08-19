@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 
 /**
  * Formulario de filtros que se aplica solo.
@@ -19,6 +20,7 @@ export default function FiltrosAuto({
   className?: string;
   retraso?: number;
 }) {
+  const router = useRouter();
   const form = useRef<HTMLFormElement>(null);
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -31,6 +33,19 @@ export default function FiltrosAuto({
       ref={form}
       method="get"
       className={className}
+      onSubmit={(ev) => {
+        // Se arma la dirección a mano para que los filtros vacíos no queden
+        // colgando en la barra como "?tipo=&clase=".
+        ev.preventDefault();
+        const datos = new FormData(ev.currentTarget);
+        const params = new URLSearchParams();
+        for (const [nombre, valor] of datos.entries()) {
+          const limpio = String(valor).trim();
+          if (limpio) params.set(nombre, limpio);
+        }
+        const cadena = params.toString();
+        router.push(cadena ? `${window.location.pathname}?${cadena}` : window.location.pathname);
+      }}
       onChange={(ev) => {
         const destino = ev.target as HTMLElement;
         // Los desplegables y las casillas se aplican en cuanto se tocan.

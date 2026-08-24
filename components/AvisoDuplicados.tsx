@@ -76,6 +76,9 @@ export default function AvisoDuplicados({
           registro (se queda el más completo, con sus responsivas) y el sobrante desaparece.
         </span>
         <div className="flex items-center gap-2">
+          <a href="/inventario/duplicados" className={btnGhost}>
+            Revisarlos uno por uno
+          </a>
           <a href={soloDup ? "/inventario" : "/inventario?dup=1"} className={btnGhost}>
             {soloDup ? "Ver todo el inventario" : "Ver solo duplicados"}
           </a>

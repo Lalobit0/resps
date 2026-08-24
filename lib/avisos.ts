@@ -107,9 +107,9 @@ export function recolectarAvisos(): Aviso[] {
       clave: "duplicados",
       total: totalDup,
       titulo: `${totalDup} equipo(s) con datos repetidos`,
-      detalle: "Casi siempre es el mismo aparato capturado dos veces.",
-      href: "/inventario?dup=1",
-      etiquetaAccion: "Revisarlos",
+      detalle: "Casi siempre es el mismo aparato capturado dos veces. Se comparan uno junto al otro y se unen.",
+      href: "/inventario/duplicados",
+      etiquetaAccion: "Revisarlos y unirlos",
       tono: "ambar",
     });
   }

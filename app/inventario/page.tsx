@@ -1,6 +1,6 @@
 import { db } from "../../lib/db";
 import type { Empleado, EquipoConAsignado } from "../../lib/types";
-import { ETIQUETA_ESTADO, ETIQUETA_TIPO, TIPOS_EQUIPO } from "../../lib/constants";
+import { ETIQUETA_ESTADO } from "../../lib/constants";
 import { detectarDuplicados, CAMPOS_BLOQUEANTES, type EquipoRevisable } from "../../lib/duplicados";
 import { idsSinResponsiva, equiposPorLigar } from "../../lib/pendientes";
 import InventarioClient, { type ResponsivaDeEquipo } from "../../components/InventarioClient";
@@ -44,15 +44,13 @@ export default async function PaginaInventario({
   };
   const orderBy = ORDENES[orden] ?? ORDENES.codigo;
 
+  // El tipo no entra en el SQL: la sección se aplica al final, después de
+  // contar cuántos equipos quedan en cada una con los demás filtros puestos.
   const condiciones: string[] = [];
   const valores: (string | number)[] = [];
   if (estado) {
     condiciones.push("e.estado = ?");
     valores.push(estado);
-  }
-  if (tipo) {
-    condiciones.push("e.tipo = ?");
-    valores.push(tipo);
   }
   if (q) {
     // También se busca por IMEI y número de línea: son los datos con los que
@@ -124,6 +122,33 @@ export default async function PaginaInventario({
   if (resp === "sin") equipos = equipos.filter((e) => sinResponsiva.has(e.id));
   if (resp === "con") equipos = equipos.filter((e) => !sinResponsiva.has(e.id));
 
+  // Cuántos hay en cada sección con lo que está filtrado ahora mismo: así el
+  // número del botón dice qué se va a encontrar al entrar, no el total del año.
+  const porTipo: Record<string, number> = {};
+  for (const e of equipos) porTipo[e.tipo] = (porTipo[e.tipo] ?? 0) + 1;
+  const enSeccion = equipos.length;
+  if (tipo) equipos = equipos.filter((e) => e.tipo === tipo);
+
+  /** Dirección de la lista cambiando de sección sin perder los demás filtros. */
+  const hrefSeccion = (t: string) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ q, estado, resp, tipo: t })) if (v) p.set(k, v);
+    if (soloDup) p.set("dup", "1");
+    if (soloSinResp) p.set("sinresp", "1");
+    if (soloLigar) p.set("ligar", "1");
+    if (verFaltanCel) p.set("faltancel", "1");
+    const cadena = p.toString();
+    return cadena ? `/inventario?${cadena}` : "/inventario";
+  };
+
+  const SECCIONES: { valor: string; etiqueta: string; icono: string }[] = [
+    { valor: "", etiqueta: "Todo el inventario", icono: "📦" },
+    { valor: "COMPUTO", etiqueta: "Equipo de cómputo", icono: "💻" },
+    { valor: "CELULAR", etiqueta: "Celulares", icono: "📱" },
+    { valor: "RADIO", etiqueta: "Radios", icono: "📻" },
+    { valor: "OTRO", etiqueta: "Otros", icono: "🔌" },
+  ];
+
   // Cartas responsivas de cada equipo, para consultarlas desde el inventario.
   const filas = db
     .prepare(
@@ -170,19 +195,36 @@ export default async function PaginaInventario({
 
       {soloDup ? <AvisoDuplicados total={totalDuplicados} desglose={desglose} soloDup={soloDup} /> : null}
 
+      {/* Cada tipo de equipo en su sección: el inventario deja de ser una sola
+          lista con computadoras, teléfonos y radios revueltos. */}
+      <nav className="mb-4 flex flex-wrap gap-1.5 border-b border-line pb-3">
+        {SECCIONES.map((s) => {
+          const cuantos = s.valor ? (porTipo[s.valor] ?? 0) : enSeccion;
+          const activa = tipo === s.valor;
+          return (
+            <a
+              key={s.valor || "todo"}
+              href={hrefSeccion(s.valor)}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                activa
+                  ? "border-kraft bg-kraft/15 text-ink"
+                  : "border-line bg-white text-soft hover:border-kraft/60 hover:text-ink"
+              }`}
+            >
+              <span aria-hidden>{s.icono}</span>
+              {s.etiqueta}
+              <span className={`mono text-xs ${activa ? "text-kraft-dark" : "text-soft"}`}>{cuantos}</span>
+            </a>
+          );
+        })}
+      </nav>
+
       <FiltrosAuto className="mb-5 flex flex-wrap items-end gap-2">
         {soloDup ? <input type="hidden" name="dup" value="1" /> : null}
         {soloSinResp ? <input type="hidden" name="sinresp" value="1" /> : null}
         {soloLigar ? <input type="hidden" name="ligar" value="1" /> : null}
         <input name="q" defaultValue={q} placeholder="Buscar código, marca, serie, IMEI, línea, nombre de equipo, asignado…" className={`${inputCls} max-w-xs`} />
-        <select name="tipo" defaultValue={tipo} className={`${inputCls} max-w-[190px]`}>
-          <option value="">Todos los tipos</option>
-          {TIPOS_EQUIPO.map((t) => (
-            <option key={t} value={t}>
-              {ETIQUETA_TIPO[t]}
-            </option>
-          ))}
-        </select>
+        {tipo ? <input type="hidden" name="tipo" value={tipo} /> : null}
         <select name="estado" defaultValue={estado} className={`${inputCls} max-w-[190px]`}>
           <option value="">Todos los estados</option>
           {Object.entries(ETIQUETA_ESTADO).map(([valor, etiqueta]) => (
@@ -207,6 +249,7 @@ export default async function PaginaInventario({
 
       <InventarioClient
         equipos={equipos}
+        seccion={tipo}
         duplicados={duplicados}
         sinResponsiva={[...sinResponsiva]}
         responsivas={responsivas}

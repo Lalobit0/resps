@@ -32,6 +32,18 @@ const COLUMNAS: ColumnaTabla[] = [
   { clave: "acciones", etiqueta: "Acciones", ancho: 15, ordenable: false },
 ];
 
+/**
+ * Dentro de una sección todos los equipos son del mismo tipo, así que esa
+ * columna no dice nada: se quita y su espacio se lo queda la del equipo.
+ */
+function columnasPara(seccion: string): ColumnaTabla[] {
+  if (!seccion) return COLUMNAS;
+  const tipo = COLUMNAS.find((c) => c.clave === "tipo");
+  return COLUMNAS.filter((c) => c.clave !== "tipo").map((c) =>
+    c.clave === "equipo" ? { ...c, ancho: c.ancho + (tipo?.ancho ?? 0) } : c
+  );
+}
+
 const tdc = "px-2 py-1.5 text-sm text-ink align-middle";
 const thc = "px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-soft whitespace-nowrap";
 const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
@@ -117,6 +129,7 @@ function formDeEquipo(e: EquipoConAsignado): Formulario {
 
 export default function InventarioClient({
   equipos,
+  seccion = "",
   duplicados = {},
   sinResponsiva = [],
   responsivas = {},
@@ -125,6 +138,8 @@ export default function InventarioClient({
   porLigar = {},
 }: {
   equipos: EquipoConAsignado[];
+  /** Tipo de equipo de la sección abierta; vacío = todo el inventario. */
+  seccion?: string;
   duplicados?: Record<number, Conflicto[]>;
   sinResponsiva?: number[];
   responsivas?: Record<number, ResponsivaDeEquipo[]>;
@@ -134,7 +149,12 @@ export default function InventarioClient({
   porLigar?: Record<number, { empleado_numero: string; empleado_nombre: string; folio: string }>;
 }) {
   const faltaResponsiva = new Set(sinResponsiva);
-  const { anchos, orden, empezarArrastre, alternarOrden } = useTabla("inventario", COLUMNAS);
+  const columnas = columnasPara(seccion);
+  // Cada juego de columnas recuerda sus anchos por separado.
+  const { anchos, orden, empezarArrastre, alternarOrden } = useTabla(
+    seccion ? "inventario-seccion" : "inventario",
+    columnas
+  );
 
   /**
    * Lo que se compara en cada columna al ordenar. "Sin responsiva" cuenta como
@@ -163,7 +183,7 @@ export default function InventarioClient({
     }
   };
 
-  const ordenados = ordenarFilas(equipos, orden, COLUMNAS, valorColumna);
+  const ordenados = ordenarFilas(equipos, orden, columnas, valorColumna);
 
   // Con ?editar=<id> el formulario se abre solo: así se puede editar un equipo
   // desde la ficha del empleado sin tener que buscarlo aquí.
@@ -411,7 +431,7 @@ export default function InventarioClient({
         <Card className="p-0">
           <table className="w-full table-fixed border-collapse" data-tabla="inventario">
             <EncabezadoTabla
-              columnas={COLUMNAS}
+              columnas={columnas}
               anchos={anchos}
               orden={orden}
               onOrdenar={alternarOrden}
@@ -426,17 +446,18 @@ export default function InventarioClient({
                         {e.codigo}
                       </span>
                       {duplicados[e.id] ? (
-                        <span
-                          className="shrink-0 cursor-help text-amber-600"
-                          title={textoConflictos(duplicados[e.id])}
-                          aria-label="Datos repetidos"
+                        <Link
+                          href="/inventario/duplicados"
+                          className="shrink-0 text-amber-600 hover:text-amber-800"
+                          title={`${textoConflictos(duplicados[e.id])}\n\nPúlsalo para revisarlo y unirlo.`}
+                          aria-label="Datos repetidos: ir a la revisión"
                         >
                           ⚠️
-                        </span>
+                        </Link>
                       ) : null}
                     </div>
                   </td>
-                  <td className={`${tdc} truncate text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
+                  {seccion ? null : <td className={`${tdc} truncate text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>}
                   <td className={`${tdc} truncate`} title={`${e.marca} ${e.modelo}${e.specs ? " · " + e.specs : ""}`}>
                     <div className="truncate font-medium">
                       {e.marca} {e.modelo}
@@ -627,6 +648,11 @@ function DetalleEquipo({
                 </li>
               ))}
             </ul>
+            <p className="mt-2">
+              <Link href="/inventario/duplicados" className={btnGhost}>
+                Revisarlo y unirlo →
+              </Link>
+            </p>
           </div>
         ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

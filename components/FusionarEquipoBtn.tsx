@@ -7,6 +7,7 @@ import {
   camposFusion,
   candidatosFusion,
   fusionarEquiposManual,
+  parejaFusion,
   type CampoFusion,
   type EquipoFusionable,
 } from "../app/inventario/actions";
@@ -22,11 +23,14 @@ import { Badge, btnGhost, btnPrimary, inputCls } from "./ui";
 export default function FusionarEquipoBtn({
   equipoId,
   codigo,
+  parejaId,
   className,
   etiqueta = "Fusionar",
 }: {
   equipoId: number;
   codigo: string;
+  /** Con quién se une, cuando ya se sabe: se abre directo en la comparación. */
+  parejaId?: number;
   className?: string;
   etiqueta?: string;
 }) {
@@ -53,6 +57,17 @@ export default function FusionarEquipoBtn({
     setPareja(null);
     setCampos(null);
     iniciar(async () => {
+      // Desde la revisión de duplicados el par ya viene dado: no hay nada que
+      // elegir, así que se entra derecho a comparar los datos.
+      if (parejaId) {
+        const res = await parejaFusion(equipoId, parejaId);
+        if (res.ok && res.base && res.pareja) {
+          setBase(res.base);
+          setCandidatos([]);
+          compararCon(res.base, res.pareja);
+        } else setError(res.error ?? "No se pudieron cargar los dos equipos.");
+        return;
+      }
       const res = await candidatosFusion(equipoId);
       if (res.ok) {
         setBase(res.base ?? null);
@@ -61,28 +76,34 @@ export default function FusionarEquipoBtn({
     });
   };
 
-  const elegirPareja = (c: EquipoFusionable) => {
+  /** Trae los campos de los dos y decide qué gana de entrada en cada uno. */
+  const compararCon = async (elBase: EquipoFusionable, c: EquipoFusionable) => {
     setPareja(c);
-    setError("");
     setCampos(null);
-    iniciar(async () => {
-      const res = await camposFusion(equipoId, c.id);
-      if (res.ok && res.campos) {
-        setCampos(res.campos);
-        // De entrada gana el dato que tenga algo escrito; si los dos traen algo,
-        // se queda el del registro más completo, que suele ser el del escaneo.
-        const masCompleto: "a" | "b" = (base?.llenos ?? 0) >= c.llenos ? "a" : "b";
-        const inicial: Record<string, "a" | "b"> = {};
-        for (const f of res.campos) {
-          const ta = f.a.trim();
-          const tb = f.b.trim();
-          inicial[`${f.donde}:${f.clave}`] = !ta && tb ? "b" : !tb && ta ? "a" : masCompleto;
-        }
-        setLado(inicial);
-        // Conservar el registro que trae la responsiva: así no se pierde el papel.
-        setConservar((base?.responsivas.length ?? 0) >= c.responsivas.length ? "a" : "b");
-      } else setError(res.error ?? "No se pudieron comparar.");
-    });
+    const res = await camposFusion(elBase.id, c.id);
+    if (!res.ok || !res.campos) {
+      setError(res.error ?? "No se pudieron comparar.");
+      return;
+    }
+    setCampos(res.campos);
+    // De entrada gana el dato que tenga algo escrito; si los dos traen algo,
+    // se queda el del registro más completo, que suele ser el del escaneo.
+    const masCompleto: "a" | "b" = elBase.llenos >= c.llenos ? "a" : "b";
+    const inicial: Record<string, "a" | "b"> = {};
+    for (const f of res.campos) {
+      const ta = f.a.trim();
+      const tb = f.b.trim();
+      inicial[`${f.donde}:${f.clave}`] = !ta && tb ? "b" : !tb && ta ? "a" : masCompleto;
+    }
+    setLado(inicial);
+    // Conservar el registro que trae la responsiva: así no se pierde el papel.
+    setConservar(elBase.responsivas.length >= c.responsivas.length ? "a" : "b");
+  };
+
+  const elegirPareja = (c: EquipoFusionable) => {
+    setError("");
+    if (!base) return;
+    iniciar(() => compararCon(base, c));
   };
 
   const aplicarTodo = (cual: "a" | "b") => {
@@ -404,9 +425,11 @@ export default function FusionarEquipoBtn({
                       <button className={btnPrimary} onClick={guardar} disabled={pendiente}>
                         {pendiente ? "Uniendo…" : "Unir los dos registros"}
                       </button>
-                      <button className={btnGhost} onClick={() => setPareja(null)} disabled={pendiente}>
-                        ← Elegir otro
-                      </button>
+                      {parejaId ? null : (
+                        <button className={btnGhost} onClick={() => setPareja(null)} disabled={pendiente}>
+                          ← Elegir otro
+                        </button>
+                      )}
                     </div>
                   </>
                 ) : (

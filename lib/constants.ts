@@ -73,6 +73,25 @@ export const TIPO_DEFAULTS: Record<TipoEquipo, { categoria: string; prefijo: str
 export type OpcionCampo = { valor: string; etiqueta: string };
 export type CampoDetalle = { clave: string; etiqueta: string; opciones?: OpcionCampo[]; permitirOtro?: boolean };
 
+/**
+ * Cómo está clasificado el equipo, que no es lo mismo que qué aparato es.
+ * Una computadora puede ser administrativa, de piso de producción o de una
+ * sala de juntas, y se compra, se revisa y se reemplaza distinto en cada caso.
+ * La lista admite escribir otra: cada empresa nombra sus áreas a su manera.
+ */
+export const CLASIFICACIONES_EQUIPO: OpcionCampo[] = [
+  { valor: "ADMINISTRATIVO", etiqueta: "Administrativo" },
+  { valor: "PRODUCCION", etiqueta: "Producción" },
+  { valor: "SALA", etiqueta: "Sala de juntas" },
+  { valor: "GERENCIAL", etiqueta: "Gerencial / Dirección" },
+  { valor: "COMPARTIDO", etiqueta: "Compartido / Uso común" },
+];
+
+export const ETIQUETA_CLASIFICACION: Record<string, string> = Object.fromEntries(
+  CLASIFICACIONES_EQUIPO.map((c) => [c.valor, c.etiqueta])
+);
+
+
 const lista = (valores: string[]): OpcionCampo[] => valores.map((v) => ({ valor: v, etiqueta: v }));
 
 // Marcas de equipo de cómputo (con opción de escribir otra).

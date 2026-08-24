@@ -284,6 +284,8 @@ function migrar(db: Database.Database) {
   // dueño se va, el aparato sigue siendo de Contabilidad y ahí se reasigna.
   agregarColumna(db, "equipos", "departamento", "TEXT");
   agregarColumna(db, "equipos", "area", "TEXT");
+  // Cómo está clasificado el aparato: administrativo, de producción, de sala…
+  agregarColumna(db, "equipos", "clasificacion", "TEXT");
   // Baja del empleado: cuándo dejó la empresa y por qué.
   agregarColumna(db, "empleados", "fecha_baja", "TEXT");
   agregarColumna(db, "empleados", "motivo_baja", "TEXT");

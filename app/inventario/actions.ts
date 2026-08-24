@@ -10,6 +10,7 @@ import { leerEscaneo } from "../../lib/escaneo";
 import { CAMPOS_BLOQUEANTES, conflictosContra, detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
 import { fusionarInventario } from "../../lib/fusionar.mjs";
 import { equiposPorLigar, idsSinResponsiva } from "../../lib/pendientes";
+import { anotarMovimiento } from "../../lib/historial";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -87,6 +88,11 @@ export async function guardarEquipo(datos: {
   estado: string;
   notas: string;
   detalles: Record<string, string>;
+  /** Área a la que pertenece el aparato, aunque no lo tenga nadie. */
+  departamento?: string;
+  area?: string;
+  /** Administrativo, producción, sala… */
+  clasificacion?: string;
   /** Empleado al que se le entrega. null = queda libre. */
   asignado_a?: number | null;
 }): Promise<ResultadoAccion> {
@@ -182,7 +188,7 @@ export async function guardarEquipo(datos: {
       if (dup) return { ok: false, error: `Ya existe un equipo con el código ${codigo}.` };
 
       db.prepare(
-        `UPDATE equipos SET codigo=?, tipo=?, categoria=?, marca=?, modelo=?, numero_serie=?, specs=?, detalles=?, fecha_compra=?, costo=?, estado=?, asignado_a=?, notas=? WHERE id=?`
+        `UPDATE equipos SET codigo=?, tipo=?, categoria=?, marca=?, modelo=?, numero_serie=?, specs=?, detalles=?, fecha_compra=?, costo=?, estado=?, asignado_a=?, departamento=?, area=?, clasificacion=?, notas=? WHERE id=?`
       ).run(
         codigo,
         tipo,
@@ -196,6 +202,9 @@ export async function guardarEquipo(datos: {
         costo,
         estadoFinal,
         asignadoFinal,
+        (datos.departamento ?? actual.departamento ?? "").trim() || null,
+        (datos.area ?? actual.area ?? "").trim() || null,
+        (datos.clasificacion ?? actual.clasificacion ?? "").trim() || null,
         datos.notas.trim() || null,
         datos.id
       );
@@ -211,7 +220,7 @@ export async function guardarEquipo(datos: {
       }
       const info = db
         .prepare(
-          "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, estado, notas, asignado_a) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, estado, notas, asignado_a, departamento, area, clasificacion) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         )
         .run(
           codigo,
@@ -226,7 +235,10 @@ export async function guardarEquipo(datos: {
           costo,
           nuevoAsignado ? "ASIGNADO" : estadoLibre,
           datos.notas.trim() || null,
-          nuevoAsignado
+          nuevoAsignado,
+          (datos.departamento ?? "").trim() || null,
+          (datos.area ?? "").trim() || null,
+          (datos.clasificacion ?? "").trim() || null
         );
       revalidar();
       return { ok: true, id: Number(info.lastInsertRowid) };
@@ -1338,5 +1350,82 @@ export async function reabrirDuplicado(campo: string, valor: string): Promise<Re
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo devolver a la lista." };
+  }
+}
+
+// ---------- Ubicar equipos por área ----------
+
+/**
+ * Pone área y clasificación a varios equipos de una vez.
+ *
+ * Es lo que hace falta después de importar: 120 aparatos sin área, y editarlos
+ * uno por uno no es trabajo de nadie. Solo toca lo que se manda; lo que venga
+ * vacío se queda como estaba.
+ */
+export async function ubicarEquipos(
+  cambios: { id: number; departamento?: string; area?: string; clasificacion?: string }[]
+): Promise<ResultadoAccion> {
+  try {
+    const utiles = (cambios ?? []).filter(
+      (c) => Number.isFinite(c.id) && ((c.departamento ?? "").trim() || (c.area ?? "").trim() || (c.clasificacion ?? "").trim())
+    );
+    if (!utiles.length) return { ok: false, error: "No hay nada que guardar: llena al menos un área o una clasificación." };
+
+    const antes = new Map<number, Equipo>();
+    for (const c of utiles) {
+      const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(c.id) as Equipo | undefined;
+      if (eq) antes.set(c.id, eq);
+    }
+
+    const aplicar = db.transaction(() => {
+      for (const c of utiles) {
+        const eq = antes.get(c.id);
+        if (!eq) continue;
+        const depto = (c.departamento ?? "").trim();
+        const area = (c.area ?? "").trim();
+        const clase = (c.clasificacion ?? "").trim();
+        db.prepare(
+          `UPDATE equipos SET departamento = COALESCE(NULLIF(?,''), departamento),
+                              area = COALESCE(NULLIF(?,''), area),
+                              clasificacion = COALESCE(NULLIF(?,''), clasificacion)
+           WHERE id = ?`
+        ).run(depto, area, clase, c.id);
+      }
+    });
+    aplicar();
+
+    for (const c of utiles) {
+      const eq = antes.get(c.id);
+      if (!eq) continue;
+      const depto = (c.departamento ?? "").trim();
+      if (depto && depto !== (eq.departamento ?? "")) {
+        anotarMovimiento({
+          equipoId: c.id,
+          accion: "AREA",
+          departamento: depto,
+          area: (c.area ?? "").trim() || depto,
+          detalle: eq.departamento ? `Pasó de ${eq.departamento} a ${depto}` : `Se ubicó en ${depto}`,
+        });
+      }
+    }
+
+    db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+      "UBICAR_EQUIPOS",
+      `Se ubicaron ${utiles.length} equipo(s) por área o clasificación.`,
+      JSON.stringify(
+        utiles.map((c) => ({
+          codigo: antes.get(c.id)?.codigo,
+          antes: { departamento: antes.get(c.id)?.departamento, area: antes.get(c.id)?.area, clasificacion: antes.get(c.id)?.clasificacion },
+          ahora: { departamento: c.departamento, area: c.area, clasificacion: c.clasificacion },
+        }))
+      )
+    );
+
+    revalidar();
+    revalidatePath("/inventario/ubicar");
+    return { ok: true, mensaje: `${utiles.length} equipo(s) quedaron ubicados.` };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudieron ubicar: ${e instanceof Error ? e.message : String(e)}` };
   }
 }

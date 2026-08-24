@@ -126,6 +126,25 @@ CREATE TABLE IF NOT EXISTS bitacora (
   revertida INTEGER NOT NULL DEFAULT 0
 );
 
+-- Por dónde ha pasado cada equipo: quién lo tuvo, cuándo se liberó, a qué
+-- área pertenecía. Las responsivas cuentan la parte firmada de la historia;
+-- esto guarda los movimientos que no generan papel.
+CREATE TABLE IF NOT EXISTS equipo_historial (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  equipo_id INTEGER NOT NULL REFERENCES equipos(id) ON DELETE CASCADE,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  accion TEXT NOT NULL,
+  empleado_id INTEGER,
+  -- El nombre se congela: si el empleado se borra, el histórico sigue diciendo
+  -- quién lo tenía.
+  empleado_texto TEXT,
+  departamento TEXT,
+  area TEXT,
+  detalle TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_equipo_historial ON equipo_historial (equipo_id, fecha);
+
 -- Grupos de datos repetidos que ya se revisaron y resultaron no ser el mismo
 -- aparato. Sin esto, los repetidos legítimos vuelven a salir en cada visita.
 CREATE TABLE IF NOT EXISTS duplicados_revisados (
@@ -261,8 +280,21 @@ function migrar(db: Database.Database) {
   // Tanda en la que se generó de golpe, para reimprimirla completa y para
   // repartir después el escaneo de las cartas firmadas página por página.
   agregarColumna(db, "responsivas", "lote", "TEXT");
+  // El área a la que pertenece el equipo, aparte de quién lo tenga. Cuando el
+  // dueño se va, el aparato sigue siendo de Contabilidad y ahí se reasigna.
+  agregarColumna(db, "equipos", "departamento", "TEXT");
+  agregarColumna(db, "equipos", "area", "TEXT");
+  // Baja del empleado: cuándo dejó la empresa y por qué.
+  agregarColumna(db, "empleados", "fecha_baja", "TEXT");
+  agregarColumna(db, "empleados", "motivo_baja", "TEXT");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
+  // A los equipos que ya están entregados se les copia el área de su dueño:
+  // así el dato existe desde el primer arranque y no solo hacia adelante.
+  db.exec(`UPDATE equipos SET
+             departamento = COALESCE(departamento, (SELECT em.departamento FROM empleados em WHERE em.id = equipos.asignado_a)),
+             area = COALESCE(area, (SELECT em.area FROM empleados em WHERE em.id = equipos.asignado_a))
+           WHERE asignado_a IS NOT NULL AND (departamento IS NULL OR area IS NULL)`);
 }
 
 function seed(db: Database.Database) {

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "../../lib/db";
 import { importarDeExcel, serialExcelAISO, type Mapeo } from "../../lib/importar";
 import { guardarEquipo } from "../inventario/actions";
+import { anotarMovimiento } from "../../lib/historial";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
 
 function revalidar() {
@@ -141,28 +142,6 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
   }
 }
 
-export type DatosBaja = {
-  equipos: { id: number; codigo: string; tipo: string; marca: string; modelo: string }[];
-  responsivas: { id: number; folio: string; clase: string; equipos: string | null }[];
-};
-
-/** Equipos asignados y responsivas vigentes de un empleado, para guiar su baja. */
-export async function datosBajaEmpleado(id: number): Promise<DatosBaja> {
-  const equipos = db
-    .prepare("SELECT id, codigo, tipo, marca, modelo FROM equipos WHERE asignado_a = ? ORDER BY tipo, codigo")
-    .all(id) as DatosBaja["equipos"];
-  const responsivas = db
-    .prepare(
-      `SELECT r.id, r.folio, r.clase,
-        (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
-       FROM responsivas r
-       WHERE r.empleado_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE' AND r.clase NOT IN ('WIFI','VALE')
-       ORDER BY r.id DESC`
-    )
-    .all(id) as DatosBaja["responsivas"];
-  return { equipos, responsivas };
-}
-
 export async function cambiarActivoEmpleado(id: number, activo: boolean): Promise<ResultadoAccion> {
   try {
     if (!activo) {
@@ -228,12 +207,23 @@ export async function asignarEquipo(empleadoId: number, equipoId: number): Promi
       };
     }
 
-    db.prepare("UPDATE equipos SET estado = 'ASIGNADO', asignado_a = ? WHERE id = ?").run(empleadoId, equipoId);
+    // El equipo se queda con el área de quien lo recibe: cuando esa persona se
+    // vaya, el aparato sigue perteneciendo a esa área y ahí se reasigna.
+    const area = db.prepare("SELECT departamento, area FROM empleados WHERE id = ?").get(empleadoId) as
+      | { departamento: string | null; area: string | null }
+      | undefined;
+    db.prepare("UPDATE equipos SET estado = 'ASIGNADO', asignado_a = ?, departamento = ?, area = ? WHERE id = ?").run(
+      empleadoId,
+      area?.departamento ?? null,
+      area?.area ?? null,
+      equipoId
+    );
     db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
       "ASIGNAR_EQUIPO",
       `${eq.codigo} (${eq.marca} ${eq.modelo}) se asignó a ${emp.numero_empleado} ${emp.nombre}`,
       JSON.stringify({ equipo: eq.codigo, empleado: emp.numero_empleado, estado_anterior: eq.estado })
     );
+    anotarMovimiento({ equipoId, accion: "ASIGNADO", empleadoId, detalle: `Entregado a ${emp.numero_empleado} ${emp.nombre}` });
 
     revalidar();
     revalidatePath("/inventario");
@@ -299,12 +289,19 @@ export async function quitarEquipoAEmpleado(equipoId: number): Promise<Resultado
       };
     }
 
+    // Se libera, pero el área NO se borra: el equipo sigue siendo de su área.
     db.prepare("UPDATE equipos SET estado = 'DISPONIBLE', asignado_a = NULL WHERE id = ?").run(equipoId);
     db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
       "QUITAR_EQUIPO",
       `${eq.codigo} (${eq.marca} ${eq.modelo}) se quitó del empleado y volvió al inventario como disponible`,
       JSON.stringify({ equipo: eq.codigo, empleado_anterior: eq.asignado_a })
     );
+    anotarMovimiento({
+      equipoId,
+      accion: "LIBERADO",
+      empleadoId: eq.asignado_a,
+      detalle: "Volvió al inventario como disponible",
+    });
 
     revalidar();
     revalidatePath("/inventario");
@@ -313,5 +310,168 @@ export async function quitarEquipoAEmpleado(equipoId: number): Promise<Resultado
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo quitar el equipo." };
+  }
+}
+
+// ---------- Baja del empleado ----------
+
+export type EquipoEnBaja = {
+  id: number;
+  codigo: string;
+  tipo: string;
+  marca: string;
+  modelo: string;
+  area: string | null;
+  folios: string | null;
+};
+
+export type ResumenBaja = {
+  empleado: string;
+  departamento: string | null;
+  area: string | null;
+  equipos: EquipoEnBaja[];
+  /** Cartas de asignación vigentes que quedarán cerradas. */
+  cartas: { id: number; folio: string; clase: string; equipos: string | null }[];
+};
+
+/** Lo que hay que resolver antes de dar de baja: sus equipos y sus cartas. */
+export async function resumenBajaEmpleado(id: number): Promise<ResumenBaja | null> {
+  const emp = db.prepare("SELECT numero_empleado, nombre, departamento, area FROM empleados WHERE id = ?").get(id) as
+    | { numero_empleado: string; nombre: string; departamento: string | null; area: string | null }
+    | undefined;
+  if (!emp) return null;
+
+  const equipos = db
+    .prepare(
+      `SELECT e.id, e.codigo, e.tipo, e.marca, e.modelo, COALESCE(e.area, e.departamento) AS area,
+              (SELECT GROUP_CONCAT(r.folio, ', ') FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+                WHERE ri.equipo_id = e.id AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE') AS folios
+       FROM equipos e WHERE e.asignado_a = ? ORDER BY e.tipo, e.codigo`
+    )
+    .all(id) as EquipoEnBaja[];
+
+  const cartas = db
+    .prepare(
+      `SELECT r.id, r.folio, r.clase,
+        (SELECT GROUP_CONCAT(e2.codigo, ', ') FROM responsiva_items ri JOIN equipos e2 ON e2.id = ri.equipo_id WHERE ri.responsiva_id = r.id) AS equipos
+       FROM responsivas r
+       WHERE r.empleado_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE'
+       ORDER BY r.id DESC`
+    )
+    .all(id) as ResumenBaja["cartas"];
+
+  return {
+    empleado: `${emp.numero_empleado} ${emp.nombre}`,
+    departamento: emp.departamento,
+    area: emp.area,
+    equipos,
+    cartas,
+  };
+}
+
+/**
+ * Da de baja al empleado y devuelve sus equipos al inventario.
+ *
+ * Es lo que pasa cuando alguien deja la empresa: se recibe lo que traía, el
+ * aparato queda DISPONIBLE para volver a entregarlo —conservando el área a la
+ * que pertenecía, que no se va con la persona— y las cartas de esos equipos se
+ * cierran. Lo que no haya entregado se queda a su nombre y se avisa, para que
+ * quede constancia de que falta.
+ */
+export async function darDeBajaEmpleado(datos: {
+  id: number;
+  fecha: string;
+  motivo: string;
+  /** Equipos que sí entregó. Los demás siguen a su nombre. */
+  recibidos: number[];
+}): Promise<ResultadoAccion> {
+  try {
+    const emp = db.prepare("SELECT * FROM empleados WHERE id = ?").get(datos.id) as
+      | { id: number; numero_empleado: string; nombre: string; departamento: string | null; area: string | null; activo: number }
+      | undefined;
+    if (!emp) return { ok: false, error: "El empleado ya no existe." };
+
+    const fecha = (datos.fecha || "").trim() || new Date().toISOString().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { ok: false, error: "La fecha de baja no es válida." };
+
+    const asignados = db.prepare("SELECT * FROM equipos WHERE asignado_a = ?").all(datos.id) as Equipo[];
+    const recibidos = new Set(datos.recibidos ?? []);
+    const devueltos = asignados.filter((e) => recibidos.has(e.id));
+    const pendientes = asignados.filter((e) => !recibidos.has(e.id));
+    const quien = `${emp.numero_empleado} ${emp.nombre}`;
+
+    const aplicar = db.transaction(() => {
+      for (const eq of devueltos) {
+        // El área se queda con el equipo: sigue siendo de su departamento.
+        db.prepare(
+          `UPDATE equipos SET estado = 'DISPONIBLE', asignado_a = NULL,
+             departamento = COALESCE(departamento, ?), area = COALESCE(area, ?)
+           WHERE id = ?`
+        ).run(emp.departamento ?? null, emp.area ?? null, eq.id);
+
+        // Su carta de asignación deja de estar vigente.
+        db.prepare(
+          `UPDATE responsivas SET estado = 'CERRADA'
+           WHERE tipo = 'ASIGNACION' AND estado = 'VIGENTE' AND empleado_id = ?
+             AND id IN (SELECT responsiva_id FROM responsiva_items WHERE equipo_id = ?)`
+        ).run(datos.id, eq.id);
+      }
+
+      db.prepare("UPDATE empleados SET activo = 0, fecha_baja = ?, motivo_baja = ? WHERE id = ?").run(
+        fecha,
+        datos.motivo.trim() || null,
+        datos.id
+      );
+    });
+    aplicar();
+
+    // El histórico se anota fuera de la transacción: que falle una nota no
+    // debe deshacer la baja.
+    for (const eq of devueltos) {
+      anotarMovimiento({
+        equipoId: eq.id,
+        accion: "BAJA_EMPLEADO",
+        empleadoId: datos.id,
+        departamento: emp.departamento,
+        area: emp.area,
+        fecha,
+        detalle: `${quien} dejó la empresa y entregó el equipo. Queda disponible en ${emp.area || emp.departamento || "su área"}.`,
+      });
+    }
+
+    db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+      "BAJA_EMPLEADO",
+      `${quien} se dio de baja el ${fecha}${datos.motivo.trim() ? ` (${datos.motivo.trim()})` : ""}. ` +
+        `Devolvió ${devueltos.length} equipo(s)${pendientes.length ? `; quedan ${pendientes.length} a su nombre` : ""}.`,
+      JSON.stringify({
+        empleado: quien,
+        fecha,
+        motivo: datos.motivo,
+        devueltos: devueltos.map((e) => e.codigo),
+        pendientes: pendientes.map((e) => e.codigo),
+      })
+    );
+
+    revalidar();
+    revalidatePath("/inventario");
+    revalidatePath(`/empleados/${datos.id}`);
+
+    const donde = emp.area || emp.departamento;
+    return {
+      ok: true,
+      mensaje:
+        `${quien} quedó dado de baja el ${fecha}. ` +
+        (devueltos.length
+          ? `${devueltos.length} equipo(s) volvieron al inventario como disponibles${donde ? ` en ${donde}` : ""}: ${devueltos
+              .map((e) => e.codigo)
+              .join(", ")}. `
+          : "No traía equipos que recibir. ") +
+        (pendientes.length
+          ? `⚠️ Siguen a su nombre ${pendientes.length}: ${pendientes.map((e) => e.codigo).join(", ")}.`
+          : ""),
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudo dar de baja: ${e instanceof Error ? e.message : String(e)}` };
   }
 }

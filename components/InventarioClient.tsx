@@ -182,7 +182,7 @@ export default function InventarioClient({
       case "serie":
         return e.numero_serie ?? "";
       case "area":
-        return e.asignado_area || e.asignado_departamento || "";
+        return e.asignado_area || e.asignado_departamento || e.area || e.departamento || "";
       case "estado":
         return faltaResponsiva.has(e.id) ? "SIN RESPONSIVA" : e.estado;
       case "asignado":
@@ -475,14 +475,26 @@ export default function InventarioClient({
                   <td
                     className={`${tdc} truncate text-xs`}
                     title={
-                      [e.asignado_area, e.asignado_departamento && e.asignado_departamento !== e.asignado_area
-                        ? `Departamento: ${e.asignado_departamento}`
-                        : ""]
+                      [
+                        e.asignado_area || e.area || "",
+                        (e.asignado_departamento || e.departamento) &&
+                        (e.asignado_departamento || e.departamento) !== (e.asignado_area || e.area)
+                          ? `Departamento: ${e.asignado_departamento || e.departamento}`
+                          : "",
+                        // El área del equipo se queda aunque su dueño se haya ido.
+                        !e.asignado_a && (e.area || e.departamento) ? "Área del equipo: sigue disponible aquí" : "",
+                      ]
                         .filter(Boolean)
                         .join(" · ")
                     }
                   >
-                    {e.asignado_area || e.asignado_departamento || <span className="text-soft">—</span>}
+                    {e.asignado_area || e.asignado_departamento ? (
+                      e.asignado_area || e.asignado_departamento
+                    ) : e.area || e.departamento ? (
+                      <span className="italic text-soft">{e.area || e.departamento}</span>
+                    ) : (
+                      <span className="text-soft">—</span>
+                    )}
                   </td>
                   <td className={`${tdc} truncate text-xs`} title={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre} · ver su histórico` : ""}>
                     {e.asignado_nombre && e.asignado_a ? (
@@ -585,7 +597,7 @@ export default function InventarioClient({
                           🔗 Ligar a {porLigar[e.id].empleado_numero}
                         </button>
                       ) : null}
-                      <Link className={mini} href={`/mantenimientos?equipo=${e.id}`}>
+                      <Link className={mini} href={`/inventario/${e.id}`} title="Por quién ha pasado, sus cartas y sus mantenimientos">
                         Historial
                       </Link>
                       <FusionarEquipoBtn equipoId={e.id} codigo={e.codigo} className={mini} etiqueta="Fusionar" />

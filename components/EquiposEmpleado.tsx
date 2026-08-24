@@ -95,7 +95,11 @@ export default function EquiposEmpleado({
               const cartas = responsivas[e.id] ?? [];
               return (
                 <tr key={e.id} className="border-b border-line/60 last:border-0">
-                  <td className={`${tdCls} mono text-xs font-semibold`}>{e.codigo}</td>
+                  <td className={`${tdCls} mono text-xs font-semibold`}>
+                    <Link href={`/inventario/${e.id}`} className="text-ink hover:text-kraft hover:underline" title="Ver el histórico de este equipo">
+                      {e.codigo}
+                    </Link>
+                  </td>
                   <td className={`${tdCls} text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>
                   <td className={tdCls}>
                     {e.marca} {e.modelo}

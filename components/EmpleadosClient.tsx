@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import type { EmpleadoConEquipos } from "../lib/types";
-import { cambiarActivoEmpleado, datosBajaEmpleado, eliminarEmpleado, guardarEmpleado, importarEmpleados, type DatosBaja } from "../app/empleados/actions";
+import { cambiarActivoEmpleado, eliminarEmpleado, guardarEmpleado, importarEmpleados } from "../app/empleados/actions";
 import { ETIQUETA_TIPO } from "../lib/constants";
 import ExportarBotones from "./ExportarBotones";
 import CamposEmpleado, { EMPLEADO_VACIO, empleadoAFormulario, type DatosEmpleado } from "./CamposEmpleado";
+import DarDeBajaBtn from "./DarDeBajaBtn";
 import { Badge, Card, Empty, btnGhost, btnPrimary, inputCls } from "./ui";
 
 const celda = "px-2 py-1 text-sm text-ink align-middle whitespace-nowrap";
@@ -23,7 +24,6 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
   const [filtroEstado, setFiltroEstado] = useState("");
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
-  const [baja, setBaja] = useState<{ empleado: EmpleadoConEquipos; datos: DatosBaja } | null>(null);
   const [pendiente, iniciar] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -78,18 +78,8 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
     });
   };
 
-  // Al desactivar: si trae equipos, se muestra el aviso con las devoluciones pendientes.
-  const alternarActivo = (e: EmpleadoConEquipos) => {
-    if (e.activo && e.equipos_asignados > 0) {
-      setError("");
-      iniciar(async () => {
-        const datos = await datosBajaEmpleado(e.id);
-        setBaja({ empleado: e, datos });
-      });
-      return;
-    }
-    ejecutar(() => cambiarActivoEmpleado(e.id, !e.activo));
-  };
+  // Solo reactiva: la baja va por su propio flujo, que además recibe los equipos.
+  const reactivar = (e: EmpleadoConEquipos) => ejecutar(() => cambiarActivoEmpleado(e.id, true));
 
   const importar = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const archivo = ev.target.files?.[0];
@@ -281,9 +271,13 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                       >
                         Editar
                       </button>
-                      <button className={mini} disabled={pendiente} onClick={() => alternarActivo(e)}>
-                        {e.activo ? "Desactivar" : "Activar"}
-                      </button>
+                      {e.activo ? (
+                        <DarDeBajaBtn empleadoId={e.id} nombre={e.nombre} className={mini} />
+                      ) : (
+                        <button className={mini} disabled={pendiente} onClick={() => reactivar(e)}>
+                          Reactivar
+                        </button>
+                      )}
                       <button
                         className={miniDanger}
                         disabled={pendiente}
@@ -304,70 +298,6 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         </Card>
       )}
 
-      {baja ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4" onClick={() => setBaja(null)}>
-          <div
-            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg border border-line bg-white p-5 shadow-xl"
-            onClick={(ev) => ev.stopPropagation()}
-          >
-            <h2 className="text-lg font-bold text-ink">Baja de {baja.empleado.nombre}</h2>
-            <p className="mt-1 text-sm text-soft">
-              Antes de darlo de baja, este empleado debe devolver {baja.empleado.equipos_asignados} equipo(s). Registra
-              la devolución de cada carta responsiva; al terminar podrás desactivarlo.
-            </p>
-
-            {baja.datos.responsivas.length > 0 ? (
-              <div className="mt-4">
-                <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-soft">Responsivas por devolver</p>
-                <div className="space-y-2">
-                  {baja.datos.responsivas.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between gap-2 rounded-md border border-line bg-paper/40 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="mono text-xs font-semibold text-kraft-dark">{r.folio}</p>
-                        <p className="mono truncate text-[11px] text-soft">{r.equipos ?? "—"}</p>
-                      </div>
-                      <Link href={`/responsivas/${r.id}/devolucion`} className={`${btnPrimary} shrink-0 px-3 py-1.5 text-xs`}>
-                        Registrar devolución
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {baja.datos.equipos.length > 0 ? (
-              <div className="mt-4">
-                <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-soft">Equipos asignados</p>
-                <ul className="space-y-1 text-sm">
-                  {baja.datos.equipos.map((eq) => (
-                    <li key={eq.id} className="flex items-center gap-2">
-                      <span className="mono text-xs font-semibold text-kraft-dark">{eq.codigo}</span>
-                      <span className="text-soft">
-                        {ETIQUETA_TIPO[eq.tipo] ?? eq.tipo} · {eq.marca} {eq.modelo}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {baja.datos.responsivas.length === 0 ? (
-                  <p className="mt-2 text-xs text-soft">
-                    Estos equipos están asignados sin una responsiva del sistema (probablemente importados). Libéralos
-                    en el inventario (cambia su estado a Disponible) para poder dar de baja al empleado.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="mt-5 flex justify-end gap-2">
-              <Link href={`/empleados/${baja.empleado.id}`} className={btnGhost}>
-                Ver histórico
-              </Link>
-              <button className={btnGhost} onClick={() => setBaja(null)}>
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import type { ResponsivaDeEquipo } from "../../../components/InventarioClient";
 import { idsSinResponsiva, responsivasSinFirmaDe } from "../../../lib/pendientes";
 import SubirFirmadaBtn from "../../../components/SubirFirmadaBtn";
 import EditarEmpleadoBtn from "../../../components/EditarEmpleadoBtn";
+import DarDeBajaBtn from "../../../components/DarDeBajaBtn";
 
 export const dynamic = "force-dynamic";
 
@@ -103,8 +104,13 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
   return (
     <>
       <PageHeader eyebrow="Histórico de empleado" title={empleado.nombre}>
-        {empleado.activo ? <Badge tono="verde">Activo</Badge> : <Badge tono="gris">Inactivo</Badge>}
+        {empleado.activo ? (
+          <Badge tono="verde">Activo</Badge>
+        ) : (
+          <Badge tono="gris">Baja{empleado.fecha_baja ? ` · ${fechaCorta(empleado.fecha_baja)}` : ""}</Badge>
+        )}
         <EditarEmpleadoBtn empleado={empleado} />
+        {empleado.activo ? <DarDeBajaBtn empleadoId={empleado.id} nombre={empleado.nombre} /> : null}
         <Link href="/empleados" className={btnGhost}>
           ← Volver
         </Link>
@@ -120,6 +126,14 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           {dato("Clase", empleado.clase)}
           {dato("Fecha de alta", fechaCorta(empleado.fecha_alta))}
           {dato("Contacto", [empleado.correo, empleado.telefono].filter(Boolean).join(" · ") || null)}
+          {empleado.activo
+            ? null
+            : dato(
+                "Baja",
+                [empleado.fecha_baja ? fechaCorta(empleado.fecha_baja) : "", empleado.motivo_baja ?? ""]
+                  .filter(Boolean)
+                  .join(" · ") || null
+              )}
         </div>
       </Card>
 

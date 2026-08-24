@@ -11,6 +11,9 @@ export interface Empleado {
   correo: string | null;
   telefono: string | null;
   activo: number;
+  /** Cuándo dejó la empresa y por qué; vacío mientras siga activo. */
+  fecha_baja: string | null;
+  motivo_baja: string | null;
   created_at: string;
 }
 
@@ -39,6 +42,9 @@ export interface Equipo {
   costo: number | null;
   estado: string;
   asignado_a: number | null;
+  /** Área a la que pertenece el aparato, aunque ahora no lo tenga nadie. */
+  departamento: string | null;
+  area: string | null;
   notas: string | null;
   created_at: string;
 }

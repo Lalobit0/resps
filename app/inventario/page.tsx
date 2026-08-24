@@ -130,7 +130,10 @@ export default async function PaginaInventario({
   // El departamento se cuenta ya dentro de la sección de tipo, y el tipo se
   // cuenta ya dentro del departamento: cada fila responde "si pulso aquí,
   // ¿cuántos me quedan?".
-  const deptoDe = (e: EquipoConAsignado) => e.asignado_departamento?.trim() || (e.asignado_a ? "" : "SIN");
+  // El área es del equipo, no de la persona: si su dueño se fue, el aparato
+  // sigue perteneciendo a su departamento y ahí se vuelve a entregar.
+  const deptoDe = (e: EquipoConAsignado) =>
+    e.asignado_departamento?.trim() || e.departamento?.trim() || e.area?.trim() || "SIN";
   const porTipo: Record<string, number> = {};
   for (const e of depto ? equipos.filter((x) => deptoDe(x) === depto) : equipos)
     porTipo[e.tipo] = (porTipo[e.tipo] ?? 0) + 1;

@@ -67,6 +67,8 @@ const EMP_DEMO: Empleado = {
   correo: null,
   telefono: null,
   activo: 1,
+  fecha_baja: null,
+  motivo_baja: null,
   created_at: "",
 };
 
@@ -85,6 +87,8 @@ function equipoDemo(tipo: string, detalles: Record<string, string>): Equipo {
     costo: null,
     estado: "DISPONIBLE",
     asignado_a: null,
+    departamento: null,
+    area: null,
     notas: null,
     created_at: "",
   };

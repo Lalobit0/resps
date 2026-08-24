@@ -19,20 +19,23 @@ const COLUMNAS: ColumnaTabla[] = [
   { clave: "codigo", etiqueta: "Código", ancho: 7 },
   // El área y la persona van al principio: el inventario se revisa por
   // departamento, así que es lo primero que se busca en el renglón.
-  { clave: "area", etiqueta: "Área", ancho: 9 },
-  { clave: "asignado", etiqueta: "Asignado a", ancho: 13 },
-  { clave: "tipo", etiqueta: "Tipo", ancho: 6, valores: ["COMPUTO", "CELULAR", "RADIO", "OTRO"] },
-  { clave: "equipo", etiqueta: "Equipo", ancho: 14 },
-  { clave: "serie", etiqueta: "Serie", ancho: 8 },
+  { clave: "area", etiqueta: "Área", ancho: 8 },
+  { clave: "asignado", etiqueta: "Asignado a", ancho: 11 },
+  { clave: "tipo", etiqueta: "Tipo", ancho: 5, valores: ["COMPUTO", "CELULAR", "RADIO", "OTRO"] },
+  { clave: "equipo", etiqueta: "Equipo", ancho: 13 },
+  // El nombre de la computadora va pegado a la serie: son los dos datos con
+  // los que se reconoce la máquina cuando se tiene enfrente.
+  { clave: "nombre", etiqueta: "Nombre del equipo", ancho: 9 },
+  { clave: "serie", etiqueta: "Serie", ancho: 7 },
   {
     clave: "estado",
     etiqueta: "Estado",
-    ancho: 8,
+    ancho: 7,
     valores: ["ASIGNADO", "DISPONIBLE", "SIN RESPONSIVA", "MANTENIMIENTO", "BAJA"],
   },
   { clave: "responsivas", etiqueta: "Responsivas", ancho: 9, valores: ["CON", "SIN"] },
   { clave: "compra", etiqueta: "Compra", ancho: 6, fin: true },
-  { clave: "acciones", etiqueta: "Acciones", ancho: 20, ordenable: false },
+  { clave: "acciones", etiqueta: "Acciones", ancho: 18, ordenable: false },
 ];
 
 /**
@@ -174,6 +177,8 @@ export default function InventarioClient({
         return e.tipo;
       case "equipo":
         return `${e.marca} ${e.modelo}`;
+      case "nombre":
+        return parseDetalles(e.detalles).nombre_computadora ?? "";
       case "serie":
         return e.numero_serie ?? "";
       case "area":
@@ -446,7 +451,9 @@ export default function InventarioClient({
               onArrastrar={empezarArrastre}
             />
             <tbody>
-              {ordenados.map((e) => (
+              {ordenados.map((e) => {
+                const det = parseDetalles(e.detalles);
+                return (
                 <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
                   <td className={`${tdc} text-xs font-semibold`}>
                     <div className="flex items-center gap-1">
@@ -496,6 +503,9 @@ export default function InventarioClient({
                       {e.marca} {e.modelo}
                     </div>
                     {e.specs ? <div className="truncate text-xs text-soft">{e.specs}</div> : null}
+                  </td>
+                  <td className={`${tdc} mono truncate text-xs`} title={det.nombre_computadora ?? ""}>
+                    {det.nombre_computadora || <span className="text-soft">—</span>}
                   </td>
                   <td className={`${tdc} mono truncate text-xs`} title={e.numero_serie ?? ""}>{e.numero_serie ?? "—"}</td>
                   <td className={tdc}>
@@ -597,7 +607,8 @@ export default function InventarioClient({
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </Card>

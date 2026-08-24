@@ -6,34 +6,8 @@ import type { EmpleadoConEquipos } from "../lib/types";
 import { cambiarActivoEmpleado, datosBajaEmpleado, eliminarEmpleado, guardarEmpleado, importarEmpleados, type DatosBaja } from "../app/empleados/actions";
 import { ETIQUETA_TIPO } from "../lib/constants";
 import ExportarBotones from "./ExportarBotones";
-import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
-
-type Formulario = {
-  id?: number;
-  numero_empleado: string;
-  nombre: string;
-  puesto: string;
-  departamento: string;
-  area: string;
-  clase: string;
-  supervisor: string;
-  fecha_alta: string;
-  correo: string;
-  telefono: string;
-};
-
-const FORM_VACIO: Formulario = {
-  numero_empleado: "",
-  nombre: "",
-  puesto: "",
-  departamento: "",
-  area: "",
-  clase: "",
-  supervisor: "",
-  fecha_alta: "",
-  correo: "",
-  telefono: "",
-};
+import CamposEmpleado, { EMPLEADO_VACIO, empleadoAFormulario, type DatosEmpleado } from "./CamposEmpleado";
+import { Badge, Card, Empty, btnGhost, btnPrimary, inputCls } from "./ui";
 
 const celda = "px-2 py-1 text-sm text-ink align-middle whitespace-nowrap";
 const thc = "px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-soft whitespace-nowrap";
@@ -41,7 +15,7 @@ const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-mediu
 const miniDanger = "rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50";
 
 export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConEquipos[] }) {
-  const [form, setForm] = useState<Formulario | null>(null);
+  const [form, setForm] = useState<DatosEmpleado | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [filtroDepto, setFiltroDepto] = useState("");
   const [filtroClase, setFiltroClase] = useState("");
@@ -83,9 +57,6 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       return true;
     });
   }, [empleados, busqueda, filtroDepto, filtroClase, filtroComputo, filtroEstado]);
-
-  const set = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
 
   const enviar = () => {
     if (!form) return;
@@ -184,7 +155,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <button
           className={btnPrimary}
           onClick={() => {
-            setForm(FORM_VACIO);
+            setForm(EMPLEADO_VACIO);
             setError("");
             setMensaje("");
           }}
@@ -204,48 +175,11 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
         <Card className="my-6 w-full max-w-3xl">
           <h2 className="mb-4 text-base font-bold text-ink">{form.id ? "Editar empleado" : "Nuevo empleado"}</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <Label>Número de empleado *</Label>
-              <input className={inputCls} value={form.numero_empleado} onChange={set("numero_empleado")} placeholder="0045" />
-            </div>
-            <div className="lg:col-span-2">
-              <Label>Nombre completo *</Label>
-              <input className={inputCls} value={form.nombre} onChange={set("nombre")} placeholder="Nombre y apellidos" />
-            </div>
-            <div>
-              <Label>Puesto *</Label>
-              <input className={inputCls} value={form.puesto} onChange={set("puesto")} />
-            </div>
-            <div>
-              <Label>Departamento *</Label>
-              <input className={inputCls} value={form.departamento} onChange={set("departamento")} />
-            </div>
-            <div>
-              <Label>Área</Label>
-              <input className={inputCls} value={form.area} onChange={set("area")} />
-            </div>
-            <div>
-              <Label>Jefe directo / Supervisor</Label>
-              <input className={inputCls} value={form.supervisor} onChange={set("supervisor")} />
-            </div>
-            <div>
-              <Label>Clase de empleado</Label>
-              <input className={inputCls} value={form.clase} onChange={set("clase")} placeholder="ADMINISTRATIVOS…" />
-            </div>
-            <div>
-              <Label>Fecha de alta</Label>
-              <input className={inputCls} type="date" value={form.fecha_alta} onChange={set("fecha_alta")} />
-            </div>
-            <div>
-              <Label>Correo</Label>
-              <input className={inputCls} type="email" value={form.correo} onChange={set("correo")} />
-            </div>
-            <div>
-              <Label>Teléfono</Label>
-              <input className={inputCls} value={form.telefono} onChange={set("telefono")} />
-            </div>
-          </div>
+          <CamposEmpleado
+            valor={form}
+            onCambio={(campo, texto) => setForm((f) => (f ? { ...f, [campo]: texto } : f))}
+            deshabilitado={pendiente}
+          />
           <div className="mt-4 flex gap-2">
             <button className={btnPrimary} onClick={enviar} disabled={pendiente}>
               {pendiente ? "Guardando…" : "Guardar empleado"}
@@ -343,21 +277,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
                     <div className="flex flex-wrap items-center gap-1">
                       <button
                         className={mini}
-                        onClick={() =>
-                          setForm({
-                            id: e.id,
-                            numero_empleado: e.numero_empleado,
-                            nombre: e.nombre,
-                            puesto: e.puesto,
-                            departamento: e.departamento,
-                            area: e.area ?? "",
-                            clase: e.clase ?? "",
-                            supervisor: e.supervisor ?? "",
-                            fecha_alta: e.fecha_alta ?? "",
-                            correo: e.correo ?? "",
-                            telefono: e.telefono ?? "",
-                          })
-                        }
+                        onClick={() => setForm(empleadoAFormulario(e))}
                       >
                         Editar
                       </button>

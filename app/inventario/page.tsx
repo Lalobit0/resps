@@ -1,6 +1,7 @@
+import Link from "next/link";
 import { db } from "../../lib/db";
 import type { Empleado, EquipoConAsignado } from "../../lib/types";
-import { ETIQUETA_ESTADO } from "../../lib/constants";
+import { CLASIFICACIONES_EQUIPO, ETIQUETA_ESTADO } from "../../lib/constants";
 import { detectarDuplicados, CAMPOS_BLOQUEANTES, type EquipoRevisable } from "../../lib/duplicados";
 import { idsSinResponsiva, equiposPorLigar } from "../../lib/pendientes";
 import InventarioClient, { type ResponsivaDeEquipo } from "../../components/InventarioClient";
@@ -26,6 +27,8 @@ export default async function PaginaInventario({
   const orden = typeof sp.orden === "string" ? sp.orden : "codigo";
   // Departamento del empleado que tiene el equipo. "SIN" = equipo sin dueño.
   const depto = typeof sp.depto === "string" ? sp.depto : "";
+  // Cómo está clasificado el aparato: administrativo, producción, sala…
+  const clase = typeof sp.clase === "string" ? sp.clase : "";
   // "con" / "sin": si el equipo tiene o no carta responsiva.
   const resp = typeof sp.resp === "string" ? sp.resp : "";
   const soloDup = sp.dup === "1";
@@ -124,6 +127,7 @@ export default async function PaginaInventario({
   if (soloLigar) equipos = equipos.filter((e) => porLigarPorEquipo[e.id]);
   if (resp === "sin") equipos = equipos.filter((e) => sinResponsiva.has(e.id));
   if (resp === "con") equipos = equipos.filter((e) => !sinResponsiva.has(e.id));
+  if (clase) equipos = equipos.filter((e) => (e.clasificacion ?? "") === (clase === "SIN" ? "" : clase));
 
   // Cuántos hay en cada sección con lo que está filtrado ahora mismo: así el
   // número del botón dice qué se va a encontrar al entrar, no el total del año.
@@ -156,7 +160,7 @@ export default async function PaginaInventario({
   /** Dirección de la lista cambiando de sección sin perder los demás filtros. */
   const hrefSeccion = (t: string, d: string = depto) => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries({ q, estado, resp, tipo: t, depto: d })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ q, estado, resp, clase, tipo: t, depto: d })) if (v) p.set(k, v);
     if (soloDup) p.set("dup", "1");
     if (soloSinResp) p.set("sinresp", "1");
     if (soloLigar) p.set("ligar", "1");
@@ -191,6 +195,9 @@ export default async function PaginaInventario({
   return (
     <>
       <PageHeader eyebrow="Activos de TI" title="Inventario de equipo">
+        <Link href="/inventario/ubicar" className={btnGhost} title="Poner el área y la clasificación de varios equipos de una vez">
+          🏢 Ubicar por área
+        </Link>
         <span className="text-sm text-soft">
           {equipos.length} de {total} equipos
         </span>
@@ -291,6 +298,15 @@ export default async function PaginaInventario({
           <option value="">Con y sin responsiva</option>
           <option value="con">Con responsiva</option>
           <option value="sin">Sin responsiva</option>
+        </select>
+        <select name="clase" defaultValue={clase} className={`${inputCls} max-w-[200px]`} title="Cómo está clasificado el equipo">
+          <option value="">Toda clasificación</option>
+          {CLASIFICACIONES_EQUIPO.map((c) => (
+            <option key={c.valor} value={c.valor}>
+              {c.etiqueta}
+            </option>
+          ))}
+          <option value="SIN">Sin clasificar</option>
         </select>
         {/* El orden se cambia pulsando el título de la columna. */}
         <button type="submit" className="sr-only">

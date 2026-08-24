@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import type { Empleado, EquipoConAsignado } from "../lib/types";
-import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
+import { CAMPOS_DETALLE, CLASIFICACIONES_EQUIPO, ETIQUETA_CLASIFICACION, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
 import type { Conflicto } from "../lib/duplicados";
 import { eliminarEquipo, guardarEquipo, importarEscaneoComputo, importarInventario, ligarConSuResponsiva, type ResultadoEscaneo as ResultadoEscaneoDatos } from "../app/inventario/actions";
@@ -16,16 +16,18 @@ import { EncabezadoTabla, ordenarFilas, useTabla, type ColumnaTabla } from "./ta
 
 /** Las columnas del inventario, con su ancho inicial y cómo ordenan. */
 const COLUMNAS: ColumnaTabla[] = [
-  { clave: "codigo", etiqueta: "Código", ancho: 7 },
+  { clave: "codigo", etiqueta: "Código", ancho: 6 },
   // El área y la persona van al principio: el inventario se revisa por
   // departamento, así que es lo primero que se busca en el renglón.
   { clave: "area", etiqueta: "Área", ancho: 8 },
-  { clave: "asignado", etiqueta: "Asignado a", ancho: 11 },
+  { clave: "asignado", etiqueta: "Asignado a", ancho: 10 },
   { clave: "tipo", etiqueta: "Tipo", ancho: 5, valores: ["COMPUTO", "CELULAR", "RADIO", "OTRO"] },
-  { clave: "equipo", etiqueta: "Equipo", ancho: 13 },
+  // Cómo está clasificado el aparato, que no es lo mismo que qué aparato es.
+  { clave: "clasificacion", etiqueta: "Clasificación", ancho: 8, valores: ["ADMINISTRATIVO", "PRODUCCION", "SALA", "GERENCIAL", "COMPARTIDO"] },
+  { clave: "equipo", etiqueta: "Equipo", ancho: 10 },
   // El nombre de la computadora va pegado a la serie: son los dos datos con
   // los que se reconoce la máquina cuando se tiene enfrente.
-  { clave: "nombre", etiqueta: "Nombre del equipo", ancho: 9 },
+  { clave: "nombre", etiqueta: "Nombre del equipo", ancho: 8 },
   { clave: "serie", etiqueta: "Serie", ancho: 7 },
   {
     clave: "estado",
@@ -33,8 +35,8 @@ const COLUMNAS: ColumnaTabla[] = [
     ancho: 7,
     valores: ["ASIGNADO", "DISPONIBLE", "SIN RESPONSIVA", "MANTENIMIENTO", "BAJA"],
   },
-  { clave: "responsivas", etiqueta: "Responsivas", ancho: 9, valores: ["CON", "SIN"] },
-  { clave: "compra", etiqueta: "Compra", ancho: 6, fin: true },
+  { clave: "responsivas", etiqueta: "Responsivas", ancho: 8, valores: ["CON", "SIN"] },
+  { clave: "compra", etiqueta: "Compra", ancho: 5, fin: true },
   { clave: "acciones", etiqueta: "Acciones", ancho: 18, ordenable: false },
 ];
 
@@ -69,6 +71,9 @@ type Formulario = {
   fecha_compra: string;
   costo: string;
   estado: string;
+  /** Área del propio aparato: se queda con él aunque cambie de dueño. */
+  departamento: string;
+  clasificacion: string;
   notas: string;
   detalles: Record<string, string>;
 };
@@ -83,6 +88,8 @@ const FORM_VACIO: Formulario = {
   fecha_compra: "",
   costo: "",
   estado: "DISPONIBLE",
+  departamento: "",
+  clasificacion: "",
   notas: "",
   detalles: {},
 };
@@ -131,6 +138,8 @@ function formDeEquipo(e: EquipoConAsignado): Formulario {
     fecha_compra: e.fecha_compra ?? "",
     costo: e.costo !== null ? String(e.costo) : "",
     estado: e.estado,
+    departamento: e.departamento ?? e.area ?? "",
+    clasificacion: e.clasificacion ?? "",
     notas: e.notas ?? "",
     detalles: parseDetalles(e.detalles),
   };
@@ -183,6 +192,8 @@ export default function InventarioClient({
         return e.numero_serie ?? "";
       case "area":
         return e.asignado_area || e.asignado_departamento || e.area || e.departamento || "";
+      case "clasificacion":
+        return e.clasificacion || "";
       case "estado":
         return faltaResponsiva.has(e.id) ? "SIN RESPONSIVA" : e.estado;
       case "asignado":
@@ -233,7 +244,8 @@ export default function InventarioClient({
     setError("");
     setMensaje("");
     iniciar(async () => {
-      const res = await guardarEquipo(form);
+      // El área del equipo y su departamento son el mismo dato en la práctica.
+      const res = await guardarEquipo({ ...form, area: form.departamento });
       if (res.ok) setForm(null);
       else setError(res.error ?? "Error desconocido.");
     });
@@ -421,10 +433,46 @@ export default function InventarioClient({
               <Label>Costo (MXN)</Label>
               <input className={inputCls} type="number" step="0.01" value={form.costo} onChange={setC("costo")} />
             </div>
+            <div>
+              <Label>Área / Departamento del equipo</Label>
+              <input
+                className={inputCls}
+                list="departamentos-equipos"
+                value={form.departamento}
+                onChange={(ev) => setForm((f) => (f ? { ...f, departamento: ev.target.value.toUpperCase() } : f))}
+                placeholder="CONTABILIDAD, PRODUCCION…"
+              />
+              <p className="mt-1 text-xs text-soft">Se queda con el aparato aunque cambie de dueño.</p>
+            </div>
+            <div>
+              <Label>Clasificación</Label>
+              <select
+                className={inputCls}
+                value={form.clasificacion}
+                onChange={(ev) => setForm((f) => (f ? { ...f, clasificacion: ev.target.value } : f))}
+              >
+                <option value="">— Sin clasificar —</option>
+                {CLASIFICACIONES_EQUIPO.map((c) => (
+                  <option key={c.valor} value={c.valor}>
+                    {c.etiqueta}
+                  </option>
+                ))}
+                {form.clasificacion && !CLASIFICACIONES_EQUIPO.some((c) => c.valor === form.clasificacion) ? (
+                  <option value={form.clasificacion}>{form.clasificacion}</option>
+                ) : null}
+              </select>
+            </div>
             <div className="sm:col-span-2 lg:col-span-3">
               <Label>Notas</Label>
               <textarea className={inputCls} rows={2} value={form.notas} onChange={setC("notas")} />
             </div>
+            <datalist id="departamentos-equipos">
+              {[...new Set(equipos.map((x) => x.departamento || x.asignado_departamento || "").filter(Boolean))]
+                .sort()
+                .map((d) => (
+                  <option key={d} value={d} />
+                ))}
+            </datalist>
           </div>
           <div className="mt-4 flex gap-2">
             <button className={btnPrimary} onClick={enviar} disabled={pendiente}>
@@ -510,6 +558,13 @@ export default function InventarioClient({
                       {TIPO_CORTO[e.tipo] ?? ETIQUETA_TIPO[e.tipo] ?? e.tipo}
                     </td>
                   )}
+                  <td className={`${tdc} truncate text-xs`} title={ETIQUETA_CLASIFICACION[e.clasificacion ?? ""] ?? e.clasificacion ?? ""}>
+                    {e.clasificacion ? (
+                      ETIQUETA_CLASIFICACION[e.clasificacion] ?? e.clasificacion
+                    ) : (
+                      <span className="text-soft">—</span>
+                    )}
+                  </td>
                   <td className={`${tdc} truncate`} title={`${e.marca} ${e.modelo}${e.specs ? " · " + e.specs : ""}`}>
                     <div className="truncate font-medium">
                       {e.marca} {e.modelo}

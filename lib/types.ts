@@ -45,6 +45,8 @@ export interface Equipo {
   /** Área a la que pertenece el aparato, aunque ahora no lo tenga nadie. */
   departamento: string | null;
   area: string | null;
+  /** Cómo está clasificado: administrativo, de producción, de sala… */
+  clasificacion: string | null;
   notas: string | null;
   created_at: string;
 }

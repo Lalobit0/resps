@@ -89,6 +89,7 @@ function equipoDemo(tipo: string, detalles: Record<string, string>): Equipo {
     asignado_a: null,
     departamento: null,
     area: null,
+    clasificacion: null,
     notas: null,
     created_at: "",
   };

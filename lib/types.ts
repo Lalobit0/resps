@@ -46,6 +46,8 @@ export interface Equipo {
 export interface EquipoConAsignado extends Equipo {
   asignado_nombre: string | null;
   asignado_numero: string | null;
+  asignado_departamento: string | null;
+  asignado_area: string | null;
 }
 
 export interface Responsiva {

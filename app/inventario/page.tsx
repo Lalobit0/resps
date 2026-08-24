@@ -24,6 +24,8 @@ export default async function PaginaInventario({
   const tipo = typeof sp.tipo === "string" ? sp.tipo : "";
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const orden = typeof sp.orden === "string" ? sp.orden : "codigo";
+  // Departamento del empleado que tiene el equipo. "SIN" = equipo sin dueño.
+  const depto = typeof sp.depto === "string" ? sp.depto : "";
   // "con" / "sin": si el equipo tiene o no carta responsiva.
   const resp = typeof sp.resp === "string" ? sp.resp : "";
   const soloDup = sp.dup === "1";
@@ -72,7 +74,8 @@ export default async function PaginaInventario({
 
   const encontrados = db
     .prepare(
-      `SELECT e.*, em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero
+      `SELECT e.*, em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero,
+              em.departamento AS asignado_departamento, em.area AS asignado_area
        FROM equipos e
        LEFT JOIN empleados em ON em.id = e.asignado_a
        ${where}
@@ -124,15 +127,33 @@ export default async function PaginaInventario({
 
   // Cuántos hay en cada sección con lo que está filtrado ahora mismo: así el
   // número del botón dice qué se va a encontrar al entrar, no el total del año.
+  // El departamento se cuenta ya dentro de la sección de tipo, y el tipo se
+  // cuenta ya dentro del departamento: cada fila responde "si pulso aquí,
+  // ¿cuántos me quedan?".
+  const deptoDe = (e: EquipoConAsignado) => e.asignado_departamento?.trim() || (e.asignado_a ? "" : "SIN");
   const porTipo: Record<string, number> = {};
-  for (const e of equipos) porTipo[e.tipo] = (porTipo[e.tipo] ?? 0) + 1;
-  const enSeccion = equipos.length;
+  for (const e of depto ? equipos.filter((x) => deptoDe(x) === depto) : equipos)
+    porTipo[e.tipo] = (porTipo[e.tipo] ?? 0) + 1;
+  const enSeccion = depto ? equipos.filter((e) => deptoDe(e) === depto).length : equipos.length;
+
   if (tipo) equipos = equipos.filter((e) => e.tipo === tipo);
 
+  const porDepto = new Map<string, number>();
+  for (const e of equipos) {
+    const d = deptoDe(e);
+    if (d) porDepto.set(d, (porDepto.get(d) ?? 0) + 1);
+  }
+  const enTipo = equipos.length;
+  const DEPTOS = [...porDepto.entries()]
+    .sort((a, b) => (a[0] === "SIN" ? 1 : b[0] === "SIN" ? -1 : b[1] - a[1] || a[0].localeCompare(b[0])))
+    .map(([valor, n]) => ({ valor, etiqueta: valor === "SIN" ? "Sin asignar" : valor, n }));
+
+  if (depto) equipos = equipos.filter((e) => deptoDe(e) === depto);
+
   /** Dirección de la lista cambiando de sección sin perder los demás filtros. */
-  const hrefSeccion = (t: string) => {
+  const hrefSeccion = (t: string, d: string = depto) => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries({ q, estado, resp, tipo: t })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ q, estado, resp, tipo: t, depto: d })) if (v) p.set(k, v);
     if (soloDup) p.set("dup", "1");
     if (soloSinResp) p.set("sinresp", "1");
     if (soloLigar) p.set("ligar", "1");
@@ -219,7 +240,37 @@ export default async function PaginaInventario({
         })}
       </nav>
 
+      {/* Segunda fila: el departamento de quien tiene el equipo. Se revisa
+          departamento por departamento, así que va junto a las secciones. */}
+      {DEPTOS.length > 1 ? (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="mr-1 font-semibold uppercase tracking-wide text-soft">Departamento</span>
+          <a
+            href={hrefSeccion(tipo, "")}
+            className={`rounded-full border px-2.5 py-0.5 font-medium ${
+              depto ? "border-line bg-white text-soft hover:border-kraft/60 hover:text-ink" : "border-kraft bg-kraft/15 text-ink"
+            }`}
+          >
+            Todos <span className="mono">{enTipo}</span>
+          </a>
+          {DEPTOS.map((d) => (
+            <a
+              key={d.valor}
+              href={hrefSeccion(tipo, d.valor)}
+              className={`rounded-full border px-2.5 py-0.5 font-medium ${
+                depto === d.valor
+                  ? "border-kraft bg-kraft/15 text-ink"
+                  : "border-line bg-white text-soft hover:border-kraft/60 hover:text-ink"
+              }`}
+            >
+              {d.etiqueta} <span className="mono">{d.n}</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
+
       <FiltrosAuto className="mb-5 flex flex-wrap items-end gap-2">
+        {depto ? <input type="hidden" name="depto" value={depto} /> : null}
         {soloDup ? <input type="hidden" name="dup" value="1" /> : null}
         {soloSinResp ? <input type="hidden" name="sinresp" value="1" /> : null}
         {soloLigar ? <input type="hidden" name="ligar" value="1" /> : null}

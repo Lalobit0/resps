@@ -940,6 +940,57 @@ function seriesParecidas(a: string, b: string): boolean {
   return fallos + (larga.length - j) + (corta.length - i) <= 1;
 }
 
+/** Los datos con los que una persona reconoce el aparato en la mesa. */
+function fichaDe(e: Equipo): { etiqueta: string; valor: string }[] {
+  const d = detallesDe(e);
+  const campos: [string, string | null | undefined][] = [
+    ["Serie", e.numero_serie],
+    ["Marca y modelo", `${e.marca} ${e.modelo}`.trim()],
+    ["Nombre del equipo", d.nombre_computadora],
+    ["No. de activo", d.activo],
+    ["IMEI", d.imei],
+    ["Línea", d.numero],
+    ["Características", e.specs],
+    ["Comprado", e.fecha_compra],
+  ];
+  return campos
+    .filter(([, v]) => String(v ?? "").trim())
+    .map(([etiqueta, v]) => ({ etiqueta, valor: String(v).trim() }));
+}
+
+/** Un equipo con todo lo que hace falta para compararlo con otro. */
+function aFusionable(e: Equipo, motivo: string): EquipoFusionable {
+  const emp = e.asignado_a
+    ? (db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(e.asignado_a) as
+        | { numero_empleado: string; nombre: string }
+        | undefined)
+    : undefined;
+  return {
+    id: e.id,
+    codigo: e.codigo,
+    tipo: e.tipo,
+    marca: e.marca,
+    modelo: e.modelo,
+    numero_serie: e.numero_serie,
+    estado: e.estado,
+    asignado_a: e.asignado_a,
+    asignado_nombre: emp ? `${emp.numero_empleado} ${emp.nombre}` : null,
+    created_at: e.created_at,
+    responsivas: (
+      db
+        .prepare(
+          `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+           WHERE ri.equipo_id = ? AND r.estado != 'ELIMINADA' ORDER BY r.id DESC`
+        )
+        .all(e.id) as { folio: string }[]
+    ).map((r) => r.folio),
+    mantenimientos: (db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id = ?").get(e.id) as { c: number }).c,
+    llenos: datosLlenos(e),
+    motivo,
+    ficha: fichaDe(e),
+  };
+}
+
 /**
  * Otros registros del inventario que podrían ser el mismo aparato. No decide
  * nada: son sugerencias para que la persona compare y elija.
@@ -999,56 +1050,6 @@ export async function candidatosFusion(
     }
 
     conMotivo.sort((x, y) => y.peso - x.peso || x.equipo.codigo.localeCompare(y.equipo.codigo));
-
-    /** Los datos con los que una persona reconoce el aparato en la mesa. */
-    const fichaDe = (e: Equipo): { etiqueta: string; valor: string }[] => {
-      const d = detallesDe(e);
-      const campos: [string, string | null | undefined][] = [
-        ["Serie", e.numero_serie],
-        ["Marca y modelo", `${e.marca} ${e.modelo}`.trim()],
-        ["Nombre del equipo", d.nombre_computadora],
-        ["No. de activo", d.activo],
-        ["IMEI", d.imei],
-        ["Línea", d.numero],
-        ["Características", e.specs],
-        ["Comprado", e.fecha_compra],
-      ];
-      return campos
-        .filter(([, v]) => String(v ?? "").trim())
-        .map(([etiqueta, v]) => ({ etiqueta, valor: String(v).trim() }));
-    };
-
-    const aFusionable = (e: Equipo, motivo: string): EquipoFusionable => {
-      const emp = e.asignado_a
-        ? (db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(e.asignado_a) as
-            | { numero_empleado: string; nombre: string }
-            | undefined)
-        : undefined;
-      return {
-        id: e.id,
-        codigo: e.codigo,
-        tipo: e.tipo,
-        marca: e.marca,
-        modelo: e.modelo,
-        numero_serie: e.numero_serie,
-        estado: e.estado,
-        asignado_a: e.asignado_a,
-        asignado_nombre: emp ? `${emp.numero_empleado} ${emp.nombre}` : null,
-        created_at: e.created_at,
-        responsivas: (
-          db
-            .prepare(
-              `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
-               WHERE ri.equipo_id = ? AND r.estado != 'ELIMINADA' ORDER BY r.id DESC`
-            )
-            .all(e.id) as { folio: string }[]
-        ).map((r) => r.folio),
-        mantenimientos: (db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id = ?").get(e.id) as { c: number }).c,
-        llenos: datosLlenos(e),
-        motivo,
-        ficha: fichaDe(e),
-      };
-    };
 
     return {
       ok: true,
@@ -1118,54 +1119,7 @@ export async function buscarParaFusion(
     return {
       ok: true,
       aviso,
-      equipos: filas
-        .filter((e) => !yaSugeridos.has(e.id))
-        .map((e) => {
-          const emp = e.asignado_a
-            ? (db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(e.asignado_a) as
-                | { numero_empleado: string; nombre: string }
-                | undefined)
-            : undefined;
-          const d = detallesDe(e);
-          return {
-            id: e.id,
-            codigo: e.codigo,
-            tipo: e.tipo,
-            marca: e.marca,
-            modelo: e.modelo,
-            numero_serie: e.numero_serie,
-            estado: e.estado,
-            asignado_a: e.asignado_a,
-            asignado_nombre: emp ? `${emp.numero_empleado} ${emp.nombre}` : null,
-            created_at: e.created_at,
-            responsivas: (
-              db
-                .prepare(
-                  `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
-                   WHERE ri.equipo_id = ? AND r.estado != 'ELIMINADA' ORDER BY r.id DESC`
-                )
-                .all(e.id) as { folio: string }[]
-            ).map((r) => r.folio),
-            mantenimientos: (db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id = ?").get(e.id) as {
-              c: number;
-            }).c,
-            llenos: datosLlenos(e),
-            motivo: "elegido a mano",
-            ficha: (
-              [
-                ["Serie", e.numero_serie],
-                ["Marca y modelo", `${e.marca} ${e.modelo}`.trim()],
-                ["Nombre del equipo", d.nombre_computadora],
-                ["No. de activo", d.activo],
-                ["IMEI", d.imei],
-                ["Línea", d.numero],
-                ["Características", e.specs],
-              ] as [string, string | null | undefined][]
-            )
-              .filter(([, v]) => String(v ?? "").trim())
-              .map(([etiqueta, v]) => ({ etiqueta, valor: String(v).trim() })),
-          };
-        }),
+      equipos: filas.filter((e) => !yaSugeridos.has(e.id)).map((e) => aFusionable(e, "elegido a mano")),
     };
   } catch (e) {
     console.error(e);
@@ -1322,5 +1276,67 @@ export async function fusionarEquiposManual(datos: {
   } catch (e) {
     console.error(e);
     return { ok: false, error: `No se pudo unir: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+// ---------- Revisión de datos repetidos ----------
+
+/**
+ * Los dos equipos de un par ya elegido, listos para compararse.
+ *
+ * `candidatosFusion` sugiere con quién unir; esto es para cuando ya se sabe:
+ * desde la revisión de duplicados el par viene dado y no hay nada que elegir.
+ */
+export async function parejaFusion(
+  equipoId: number,
+  otroId: number
+): Promise<ResultadoAccion & { base?: EquipoFusionable; pareja?: EquipoFusionable }> {
+  try {
+    if (equipoId === otroId) return { ok: false, error: "Son el mismo registro." };
+    const base = db.prepare("SELECT * FROM equipos WHERE id = ?").get(equipoId) as Equipo | undefined;
+    const otro = db.prepare("SELECT * FROM equipos WHERE id = ?").get(otroId) as Equipo | undefined;
+    if (!base || !otro) return { ok: false, error: "Uno de los dos registros ya no existe." };
+    return { ok: true, base: aFusionable(base, "este equipo"), pareja: aFusionable(otro, "dato repetido") };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudieron cargar los dos equipos." };
+  }
+}
+
+/**
+ * Marca un dato repetido como ya revisado: son equipos distintos que casualmente
+ * comparten ese valor. Deja de aparecer en la revisión, pero queda anotado por
+ * si hay que volver a mirarlo.
+ */
+export async function descartarDuplicado(campo: string, valor: string, nota?: string): Promise<ResultadoAccion> {
+  try {
+    if (!campo || !valor) return { ok: false, error: "Falta saber qué dato se está descartando." };
+    db.prepare(
+      "INSERT INTO duplicados_revisados (campo, valor, nota) VALUES (?, ?, ?) ON CONFLICT(campo, valor) DO UPDATE SET nota = excluded.nota"
+    ).run(campo, valor, (nota ?? "").trim() || null);
+    db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+      "DUPLICADO_DESCARTADO",
+      `Se marcó como revisado el ${campo} repetido "${valor}": no son el mismo equipo.`,
+      JSON.stringify({ campo, valor, nota: nota ?? "" })
+    );
+    revalidar();
+    revalidatePath("/inventario/duplicados");
+    return { ok: true, mensaje: "Listo, ya no aparecerá en la revisión." };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo marcar como revisado." };
+  }
+}
+
+/** Devuelve a la revisión un dato repetido que se había descartado. */
+export async function reabrirDuplicado(campo: string, valor: string): Promise<ResultadoAccion> {
+  try {
+    db.prepare("DELETE FROM duplicados_revisados WHERE campo = ? AND valor = ?").run(campo, valor);
+    revalidar();
+    revalidatePath("/inventario/duplicados");
+    return { ok: true, mensaje: "Vuelve a estar en la lista por revisar." };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo devolver a la lista." };
   }
 }

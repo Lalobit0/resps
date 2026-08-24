@@ -125,6 +125,17 @@ CREATE TABLE IF NOT EXISTS bitacora (
   revertible INTEGER NOT NULL DEFAULT 0,
   revertida INTEGER NOT NULL DEFAULT 0
 );
+
+-- Grupos de datos repetidos que ya se revisaron y resultaron no ser el mismo
+-- aparato. Sin esto, los repetidos legítimos vuelven a salir en cada visita.
+CREATE TABLE IF NOT EXISTS duplicados_revisados (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  campo TEXT NOT NULL,
+  valor TEXT NOT NULL,
+  nota TEXT,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE(campo, valor)
+);
 `;
 
 // ---------- Plantillas por clase de carta (intro + {{tabla_equipo}} + normas) ----------

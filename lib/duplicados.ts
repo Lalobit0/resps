@@ -110,6 +110,66 @@ export function conflictosContra(
   return conflictos;
 }
 
+/**
+ * Un dato repetido y todos los equipos que lo comparten.
+ *
+ * Es la misma revisión de `detectarDuplicados` pero vista al revés: en vez de
+ * "qué le pasa a este equipo", responde "estos dos registros comparten esto",
+ * que es como se revisan y se unen.
+ */
+export type GrupoDuplicado = {
+  /** Identifica al grupo entre visitas: sirve para marcarlo como revisado. */
+  clave: string;
+  campo: CampoDuplicable;
+  etiqueta: string;
+  valor: string;
+  /** Repetirlo es un error de captura, no una coincidencia. */
+  bloqueante: boolean;
+  ids: number[];
+};
+
+export function claveGrupo(campo: string, valor: string): string {
+  return `${campo}|${valor}`;
+}
+
+/** Los datos repetidos del inventario, agrupados por el valor que se repite. */
+export function agruparDuplicados(equipos: EquipoRevisable[]): GrupoDuplicado[] {
+  const indice = new Map<string, { campo: CampoDuplicable; valor: string; ids: number[] }>();
+
+  for (const e of equipos) {
+    for (const v of valoresComparables(e.numero_serie, parseDetalles(e.detalles))) {
+      const clave = claveGrupo(v.campo, v.valor);
+      const grupo = indice.get(clave) ?? { campo: v.campo, valor: v.valor, ids: [] };
+      grupo.ids.push(e.id);
+      indice.set(clave, grupo);
+    }
+  }
+
+  const grupos: GrupoDuplicado[] = [];
+  for (const [clave, g] of indice) {
+    if (g.ids.length < 2) continue;
+    grupos.push({
+      clave,
+      campo: g.campo,
+      etiqueta: ETIQUETA_CAMPO_DUP[g.campo],
+      valor: g.valor,
+      bloqueante: CAMPOS_BLOQUEANTES.includes(g.campo),
+      ids: g.ids,
+    });
+  }
+
+  // Primero lo que impide guardar, y dentro de eso los grupos más grandes.
+  const orden: CampoDuplicable[] = ["serie", "imei", "linea", "activo", "nombre_computadora"];
+  grupos.sort(
+    (a, b) =>
+      Number(b.bloqueante) - Number(a.bloqueante) ||
+      orden.indexOf(a.campo) - orden.indexOf(b.campo) ||
+      b.ids.length - a.ids.length ||
+      a.valor.localeCompare(b.valor)
+  );
+  return grupos;
+}
+
 /** Revisa todo el inventario y devuelve los conflictos por equipo. */
 export function detectarDuplicados(equipos: EquipoRevisable[]): Record<number, Conflicto[]> {
   const indice = new Map<string, { ids: number[]; codigos: string[] }>();

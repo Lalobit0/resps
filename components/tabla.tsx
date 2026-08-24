@@ -204,7 +204,7 @@ export function EncabezadoTabla({
             return (
               <th
                 key={c.clave}
-                className={`relative select-none overflow-hidden px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide ${
+                className={`relative select-none px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide ${
                   activa ? "text-kraft-dark" : "text-soft"
                 } ${c.ordenable === false ? "" : "cursor-pointer hover:text-ink"}`}
                 onClick={() => onOrdenar(c)}
@@ -225,12 +225,17 @@ export function EncabezadoTabla({
                   </span>
                 ) : null}
                 {i < columnas.length - 1 ? (
+                  // El tirador monta sobre el borde entre las dos columnas y se
+                  // deja ver siempre: si no, nadie descubre que se puede
+                  // arrastrar. Se ensancha al pasar el mouse para agarrarlo.
                   <span
                     onMouseDown={onArrastrar(i)}
                     onClick={(ev) => ev.stopPropagation()}
-                    title="Arrastra para cambiar el ancho"
-                    className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize hover:bg-kraft/30"
-                  />
+                    title="Arrastra para hacer la columna más ancha o más angosta"
+                    className="group absolute -right-1.5 top-0 z-10 flex h-full w-3 cursor-col-resize items-center justify-center"
+                  >
+                    <span className="h-4 w-px bg-line group-hover:h-full group-hover:w-0.5 group-hover:bg-kraft" />
+                  </span>
                 ) : null}
               </th>
             );

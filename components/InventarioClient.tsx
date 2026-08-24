@@ -16,20 +16,23 @@ import { EncabezadoTabla, ordenarFilas, useTabla, type ColumnaTabla } from "./ta
 
 /** Las columnas del inventario, con su ancho inicial y cómo ordenan. */
 const COLUMNAS: ColumnaTabla[] = [
-  { clave: "codigo", etiqueta: "Código", ancho: 9 },
-  { clave: "tipo", etiqueta: "Tipo", ancho: 8, valores: ["COMPUTO", "CELULAR", "RADIO", "OTRO"] },
-  { clave: "equipo", etiqueta: "Equipo", ancho: 16 },
-  { clave: "serie", etiqueta: "Serie", ancho: 10 },
+  { clave: "codigo", etiqueta: "Código", ancho: 7 },
+  // El área y la persona van al principio: el inventario se revisa por
+  // departamento, así que es lo primero que se busca en el renglón.
+  { clave: "area", etiqueta: "Área", ancho: 9 },
+  { clave: "asignado", etiqueta: "Asignado a", ancho: 13 },
+  { clave: "tipo", etiqueta: "Tipo", ancho: 6, valores: ["COMPUTO", "CELULAR", "RADIO", "OTRO"] },
+  { clave: "equipo", etiqueta: "Equipo", ancho: 14 },
+  { clave: "serie", etiqueta: "Serie", ancho: 8 },
   {
     clave: "estado",
     etiqueta: "Estado",
     ancho: 8,
     valores: ["ASIGNADO", "DISPONIBLE", "SIN RESPONSIVA", "MANTENIMIENTO", "BAJA"],
   },
-  { clave: "asignado", etiqueta: "Asignado a", ancho: 15 },
-  { clave: "responsivas", etiqueta: "Responsivas", ancho: 12, valores: ["CON", "SIN"] },
-  { clave: "compra", etiqueta: "Compra", ancho: 7 },
-  { clave: "acciones", etiqueta: "Acciones", ancho: 15, ordenable: false },
+  { clave: "responsivas", etiqueta: "Responsivas", ancho: 9, valores: ["CON", "SIN"] },
+  { clave: "compra", etiqueta: "Compra", ancho: 6, fin: true },
+  { clave: "acciones", etiqueta: "Acciones", ancho: 20, ordenable: false },
 ];
 
 /**
@@ -43,6 +46,9 @@ function columnasPara(seccion: string): ColumnaTabla[] {
     c.clave === "equipo" ? { ...c, ancho: c.ancho + (tipo?.ancho ?? 0) } : c
   );
 }
+
+/** Nombre corto del tipo: en la columna no cabe "Teléfono / Celular". */
+const TIPO_CORTO: Record<string, string> = { COMPUTO: "Cómputo", CELULAR: "Celular", RADIO: "Radio", OTRO: "Otro" };
 
 const tdc = "px-2 py-1.5 text-sm text-ink align-middle";
 const thc = "px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-soft whitespace-nowrap";
@@ -170,6 +176,8 @@ export default function InventarioClient({
         return `${e.marca} ${e.modelo}`;
       case "serie":
         return e.numero_serie ?? "";
+      case "area":
+        return e.asignado_area || e.asignado_departamento || "";
       case "estado":
         return faltaResponsiva.has(e.id) ? "SIN RESPONSIVA" : e.estado;
       case "asignado":
@@ -457,7 +465,32 @@ export default function InventarioClient({
                       ) : null}
                     </div>
                   </td>
-                  {seccion ? null : <td className={`${tdc} truncate text-xs`}>{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</td>}
+                  <td
+                    className={`${tdc} truncate text-xs`}
+                    title={
+                      [e.asignado_area, e.asignado_departamento && e.asignado_departamento !== e.asignado_area
+                        ? `Departamento: ${e.asignado_departamento}`
+                        : ""]
+                        .filter(Boolean)
+                        .join(" · ")
+                    }
+                  >
+                    {e.asignado_area || e.asignado_departamento || <span className="text-soft">—</span>}
+                  </td>
+                  <td className={`${tdc} truncate text-xs`} title={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre} · ver su histórico` : ""}>
+                    {e.asignado_nombre && e.asignado_a ? (
+                      <Link href={`/empleados/${e.asignado_a}`} className="hover:text-kraft hover:underline">
+                        <span className="mono text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
+                      </Link>
+                    ) : (
+                      <span className="text-soft">—</span>
+                    )}
+                  </td>
+                  {seccion ? null : (
+                    <td className={`${tdc} truncate text-xs`} title={ETIQUETA_TIPO[e.tipo] ?? e.tipo}>
+                      {TIPO_CORTO[e.tipo] ?? ETIQUETA_TIPO[e.tipo] ?? e.tipo}
+                    </td>
+                  )}
                   <td className={`${tdc} truncate`} title={`${e.marca} ${e.modelo}${e.specs ? " · " + e.specs : ""}`}>
                     <div className="truncate font-medium">
                       {e.marca} {e.modelo}
@@ -472,15 +505,6 @@ export default function InventarioClient({
                         <Badge tono="petrol">Sin responsiva</Badge>
                       </div>
                     ) : null}
-                  </td>
-                  <td className={`${tdc} truncate text-xs`} title={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre} · ver su histórico` : ""}>
-                    {e.asignado_nombre && e.asignado_a ? (
-                      <Link href={`/empleados/${e.asignado_a}`} className="hover:text-kraft hover:underline">
-                        <span className="mono text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
-                      </Link>
-                    ) : (
-                      <span className="text-soft">—</span>
-                    )}
                   </td>
                   <td className={tdc}>
                     {(responsivas[e.id] ?? []).length ? (

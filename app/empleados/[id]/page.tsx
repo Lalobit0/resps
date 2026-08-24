@@ -10,6 +10,7 @@ import AsignarEquipoBtn from "../../../components/AsignarEquipoBtn";
 import type { ResponsivaDeEquipo } from "../../../components/InventarioClient";
 import { idsSinResponsiva, responsivasSinFirmaDe } from "../../../lib/pendientes";
 import SubirFirmadaBtn from "../../../components/SubirFirmadaBtn";
+import EditarEmpleadoBtn from "../../../components/EditarEmpleadoBtn";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,7 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
     <>
       <PageHeader eyebrow="Histórico de empleado" title={empleado.nombre}>
         {empleado.activo ? <Badge tono="verde">Activo</Badge> : <Badge tono="gris">Inactivo</Badge>}
+        <EditarEmpleadoBtn empleado={empleado} />
         <Link href="/empleados" className={btnGhost}>
           ← Volver
         </Link>

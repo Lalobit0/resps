@@ -1429,3 +1429,75 @@ export async function ubicarEquipos(
     return { ok: false, error: `No se pudieron ubicar: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
+
+/**
+ * Sube el archivo actualizador: pone área y clasificación por lotes.
+ *
+ * El equipo se busca por código y, si no aparece, por número de serie. Una
+ * celda vacía no borra nada: deja el dato como está, que es lo que se espera
+ * de un archivo que se llena a medias y se sube varias veces.
+ */
+export async function importarUbicaciones(formData: FormData): Promise<ResultadoAccion> {
+  try {
+    const archivo = formData.get("archivo") as File | null;
+    if (!archivo || !archivo.size) return { ok: false, error: "Elige el archivo Excel." };
+
+    const filas = await importarDeExcel(
+      Buffer.from(await archivo.arrayBuffer()),
+      {
+        codigo: ["codigo", "código", "clave"],
+        serie: ["serie", "numero de serie", "número de serie", "num serie"],
+        area: ["area", "área", "area departamento", "área departamento", "departamento"],
+        clasificacion: ["clasificacion", "clasificación", "clase", "tipo de equipo"],
+      },
+      "Actualizar"
+    );
+    if (!filas.length) return { ok: false, error: "El archivo no trae renglones con Código o Serie." };
+
+    const cambios: { id: number; departamento?: string; area?: string; clasificacion?: string }[] = [];
+    const sinEncontrar: string[] = [];
+    for (const f of filas) {
+      const codigo = (f.codigo ?? "").trim();
+      const serie = (f.serie ?? "").trim();
+      const area = (f.area ?? "").trim().toUpperCase();
+      const clasificacion = (f.clasificacion ?? "").trim().toUpperCase();
+      if (!area && !clasificacion) continue;
+
+      const eq = (codigo
+        ? db.prepare("SELECT id FROM equipos WHERE UPPER(codigo) = UPPER(?)").get(codigo)
+        : undefined) as { id: number } | undefined;
+      const porSerie = (!eq && serie
+        ? db.prepare("SELECT id FROM equipos WHERE UPPER(REPLACE(numero_serie,' ','')) = UPPER(REPLACE(?,' ',''))").get(serie)
+        : undefined) as { id: number } | undefined;
+      const encontrado = eq ?? porSerie;
+      if (!encontrado) {
+        sinEncontrar.push(codigo || serie);
+        continue;
+      }
+      cambios.push({ id: encontrado.id, departamento: area, area, clasificacion });
+    }
+
+    if (!cambios.length) {
+      return {
+        ok: false,
+        error: sinEncontrar.length
+          ? `Ninguno de los ${sinEncontrar.length} renglones con datos coincide con un equipo del inventario. Revisa el código o la serie: ${sinEncontrar.slice(0, 5).join(", ")}…`
+          : "El archivo no trae ningún área ni clasificación que aplicar.",
+      };
+    }
+
+    const res = await ubicarEquipos(cambios);
+    if (!res.ok) return res;
+    return {
+      ok: true,
+      mensaje:
+        `${cambios.length} equipo(s) actualizados desde el archivo.` +
+        (sinEncontrar.length
+          ? ` No se encontraron ${sinEncontrar.length} en el inventario: ${sinEncontrar.slice(0, 8).join(", ")}${sinEncontrar.length > 8 ? "…" : ""}.`
+          : ""),
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo leer el archivo. Asegúrate de que sea el Excel del actualizador." };
+  }
+}

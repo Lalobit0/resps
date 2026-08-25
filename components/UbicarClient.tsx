@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ubicarEquipos } from "../app/inventario/actions";
+import { importarUbicaciones, ubicarEquipos } from "../app/inventario/actions";
 import { CLASIFICACIONES_EQUIPO } from "../lib/constants";
 import { Badge, Card, btnGhost, btnPrimary, inputCls } from "./ui";
 
@@ -51,6 +51,25 @@ export default function UbicarClient({
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
+  const archivo = useRef<HTMLInputElement>(null);
+
+  /** Sube el Excel del actualizador y aplica lo que traiga lleno. */
+  const importar = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const f = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!f) return;
+    setError("");
+    setMensaje("");
+    const fd = new FormData();
+    fd.append("archivo", f);
+    iniciar(async () => {
+      const res = await importarUbicaciones(fd);
+      if (res.ok) {
+        setMensaje(res.mensaje ?? "Listo.");
+        router.refresh();
+      } else setError(res.error ?? "No se pudo importar.");
+    });
+  };
 
   const poner = (id: number, campo: "departamento" | "clasificacion", texto: string) =>
     setValores((v) => ({ ...v, [id]: { ...v[id], [campo]: texto } }));
@@ -149,6 +168,15 @@ export default function UbicarClient({
             </option>
           ))}
         </select>
+        <input ref={archivo} type="file" accept=".xlsx,.xls" className="hidden" onChange={importar} />
+        <button
+          className={btnGhost}
+          onClick={() => archivo.current?.click()}
+          disabled={pendiente}
+          title="Sube el Excel del actualizador: pone el área y la clasificación de golpe"
+        >
+          ↥ Importar Excel
+        </button>
         <span className="ml-auto text-xs text-soft">
           {cambios.length ? `${cambios.length} renglón(es) por guardar` : "Sin cambios todavía"}
         </span>

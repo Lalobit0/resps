@@ -21,14 +21,17 @@ export default async function PaginaUbicar({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const verTodos = sp.todos === "1";
+  // "faltan" (el de siempre), "conresp", "sinclase" o "todos".
+  const ver = typeof sp.ver === "string" ? sp.ver : sp.todos === "1" ? "todos" : "faltan";
 
   const filas = db
     .prepare(
       `SELECT e.id, e.codigo, e.tipo, e.marca, e.modelo, e.numero_serie, e.estado, e.detalles,
-              e.departamento, e.area, e.clasificacion,
+              e.departamento, e.area, e.clasificacion, e.asignado_a,
               em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero,
-              em.departamento AS asignado_departamento
+              em.departamento AS asignado_departamento,
+              (SELECT GROUP_CONCAT(r.folio, ', ') FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+                WHERE ri.equipo_id = e.id AND r.tipo = 'ASIGNACION' AND r.estado != 'ELIMINADA') AS folios
        FROM equipos e LEFT JOIN empleados em ON em.id = e.asignado_a
        WHERE e.estado != 'BAJA'
        ORDER BY e.codigo ASC`
@@ -45,9 +48,11 @@ export default async function PaginaUbicar({
     departamento: string | null;
     area: string | null;
     clasificacion: string | null;
+    asignado_a: number | null;
     asignado_nombre: string | null;
     asignado_numero: string | null;
     asignado_departamento: string | null;
+    folios: string | null;
   }[];
 
   // Los departamentos que ya existen: la propuesta solo sale de datos reales.
@@ -85,20 +90,27 @@ export default async function PaginaUbicar({
       departamento: f.departamento ?? f.asignado_departamento ?? "",
       area: f.area ?? "",
       clasificacion: f.clasificacion ?? "",
+      responsiva: f.folios,
+      con_responsiva: !!f.asignado_a && !!f.folios,
       sugerido: propuesta?.departamento ?? "",
       motivo: propuesta?.motivo ?? (nombreSinPistas(nombrePc, f.numero_serie) ? "el nombre no dice el área" : ""),
     };
   });
 
+  // Las vistas rápidas: cada una con su cuenta, para saber qué se va a tocar.
+  const VISTAS = [
+    { clave: "faltan", etiqueta: "Sin área", filtro: (e: EquipoPorUbicar) => !e.departamento },
+    { clave: "sinclase", etiqueta: "Sin clasificar", filtro: (e: EquipoPorUbicar) => !e.clasificacion },
+    { clave: "conresp", etiqueta: "Asignados con responsiva", filtro: (e: EquipoPorUbicar) => e.con_responsiva },
+    { clave: "todos", etiqueta: "Todos", filtro: () => true },
+  ];
+  const vista = VISTAS.find((v) => v.clave === ver) ?? VISTAS[0];
+  const lista = equipos.filter(vista.filtro);
   const faltan = equipos.filter((e) => !e.departamento);
-  const lista = verTodos ? equipos : faltan;
 
   return (
     <>
-      <PageHeader eyebrow="Activos de TI" title="Ubicar equipos por área">
-        <Link href={verTodos ? "/inventario/ubicar" : "/inventario/ubicar?todos=1"} className={btnGhost}>
-          {verTodos ? "Ver solo los que faltan" : "Ver todos los equipos"}
-        </Link>
+      <PageHeader eyebrow="Activos de TI" title="Ubicar y clasificar equipos">
         <Link href="/inventario" className={btnGhost}>
           ← Volver al inventario
         </Link>
@@ -106,6 +118,25 @@ export default async function PaginaUbicar({
           {faltan.length} sin área · {equipos.length} en total
         </span>
       </PageHeader>
+
+      <nav className="mb-4 flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="mr-1 font-semibold uppercase tracking-wide text-soft">Ver</span>
+        {VISTAS.map((v) => {
+          const n = equipos.filter(v.filtro).length;
+          const activa = v.clave === vista.clave;
+          return (
+            <a
+              key={v.clave}
+              href={`/inventario/ubicar?ver=${v.clave}`}
+              className={`rounded-full border px-2.5 py-0.5 font-medium ${
+                activa ? "border-kraft bg-kraft/15 text-ink" : "border-line bg-white text-soft hover:border-kraft/60 hover:text-ink"
+              }`}
+            >
+              {v.etiqueta} <span className="mono">{n}</span>
+            </a>
+          );
+        })}
+      </nav>
 
       <p className="mb-5 max-w-3xl text-sm text-soft">
         El área es del equipo: se queda con él aunque cambie de dueño o se libere. Donde el nombre de la computadora lo
@@ -117,7 +148,7 @@ export default async function PaginaUbicar({
       {equipos.length === 0 ? (
         <Empty>No hay equipos que ubicar.</Empty>
       ) : (
-        <UbicarClient equipos={lista} departamentos={departamentos} soloFaltan={!verTodos} />
+        <UbicarClient equipos={lista} departamentos={departamentos} vista={vista.etiqueta} />
       )}
     </>
   );

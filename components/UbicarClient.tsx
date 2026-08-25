@@ -18,6 +18,10 @@ export type EquipoPorUbicar = {
   departamento: string;
   area: string;
   clasificacion: string;
+  /** Folios de sus cartas de asignación, si las tiene. */
+  responsiva: string | null;
+  /** Tiene dueño y carta: son los que ya están formalmente entregados. */
+  con_responsiva: boolean;
   /** Departamento propuesto por el nombre de la computadora. */
   sugerido: string;
   motivo: string;
@@ -32,16 +36,18 @@ export type EquipoPorUbicar = {
 export default function UbicarClient({
   equipos,
   departamentos,
-  soloFaltan,
+  vista,
 }: {
   equipos: EquipoPorUbicar[];
   departamentos: string[];
-  soloFaltan: boolean;
+  /** Nombre de la vista abierta, para decirlo en los textos. */
+  vista: string;
 }) {
   const router = useRouter();
   const [valores, setValores] = useState<Record<number, { departamento: string; clasificacion: string }>>(() =>
     Object.fromEntries(equipos.map((e) => [e.id, { departamento: e.departamento, clasificacion: e.clasificacion }]))
   );
+  const [elegidos, setElegidos] = useState<Set<number>>(new Set());
   const [mensaje, setMensaje] = useState("");
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
@@ -58,12 +64,27 @@ export default function UbicarClient({
       return nuevo;
     });
 
-  /** Pone la misma clasificación en todos los renglones que aún no tienen. */
-  const clasificarVacios = (valor: string) => {
+  const todos = elegidos.size === equipos.length && equipos.length > 0;
+  const alternarTodos = () => setElegidos(todos ? new Set() : new Set(equipos.map((e) => e.id)));
+  const alternar = (id: number) =>
+    setElegidos((prev) => {
+      const s = new Set(prev);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
+      return s;
+    });
+
+  /**
+   * Pone la misma clasificación a los renglones marcados; si no hay ninguno
+   * marcado, a los que todavía no tienen. Así el caso normal —"a todos estos,
+   * Administrativo"— es un clic sin tener que marcar uno por uno.
+   */
+  const clasificarEnBloque = (valor: string) => {
     if (!valor) return;
     setValores((v) => {
       const nuevo = { ...v };
-      for (const e of equipos) if (!nuevo[e.id]?.clasificacion) nuevo[e.id] = { ...nuevo[e.id], clasificacion: valor };
+      const destino = elegidos.size ? equipos.filter((e) => elegidos.has(e.id)) : equipos.filter((e) => !nuevo[e.id]?.clasificacion);
+      for (const e of destino) nuevo[e.id] = { ...nuevo[e.id], clasificacion: valor };
       return nuevo;
     });
   };
@@ -106,12 +127,17 @@ export default function UbicarClient({
           Aceptar las {conSugerencia.length} propuestas
         </button>
         <span className="text-soft">·</span>
-        <span className="text-xs text-soft">Poner a los que no tienen:</span>
+        <button className={btnGhost} onClick={alternarTodos} disabled={pendiente || equipos.length === 0}>
+          {todos ? "Quitar la selección" : `Marcar los ${equipos.length}`}
+        </button>
+        <span className="text-xs text-soft">
+          Clasificar {elegidos.size ? <b>los {elegidos.size} marcados</b> : "los que no tienen"}:
+        </span>
         <select
           className={`${inputCls} max-w-[220px]`}
           defaultValue=""
           onChange={(e) => {
-            clasificarVacios(e.target.value);
+            clasificarEnBloque(e.target.value);
             e.target.value = "";
           }}
           disabled={pendiente}
@@ -135,7 +161,16 @@ export default function UbicarClient({
         <table className="w-full min-w-[1100px] border-collapse">
           <thead className="border-b border-line bg-paper/70">
             <tr>
-              {["Código", "Equipo", "Nombre del equipo", "Quién lo tiene", "Propuesta", "Área / Departamento", "Clasificación"].map(
+              <th className="w-8 px-2 py-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-kraft"
+                  checked={todos}
+                  onChange={alternarTodos}
+                  title="Marcar o desmarcar todos"
+                />
+              </th>
+              {["Código", "Equipo", "Nombre del equipo", "Quién lo tiene", "Responsiva", "Propuesta", "Área / Departamento", "Clasificación"].map(
                 (t) => (
                   <th key={t} className="px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-soft">
                     {t}
@@ -147,15 +182,29 @@ export default function UbicarClient({
           <tbody>
             {equipos.length === 0 ? (
               <tr>
-                <td className="px-3 py-8 text-center text-sm text-soft" colSpan={7}>
-                  {soloFaltan ? "Todos los equipos ya tienen área. 🎉" : "No hay equipos."}
+                <td className="px-3 py-8 text-center text-sm text-soft" colSpan={9}>
+                  No hay equipos en “{vista}”. 🎉
                 </td>
               </tr>
             ) : null}
             {equipos.map((e) => {
               const v = valores[e.id] ?? { departamento: "", clasificacion: "" };
               return (
-                <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
+                <tr
+                  key={e.id}
+                  className={`border-b border-line/70 last:border-0 hover:bg-paper/40 ${
+                    elegidos.has(e.id) ? "bg-kraft/5" : ""
+                  }`}
+                >
+                  <td className="px-2 py-1.5 align-middle">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-kraft"
+                      checked={elegidos.has(e.id)}
+                      onChange={() => alternar(e.id)}
+                      disabled={pendiente}
+                    />
+                  </td>
                   <td className="px-2 py-1.5 align-middle">
                     <span className="mono text-xs font-semibold text-ink">{e.codigo}</span>
                   </td>
@@ -172,6 +221,13 @@ export default function UbicarClient({
                   </td>
                   <td className="px-2 py-1.5 align-middle text-xs">
                     {e.asignado ?? <span className="text-soft">Disponible</span>}
+                  </td>
+                  <td className="px-2 py-1.5 align-middle">
+                    {e.responsiva ? (
+                      <span className="mono text-[11px] text-kraft-dark">{e.responsiva}</span>
+                    ) : (
+                      <span className="text-xs text-soft">—</span>
+                    )}
                   </td>
                   <td className="px-2 py-1.5 align-middle">
                     {e.sugerido ? (
@@ -231,6 +287,12 @@ export default function UbicarClient({
         ))}
       </datalist>
 
+      {vista === "Asignados con responsiva" && equipos.length ? (
+        <p className="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-900">
+          Estos {equipos.length} equipos ya están entregados y con su carta. Para clasificarlos todos igual: <b>Marcar
+          los {equipos.length}</b>, elige la clasificación y <b>Guardar</b>.
+        </p>
+      ) : null}
       {equipos.some((e) => e.estado === "ASIGNADO") ? (
         <p className="text-xs text-soft">
           Los equipos que ya tienen dueño traen el departamento de esa persona. Cambiarlo aquí solo cambia el del{" "}

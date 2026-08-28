@@ -111,6 +111,17 @@ CREATE TABLE IF NOT EXISTS firmas (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- Catálogo de conceptos del vale de descuento, con su precio tal como está
+-- escrito en el formato de RH. El texto se guarda aparte del número porque el
+-- documento lo lleva con letra y así se respeta palabra por palabra.
+CREATE TABLE IF NOT EXISTS conceptos_vale (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  concepto TEXT NOT NULL UNIQUE,
+  monto REAL NOT NULL,
+  texto TEXT,
+  activo INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS config (
   clave TEXT PRIMARY KEY,
   valor TEXT NOT NULL
@@ -216,7 +227,21 @@ const PLANTILLA_WIFI_ANTERIOR = PLANTILLA_WIFI.replace("\n5. Uso responsable:", 
   .replace("\n6. Supervisión y control:", "\n5. Supervisión y control:")
   .replace("\n7. Consecuencias por incumplimiento:", "\n6. Consecuencias por incumplimiento:");
 
-const PLANTILLA_VALE = `En {{ciudad}}, a {{fecha}}. Yo {{nombre_empleado}}, con número de empleado {{numero_empleado}}, por medio del presente estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}}, con un valor de reposición de {{monto}}.
+// Los renglones con guiones bajos se dejan en blanco a propósito: el empleado
+// los llena a mano cuando firma el papel, como en el formato de RH.
+const PLANTILLA_VALE = `En {{ciudad}}, a {{fecha}}.
+
+Yo {{nombre_empleado}}, con número de empleado {{numero_empleado}}, por medio del presente estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}}
+
+Que recibí el día ____________________________, dicho descuento será efectivo en la semana _______ del año __________, con un valor de reposición de: {{monto}}
+
+CLAÚSULA:
+Cantidad que me será descontada vía nómina en caso de robo o extravío. Estoy de acuerdo que, en caso de terminación de la relación laboral, dicho monto será descontado de mi finiquito.
+Por sanidad no se recibe a devolución y su costo debe ser descontado de su último recibo de nómina a excepción de que ya haya cumplido sus 6 meses de vida.`;
+
+// Como estaba antes de traer el formato de RH: se usa para reconocerla y
+// actualizarla sin pisar la que el usuario haya editado a mano.
+const PLANTILLA_VALE_ANTERIOR = `En {{ciudad}}, a {{fecha}}. Yo {{nombre_empleado}}, con número de empleado {{numero_empleado}}, por medio del presente estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}}, con un valor de reposición de {{monto}}.
 
 CLÁUSULA:
 Cantidad que me será descontada vía nómina en caso de robo o extravío. Estoy de acuerdo que, en caso de terminación de la relación laboral, dicho monto será descontado de mi finiquito.
@@ -229,6 +254,48 @@ const PLANTILLA_DEVOLUCION = `En {{ciudad}}, a {{fecha}}, el (la) que suscribe {
 Con la firma de la presente, el departamento de TI da por recibido el equipo en las condiciones señaladas y se da por concluida la carta responsiva {{folio_origen}}.
 
 {{observaciones}}`;
+
+// El tarifario que RH trae en su formato de vale. Se siembra una sola vez: a
+// partir de ahí se administra desde la pantalla de vales.
+const CONCEPTOS_VALE_SEED: [string, number, string][] = [
+  ["CHALECO C/CINTA REFLEJANTE", 110.0, "$110.00 (CIENTO DIEZ 00/100) PESOS."],
+  ["PLAYERA AZUL", 190.0, "$190.00 (CIENTO NOVENTA 00/100) PESOS."],
+  ["PLAYERA ROJA", 190.0, "$190.00 (CIENTO NOVENTA 00/100) PESOS."],
+  ["REP. CREDENCIAL", 50.0, "$50.00 (CINCUENTA 00/100) PESOS."],
+  ["REP. GUANTES", 50.0, "$50.00 (CINCUENTA 00/100) PESOS."],
+  ["REP. CINTA METRICA", 150.0, "$150.00 (CIENTO CINCUENTA 00/100) PESOS."],
+  ["REP. BOTAS DE SEGURIDAD", 520.0, "$520 (QUINIENTOS VEINTE 00/100) PESOS."],
+  ["REP. NAVAJA", 150.0, "$150.00 (CIENTO CINCUENTA 00/100) PESOS."],
+  ["REP. CHALECO C/CINTA REFLEJANTE", 385.0, "$385.00 (TRESCIENTOS OCHENTA Y CINCO 00/100) PESOS."],
+  ["REP. BOTAS DE SEGURIDAD RIVERLINE", 1200.0, "$1200.00 (MIL DOSCIENTOS 00/100) PESOS."],
+  ["REP. GORRA CON LOGOS SULTANA", 100.0, "$100.00 (CIEN 00/100) PESOS."],
+  ["CAJA CHICA", 450.0, "$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS."],
+  ["3 CAMISAS AZULES RED KAP", 485.0, "$485 (CUATROCIENTOS OCHENTA Y CINCO 00/100) PESOS POR PIEZA."],
+  ["SUDADERA NEGRA SULTANA", 360.0, "$360 (TRESCIENTOS SESENTA 00/100) PESOS."],
+  ["CHAMARRA NEGRA SULTANA", 750.0, "$750 (SETECIENTOS 00/100) PESOS POR PIEZA."],
+  ["1 BOTAS DE SEGURIDAD PROCLIFF", 800.0, "$800 (OCHOCIENTOS 00/100) PESOS."],
+  ["1 CHALECO GUINDA C/CINTA REFLEJANTE", 600.0, "$600 (SEISCIENTOS 00/100) PESOS POR PIEZA."],
+  ["REP. FLEXOMETRO", 150.0, "$150.00 (CIENTO CINCUENTA 00/100) PESOS."],
+  ["REP. NAVAJA GRIS", 210.0, "$210.00 (DOSCIENTOS DIEZ 00/100) PESOS."],
+  ["REP. GUANTES DE NEOPRENO", 120.0, "$120.00 (CIENTO VEINTE 00/100) PESOS."],
+  ["POLOS ADMINISTRATIVAS", 550.0, "$550.00 (QUINIENTOS CINCUENTA 00/100) PESOS PIEZA."],
+  ["BOTAS DE SEGURIDAD", 520.0, "$520 (QUINIENTOS VEINTE 00/100) PESOS."],
+  ["GORRA CON LOGOS SULTANA", 100.0, "$100.00 (CIEN 00/100) PESOS."],
+  ["CALCULADORA ELECTRONICA", 125.0, "$125.00 (CIENTO VEINTICINCO 00/100) PESOS."],
+  ["2 POLOS ADMINISTRATIVAS", 550.0, "$550 (QUINIENTOS CINCUENTA 00/100) PESOS POR PIEZA."],
+  ["PANTALON AZUL MARINO RED KAP", 550.0, "$550 (QUINIENTOS CINCUENTA 00/100) PESOS POR PIEZA."],
+  ["3 POLOS BLANCAS", 470.0, "$470 (CUATROCIENTOS SETENTA 00/100) PESOS POR PIEZA."],
+  ["2 PANTALONES AZULES", 495.0, "$495 (CUATROCIENTOS NOVENTA Y CINCO 00/100) PESOS POR PIEZA."],
+  ["2 PLAYERAS AZUL MARINO", 190.0, "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.."],
+  ["2 PLAYERAS ROJAS", 190.0, "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.."],
+  ["REP. RADIO PORTATIL TXPRO", 600.0, "$600 (SEISCIENTOS 00/100) PESOS."],
+  ["RADIO PORTATIL TXPRO", 450.0, "$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS."],
+  ["AURICULAR RADIO PORTATIL", 200.0, "$200.00 (DOSCIENTOS 00/100) PESOS."],
+  ["REP AURICULAR RADIO PORTATIL", 150.0, "$150.00 (CIENTO CINCUENTA 00/100) PESOS."],
+  ["REP. RADIO PORTATIL KENWOOD", 1470.0, "$1470 (MIL CUATROCIENTOS CIENCUENTA 00/100) PESOS."],
+  ["DIADEMA PARA PC", 600.0, "$600 (SEISCIENTOS 00/100) PESOS."],
+  ["CAMARA PC", 550.0, "$550.00 (QUINIENTOS CINCUENTA 00/100) PESOS PIEZA."],
+];
 
 const PLANTILLAS_SEED: [string, string, string][] = [
   ["carta_computo", "Carta responsiva — Equipo de cómputo", PLANTILLA_COMPUTO],
@@ -309,6 +376,15 @@ function seed(db: Database.Database) {
     PLANTILLA_WIFI,
     PLANTILLA_WIFI_ANTERIOR
   );
+
+  // El vale pasó al formato de RH, con los renglones que se llenan a mano.
+  db.prepare("UPDATE plantillas SET contenido = ? WHERE clave = 'vale_descuento' AND contenido = ?").run(
+    PLANTILLA_VALE,
+    PLANTILLA_VALE_ANTERIOR
+  );
+
+  const insCon = db.prepare("INSERT OR IGNORE INTO conceptos_vale (concepto, monto, texto) VALUES (?, ?, ?)");
+  for (const [concepto, monto, texto] of CONCEPTOS_VALE_SEED) insCon.run(concepto, monto, texto);
 
   const insConf = db.prepare("INSERT OR IGNORE INTO config (clave, valor) VALUES (?, ?)");
   insConf.run("empresa", "Sultana Packaging");

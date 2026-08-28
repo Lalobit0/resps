@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/inventario", etiqueta: "Inventario" },
   { href: "/lineas", etiqueta: "Líneas telefónicas" },
   { href: "/responsivas", etiqueta: "Responsivas" },
+  { href: "/vales", etiqueta: "Vales de descuento" },
   { href: "/mantenimientos", etiqueta: "Mantenimientos" },
   { href: "/revisiones", etiqueta: "Revisiones-IT" },
   { href: "/bitacora", etiqueta: "Bitácora" },

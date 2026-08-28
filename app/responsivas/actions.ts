@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import fs from "fs";
 import path from "path";
 import { db, getConfig, STORAGE_DIR, STORAGE_ELIMINADAS } from "../../lib/db";
+import { conceptoVale } from "../../lib/vales";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
 import { llenarPlantilla } from "../../lib/plantilla";
 import { descripcionEquipo, filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
@@ -95,6 +96,8 @@ async function bytesAsignacion(datos: {
   observaciones: string | null;
   concepto: string | null;
   monto: number | null;
+  /** El precio con letra, tal como está en el catálogo. */
+  montoTexto?: string | null;
   firmaEmpleado: string | null;
   firmaAutoridad: string | null;
   firmante: Firmante | null;
@@ -114,7 +117,9 @@ async function bytesAsignacion(datos: {
     observaciones: obs ? `Observaciones: ${obs}` : "",
     folio: datos.folio,
     concepto: datos.concepto?.trim() || "",
-    monto: datos.monto != null ? montoEnLetra(datos.monto) : "",
+    // El precio se escribe como lo trae el catálogo de RH; si no está ahí, se
+    // arma del número.
+    monto: datos.montoTexto?.trim() || (datos.monto != null ? montoEnLetra(datos.monto) : ""),
   });
   const { intro, cuerpo } = partirPlantilla(plantilla);
 
@@ -1753,49 +1758,42 @@ export async function regenerarResponsiva(id: number): Promise<ResultadoAccion> 
   }
 }
 
-// ---------- Vale de descuento ligado a una entrega ----------
-
 /**
- * Genera el vale de descuento de nómina de un equipo ya entregado.
+ * Genera un vale de descuento suelto, para cualquier empleado.
  *
- * En los radios la entrega son dos papeles: la responsiva del aparato y el
- * vale por su valor de reposición. Hacer el vale por separado obligaba a
- * volver a elegir empleado y a escribirlo todo; así sale del propio equipo y
- * queda colgado de su carta, para saber de qué entrega es.
+ * El concepto y su precio salen del catálogo de Recursos Humanos, así que solo
+ * hay que decir a quién y qué. Los renglones del día, la semana y el año van
+ * en blanco a propósito: los llena el empleado al firmar el papel.
  */
-export async function generarValeDeEntrega(datos: {
-  responsivaId: number;
-  concepto: string;
-  monto: string;
+export async function crearVale(datos: {
+  empleadoId: number;
+  conceptoId: number;
+  fecha?: string;
+  /** Si viene, el vale queda colgado de esa entrega. */
+  responsivaOrigenId?: number | null;
 }): Promise<ResultadoAccion> {
   try {
-    const origen = db.prepare("SELECT * FROM responsivas WHERE id = ? AND estado != 'ELIMINADA'").get(datos.responsivaId) as
-      | Responsiva
-      | undefined;
-    if (!origen) return { ok: false, error: "La carta de la entrega ya no existe." };
-    if (origen.tipo !== "ASIGNACION") return { ok: false, error: "El vale se hace desde una carta de asignación." };
-    if (origen.clase === "VALE") return { ok: false, error: "Esa carta ya es un vale." };
+    const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(datos.empleadoId) as Empleado | undefined;
+    if (!empleado) return { ok: false, error: "Selecciona al empleado." };
 
-    const yaTiene = db
-      .prepare("SELECT folio FROM responsivas WHERE responsiva_origen_id = ? AND clase = 'VALE' AND estado != 'ELIMINADA'")
-      .get(datos.responsivaId) as { folio: string } | undefined;
-    if (yaTiene) return { ok: false, error: `Esta entrega ya tiene el vale ${yaTiene.folio}.` };
+    const concepto = conceptoVale(datos.conceptoId);
+    if (!concepto) return { ok: false, error: "Elige el concepto del descuento." };
 
-    const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(origen.empleado_id) as Empleado | undefined;
-    if (!empleado) return { ok: false, error: "El empleado de la carta ya no existe." };
+    const hoy = hoyISO();
+    const pedida = (datos.fecha ?? "").trim();
+    if (pedida && !/^\d{4}-\d{2}-\d{2}$/.test(pedida)) return { ok: false, error: "La fecha del vale no es válida." };
+    if (pedida && pedida > limiteAdelante()) {
+      return { ok: false, error: `La fecha no puede pasar de ${fechaCorta(limiteAdelante())}. Revisa que esté bien escrita.` };
+    }
+    const fecha = pedida || hoy;
 
-    const concepto = (datos.concepto ?? "").trim();
-    if (!concepto) return { ok: false, error: "Indica el concepto del descuento." };
-    const monto = Number(datos.monto);
-    if (!datos.monto || Number.isNaN(monto) || monto <= 0) return { ok: false, error: "Indica un valor de reposición válido." };
+    const origen = datos.responsivaOrigenId
+      ? (db.prepare("SELECT id FROM responsivas WHERE id = ? AND estado != 'ELIMINADA'").get(datos.responsivaOrigenId) as
+          | { id: number }
+          | undefined)
+      : undefined;
 
     const folio = siguienteFolio("VALE");
-    // El vale lleva la fecha de la entrega: los dos papeles se firman juntos.
-    const fecha = origen.fecha;
-    // El vale lo firma RH, no sistemas; se deja sin firma digital, como las
-    // demás cartas: se imprime, se firma en papel y se sube escaneado.
-    const firmante: Firmante | null = null;
-
     const info = db
       .prepare(
         "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, responsiva_origen_id, entregado_por, concepto, monto) VALUES (?,?,?,?,?,?,?,?,?,?)"
@@ -1807,10 +1805,10 @@ export async function generarValeDeEntrega(datos: {
         empleado.id,
         fecha,
         "VIGENTE",
-        origen.id,
+        origen?.id ?? null,
         getConfig("entrega_default", "Departamento de TI"),
-        concepto,
-        monto
+        concepto.concepto,
+        concepto.monto
       );
     const id = Number(info.lastInsertRowid);
 
@@ -1820,11 +1818,12 @@ export async function generarValeDeEntrega(datos: {
         folio,
         fecha,
         observaciones: null,
-        concepto,
-        monto,
+        concepto: concepto.concepto,
+        monto: concepto.monto,
+        montoTexto: concepto.texto,
         firmaEmpleado: null,
         firmaAutoridad: null,
-        firmante,
+        firmante: null,
         empleado,
         equipo: undefined,
       });
@@ -1836,16 +1835,61 @@ export async function generarValeDeEntrega(datos: {
     }
 
     db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
-      "VALE_DE_ENTREGA",
-      `Se generó el vale ${folio} por ${concepto} (${monto}) para ${empleado.numero_empleado} ${empleado.nombre}, ligado a ${origen.folio}`,
-      JSON.stringify({ folio, origen: origen.folio, concepto, monto })
+      "VALE",
+      `Se generó el vale ${folio} por ${concepto.concepto} para ${empleado.numero_empleado} ${empleado.nombre}`,
+      JSON.stringify({ folio, concepto: concepto.concepto, monto: concepto.monto })
     );
 
     revalidar();
+    revalidatePath("/vales");
     revalidatePath(`/empleados/${empleado.id}`);
     return { ok: true, id, folio, mensaje: `Se generó el vale ${folio}.` };
   } catch (e) {
     console.error(e);
     return { ok: false, error: `No se pudo generar el vale: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/** Alta o edición de un concepto del catálogo. */
+export async function guardarConceptoVale(datos: {
+  id?: number;
+  concepto: string;
+  monto: string;
+  texto: string;
+}): Promise<ResultadoAccion> {
+  try {
+    const concepto = (datos.concepto || "").trim().toUpperCase();
+    if (!concepto) return { ok: false, error: "Escribe el concepto." };
+    const monto = Number(datos.monto);
+    if (!datos.monto || Number.isNaN(monto) || monto <= 0) return { ok: false, error: "Escribe un precio válido." };
+
+    const repetido = db
+      .prepare("SELECT id FROM conceptos_vale WHERE UPPER(concepto) = UPPER(?) AND id != ?")
+      .get(concepto, datos.id ?? -1) as { id: number } | undefined;
+    if (repetido) return { ok: false, error: `Ya existe el concepto “${concepto}”.` };
+
+    const texto = (datos.texto || "").trim() || montoEnLetra(monto);
+    if (datos.id) {
+      db.prepare("UPDATE conceptos_vale SET concepto=?, monto=?, texto=? WHERE id=?").run(concepto, monto, texto, datos.id);
+    } else {
+      db.prepare("INSERT INTO conceptos_vale (concepto, monto, texto) VALUES (?,?,?)").run(concepto, monto, texto);
+    }
+    revalidatePath("/vales");
+    return { ok: true, mensaje: `Concepto “${concepto}” guardado.` };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo guardar el concepto." };
+  }
+}
+
+/** Saca un concepto del catálogo sin borrar los vales que ya lo usaron. */
+export async function archivarConceptoVale(id: number, activo: boolean): Promise<ResultadoAccion> {
+  try {
+    db.prepare("UPDATE conceptos_vale SET activo=? WHERE id=?").run(activo ? 1 : 0, id);
+    revalidatePath("/vales");
+    return { ok: true };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo cambiar el concepto." };
   }
 }

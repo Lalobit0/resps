@@ -1,6 +1,7 @@
 import { db } from "../../../lib/db";
 import type { Empleado, Equipo, FirmaGuardada } from "../../../lib/types";
 import NuevaResponsivaClient from "../../../components/NuevaResponsivaClient";
+import { conceptosVale } from "../../../lib/vales";
 import { PageHeader } from "../../../components/ui";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,8 @@ export default async function PaginaNuevaResponsiva({
   return (
     <>
       <PageHeader eyebrow="Asignación" title="Nueva carta responsiva" />
-      <NuevaResponsivaClient empleados={empleados} equipos={equipos} firmas={firmas} precargado={precargado} />
+      <NuevaResponsivaClient empleados={empleados} equipos={equipos} firmas={firmas}
+      conceptos={conceptosVale()} precargado={precargado} />
     </>
   );
 }

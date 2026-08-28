@@ -110,6 +110,9 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           <Badge tono="gris">Baja{empleado.fecha_baja ? ` · ${fechaCorta(empleado.fecha_baja)}` : ""}</Badge>
         )}
         <EditarEmpleadoBtn empleado={empleado} />
+        <Link href={`/vales?empleado=${empleado.id}`} className={btnGhost} title="Vale de descuento de nómina de esta persona">
+          🧾 Generar vale
+        </Link>
         {empleado.activo ? <DarDeBajaBtn empleadoId={empleado.id} nombre={empleado.nombre} /> : null}
         <Link href="/empleados" className={btnGhost}>
           ← Volver

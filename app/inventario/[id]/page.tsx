@@ -7,6 +7,7 @@ import { duenosDeEquipo, historialDeEquipo, type Movimiento } from "../../../lib
 import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "../../../components/ui";
 import VerPdfBtn from "../../../components/VerPdfBtn";
 import GenerarValeBtn from "../../../components/GenerarValeBtn";
+import { conceptosVale } from "../../../lib/vales";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
   }
 
   const movimientos = historialDeEquipo(equipoId);
+  const tarifario = conceptosVale();
   const duenos = duenosDeEquipo(equipoId);
 
   const mantenimientos = db
@@ -79,7 +81,7 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
   const cartas = db
     .prepare(
       `SELECT r.id, r.folio, r.tipo, r.clase, r.fecha, r.estado, r.origen, r.pdf_path, r.pdf_firmado,
-              em.numero_empleado, em.nombre,
+              em.id AS empleado_id, em.numero_empleado, em.nombre,
               (SELECT v.folio FROM responsivas v
                 WHERE v.responsiva_origen_id = r.id AND v.clase = 'VALE' AND v.estado != 'ELIMINADA') AS vale
        FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id JOIN empleados em ON em.id = r.empleado_id
@@ -96,6 +98,7 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
     origen: string;
     pdf_path: string | null;
     pdf_firmado: string | null;
+    empleado_id: number;
     numero_empleado: string;
     nombre: string;
     vale: string | null;
@@ -271,10 +274,11 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
                       <span className="mono text-xs text-kraft-dark">{c.vale}</span>
                     ) : c.tipo === "ASIGNACION" ? (
                       <GenerarValeBtn
+                        empleadoId={c.empleado_id}
                         responsivaId={c.id}
                         folio={c.folio}
-                        conceptoSugerido={`${ETIQUETA_TIPO[equipo.tipo] ?? equipo.tipo} ${equipo.marca} ${equipo.modelo}${equipo.numero_serie ? `, serie ${equipo.numero_serie}` : ""}`.trim()}
-                        montoSugerido={equipo.costo !== null ? String(equipo.costo) : undefined}
+                        conceptos={tarifario}
+                        pista={`${ETIQUETA_TIPO[equipo.tipo] ?? equipo.tipo} ${equipo.marca} ${equipo.modelo}`}
                       />
                     ) : (
                       <span className="text-soft">—</span>

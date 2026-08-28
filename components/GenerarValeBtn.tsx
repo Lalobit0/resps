@@ -2,42 +2,57 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { generarValeDeEntrega } from "../app/responsivas/actions";
+import { crearVale } from "../app/responsivas/actions";
+import type { ConceptoVale } from "../lib/vales";
+import { dinero } from "../lib/helpers";
 import { btnGhost, btnPrimary, inputCls } from "./ui";
 
 /**
  * Genera el vale de descuento de una entrega que ya está hecha.
  *
- * En los radios la entrega son dos papeles: la responsiva del aparato y el
- * vale por su valor de reposición. Esto es para los que ya se entregaron sin
- * él, sin tener que rehacer la carta.
+ * El concepto sale del tarifario de Recursos Humanos y arrastra su precio: son
+ * los dos únicos datos que el formato pide capturar. Lo demás —el día, la
+ * semana, el año— va en blanco para que lo llene el empleado al firmar.
  */
 export default function GenerarValeBtn({
+  empleadoId,
   responsivaId,
   folio,
-  conceptoSugerido,
-  montoSugerido,
+  conceptos,
+  /** Texto para adivinar el concepto del tarifario: marca y modelo del equipo. */
+  pista,
   className,
 }: {
+  empleadoId: number;
   responsivaId: number;
   folio: string;
-  /** Sale del equipo de la carta: marca, modelo y serie. */
-  conceptoSugerido: string;
-  /** El costo del equipo, si está capturado. */
-  montoSugerido?: string;
+  conceptos: ConceptoVale[];
+  pista?: string;
   className?: string;
 }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
-  const [concepto, setConcepto] = useState(conceptoSugerido);
-  const [monto, setMonto] = useState(montoSugerido ?? "");
+  const [conceptoId, setConceptoId] = useState<number | "">("");
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
+
+  const elegido = conceptos.find((c) => c.id === conceptoId);
+
+  /** Propone el concepto del tarifario que menciona la marca del equipo. */
+  const sugerir = () => {
+    const texto = (pista ?? "").toUpperCase();
+    if (!texto) return "";
+    const marca = conceptos.find((c) => {
+      const palabras = c.concepto.split(/\s+/).filter((p) => p.length >= 5 && !p.startsWith("REP"));
+      return palabras.some((p) => texto.includes(p));
+    });
+    return marca?.id ?? "";
+  };
 
   const generar = () => {
     setError("");
     iniciar(async () => {
-      const res = await generarValeDeEntrega({ responsivaId, concepto, monto });
+      const res = await crearVale({ empleadoId, conceptoId: Number(conceptoId), responsivaOrigenId: responsivaId });
       if (res.ok) {
         setAbierto(false);
         router.refresh();
@@ -52,14 +67,13 @@ export default function GenerarValeBtn({
         type="button"
         className={className ?? btnGhost}
         onClick={() => {
-          setConcepto(conceptoSugerido);
-          setMonto(montoSugerido ?? "");
+          setConceptoId(sugerir());
           setError("");
           setAbierto(true);
         }}
         title="Generar el vale de descuento de nómina de esta entrega"
       >
-        + Vale de descuento
+        + Vale
       </button>
 
       {abierto ? (
@@ -69,8 +83,8 @@ export default function GenerarValeBtn({
               <div>
                 <h2 className="text-base font-bold text-ink">Vale de descuento</h2>
                 <p className="mt-0.5 text-sm text-soft">
-                  Queda ligado a la carta <span className="mono font-semibold text-kraft-dark">{folio}</span>, con su
-                  misma fecha. Lo firma Recursos Humanos.
+                  Queda ligado a la carta <span className="mono font-semibold text-kraft-dark">{folio}</span>. Lo firma
+                  Recursos Humanos.
                 </p>
               </div>
               <button className={btnGhost} onClick={() => setAbierto(false)} disabled={pendiente}>
@@ -83,32 +97,26 @@ export default function GenerarValeBtn({
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-soft">
                   Concepto del descuento
                 </label>
-                <input
+                <select
                   className={inputCls}
-                  value={concepto}
-                  onChange={(e) => setConcepto(e.target.value)}
-                  placeholder="Radio TXPRO TK-320, serie 2312A04938"
+                  value={conceptoId}
+                  onChange={(e) => setConceptoId(e.target.value ? Number(e.target.value) : "")}
                   disabled={pendiente}
-                />
+                >
+                  <option value="">— Elige el concepto —</option>
+                  {conceptos.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.concepto} — {dinero(c.monto)}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-soft">
                   Valor de reposición
                 </label>
-                <input
-                  className={`${inputCls} max-w-[200px]`}
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={monto}
-                  onChange={(e) => setMonto(e.target.value)}
-                  placeholder="0.00"
-                  disabled={pendiente}
-                />
-                <p className="mt-1 text-xs text-soft">
-                  {montoSugerido
-                    ? "Viene del costo capturado en el inventario; cámbialo si el de reposición es otro."
-                    : "El equipo no tiene costo capturado: escribe el valor de reposición."}
+                <p className="rounded-md border border-line bg-paper/60 px-3 py-2 text-sm text-ink">
+                  {elegido ? elegido.texto || dinero(elegido.monto) : <span className="text-soft">Sale del concepto</span>}
                 </p>
               </div>
             </div>
@@ -118,7 +126,7 @@ export default function GenerarValeBtn({
             ) : null}
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <button className={btnPrimary} onClick={generar} disabled={pendiente || !concepto.trim() || !(Number(monto) > 0)}>
+              <button className={btnPrimary} onClick={generar} disabled={pendiente || !conceptoId}>
                 {pendiente ? "Generando…" : "Generar vale e imprimir"}
               </button>
               <button className={btnGhost} onClick={() => setAbierto(false)} disabled={pendiente}>

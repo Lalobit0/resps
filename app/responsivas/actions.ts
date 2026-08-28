@@ -1752,3 +1752,100 @@ export async function regenerarResponsiva(id: number): Promise<ResultadoAccion> 
     return { ok: false, error: `No se pudo rehacer el documento: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
+
+// ---------- Vale de descuento ligado a una entrega ----------
+
+/**
+ * Genera el vale de descuento de nómina de un equipo ya entregado.
+ *
+ * En los radios la entrega son dos papeles: la responsiva del aparato y el
+ * vale por su valor de reposición. Hacer el vale por separado obligaba a
+ * volver a elegir empleado y a escribirlo todo; así sale del propio equipo y
+ * queda colgado de su carta, para saber de qué entrega es.
+ */
+export async function generarValeDeEntrega(datos: {
+  responsivaId: number;
+  concepto: string;
+  monto: string;
+}): Promise<ResultadoAccion> {
+  try {
+    const origen = db.prepare("SELECT * FROM responsivas WHERE id = ? AND estado != 'ELIMINADA'").get(datos.responsivaId) as
+      | Responsiva
+      | undefined;
+    if (!origen) return { ok: false, error: "La carta de la entrega ya no existe." };
+    if (origen.tipo !== "ASIGNACION") return { ok: false, error: "El vale se hace desde una carta de asignación." };
+    if (origen.clase === "VALE") return { ok: false, error: "Esa carta ya es un vale." };
+
+    const yaTiene = db
+      .prepare("SELECT folio FROM responsivas WHERE responsiva_origen_id = ? AND clase = 'VALE' AND estado != 'ELIMINADA'")
+      .get(datos.responsivaId) as { folio: string } | undefined;
+    if (yaTiene) return { ok: false, error: `Esta entrega ya tiene el vale ${yaTiene.folio}.` };
+
+    const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(origen.empleado_id) as Empleado | undefined;
+    if (!empleado) return { ok: false, error: "El empleado de la carta ya no existe." };
+
+    const concepto = (datos.concepto ?? "").trim();
+    if (!concepto) return { ok: false, error: "Indica el concepto del descuento." };
+    const monto = Number(datos.monto);
+    if (!datos.monto || Number.isNaN(monto) || monto <= 0) return { ok: false, error: "Indica un valor de reposición válido." };
+
+    const folio = siguienteFolio("VALE");
+    // El vale lleva la fecha de la entrega: los dos papeles se firman juntos.
+    const fecha = origen.fecha;
+    // El vale lo firma RH, no sistemas; se deja sin firma digital, como las
+    // demás cartas: se imprime, se firma en papel y se sube escaneado.
+    const firmante: Firmante | null = null;
+
+    const info = db
+      .prepare(
+        "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, responsiva_origen_id, entregado_por, concepto, monto) VALUES (?,?,?,?,?,?,?,?,?,?)"
+      )
+      .run(
+        folio,
+        "ASIGNACION",
+        "VALE",
+        empleado.id,
+        fecha,
+        "VIGENTE",
+        origen.id,
+        getConfig("entrega_default", "Departamento de TI"),
+        concepto,
+        monto
+      );
+    const id = Number(info.lastInsertRowid);
+
+    try {
+      const bytes = await bytesAsignacion({
+        clase: "VALE",
+        folio,
+        fecha,
+        observaciones: null,
+        concepto,
+        monto,
+        firmaEmpleado: null,
+        firmaAutoridad: null,
+        firmante,
+        empleado,
+        equipo: undefined,
+      });
+      db.prepare("UPDATE responsivas SET pdf_path=? WHERE id=?").run(guardarPdf(folio, bytes), id);
+    } catch (errorPdf) {
+      db.prepare("DELETE FROM responsivas WHERE id=?").run(id);
+      console.error(errorPdf);
+      return { ok: false, error: "No se pudo generar el PDF del vale." };
+    }
+
+    db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+      "VALE_DE_ENTREGA",
+      `Se generó el vale ${folio} por ${concepto} (${monto}) para ${empleado.numero_empleado} ${empleado.nombre}, ligado a ${origen.folio}`,
+      JSON.stringify({ folio, origen: origen.folio, concepto, monto })
+    );
+
+    revalidar();
+    revalidatePath(`/empleados/${empleado.id}`);
+    return { ok: true, id, folio, mensaje: `Se generó el vale ${folio}.` };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudo generar el vale: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}

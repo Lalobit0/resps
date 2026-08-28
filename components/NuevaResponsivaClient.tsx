@@ -17,7 +17,7 @@ import {
   type TipoEquipo,
 } from "../lib/constants";
 import { fechaCorta, hoyISO } from "../lib/helpers";
-import { crearResponsiva } from "../app/responsivas/actions";
+import { crearResponsiva, generarValeDeEntrega } from "../app/responsivas/actions";
 import { guardarEquipo } from "../app/inventario/actions";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import SelectConOtro from "./SelectConOtro";
@@ -78,6 +78,10 @@ export default function NuevaResponsivaClient({
   const [observaciones, setObservaciones] = useState("");
   const [concepto, setConcepto] = useState("");
   const [monto, setMonto] = useState("");
+  // Los radios se entregan con dos papeles: su carta y el vale de descuento
+  // por el valor de reposición. Se ofrecen juntos para no hacerlo en dos vueltas.
+  const [conVale, setConVale] = useState(false);
+  const [valeMonto, setValeMonto] = useState("");
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
 
@@ -114,6 +118,10 @@ export default function NuevaResponsivaClient({
     setEquipoId(e.id);
     setClase(claseDeTipo(e.tipo));
     setError("");
+    // El vale se propone solo en los radios, que es donde se usa; el monto
+    // sale del costo capturado si lo tiene.
+    setConVale(e.tipo === "RADIO");
+    setValeMonto(e.costo !== null && e.costo !== undefined ? String(e.costo) : "");
   };
 
   /** Abre el mismo formulario con los datos del equipo, para corregirlo antes de entregarlo. */
@@ -200,9 +208,18 @@ export default function NuevaResponsivaClient({
     });
   };
 
+  /** El equipo elegido, para el vale que acompaña a la entrega. */
+  const equipoElegido = equipos.find((e) => e.id === equipoId);
+  const mostrarVale = !esVale && equipoElegido?.tipo === "RADIO";
+  const conceptoVale = equipoElegido
+    ? `Radio ${equipoElegido.marca} ${equipoElegido.modelo}${equipoElegido.numero_serie ? `, serie ${equipoElegido.numero_serie}` : ""}`.replace(/\s+/g, " ").trim()
+    : "";
+
   const enviar = () => {
     setError("");
     if (!empleado) return setError("Selecciona al empleado que recibe.");
+    if (mostrarVale && conVale && !(Number(valeMonto) > 0))
+      return setError("Escribe el valor de reposición del radio, o desmarca el vale de descuento.");
     if (requiereEquipo && !equipoId) return setError("Selecciona el equipo a asignar.");
     if (esVale && !concepto.trim()) return setError("Indica el concepto del descuento.");
     if (esVale && !(Number(monto) > 0)) return setError("Indica el valor de reposición.");
@@ -220,6 +237,20 @@ export default function NuevaResponsivaClient({
       });
       if (res.ok && res.id) {
         window.open(`/api/pdf/${res.id}`, "_blank");
+        // El vale se hace después de la carta: si falla, la entrega ya quedó
+        // registrada y el vale se puede generar luego desde el equipo.
+        if (mostrarVale && conVale) {
+          const vale = await generarValeDeEntrega({
+            responsivaId: res.id,
+            concepto: conceptoVale,
+            monto: valeMonto,
+          });
+          if (vale.ok && vale.id) window.open(`/api/pdf/${vale.id}`, "_blank");
+          else {
+            setError(`La carta ${res.folio} se generó, pero el vale no: ${vale.error ?? ""} Puedes hacerlo desde el histórico del equipo.`);
+            return;
+          }
+        }
         router.push(`/responsivas?nueva=${res.folio}`);
         router.refresh();
       } else {
@@ -426,6 +457,52 @@ export default function NuevaResponsivaClient({
       </div>
 
       <div className="space-y-5">
+        {mostrarVale ? (
+          <Card>
+            <h2 className="mb-1 text-base font-bold text-ink">Vale de descuento del radio</h2>
+            <p className="mb-3 text-sm text-soft">
+              El radio se entrega con dos papeles: esta carta y el vale por su valor de reposición, que firma Recursos
+              Humanos. Sale con la misma fecha y queda ligado a la carta.
+            </p>
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-kraft"
+                checked={conVale}
+                onChange={(e) => setConVale(e.target.checked)}
+              />
+              <span className="text-sm text-ink">Generar también el vale de descuento</span>
+            </label>
+            {conVale ? (
+              <div className="mt-3 space-y-3 border-t border-line pt-3">
+                <div>
+                  <Label>Concepto</Label>
+                  <p className="mono rounded-md border border-line bg-paper/60 px-3 py-2 text-xs text-ink">
+                    {conceptoVale}
+                  </p>
+                </div>
+                <div>
+                  <Label>Valor de reposición</Label>
+                  <input
+                    className={`${inputCls} max-w-[200px]`}
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={valeMonto}
+                    onChange={(e) => setValeMonto(e.target.value)}
+                    placeholder="0.00"
+                  />
+                  <p className="mt-1 text-xs text-soft">
+                    {equipoElegido?.costo !== null && equipoElegido?.costo !== undefined
+                      ? "Viene del costo capturado en el inventario; cámbialo si el de reposición es otro."
+                      : "Este radio no tiene costo capturado: escribe el valor de reposición."}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
+
         <Card>
           <h2 className="mb-3 text-base font-bold text-ink">4. Observaciones (opcional)</h2>
           <div>

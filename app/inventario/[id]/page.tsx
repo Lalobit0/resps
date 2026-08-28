@@ -6,6 +6,7 @@ import { dinero, fechaCorta } from "../../../lib/helpers";
 import { duenosDeEquipo, historialDeEquipo, type Movimiento } from "../../../lib/historial";
 import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "../../../components/ui";
 import VerPdfBtn from "../../../components/VerPdfBtn";
+import GenerarValeBtn from "../../../components/GenerarValeBtn";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +79,9 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
   const cartas = db
     .prepare(
       `SELECT r.id, r.folio, r.tipo, r.clase, r.fecha, r.estado, r.origen, r.pdf_path, r.pdf_firmado,
-              em.numero_empleado, em.nombre
+              em.numero_empleado, em.nombre,
+              (SELECT v.folio FROM responsivas v
+                WHERE v.responsiva_origen_id = r.id AND v.clase = 'VALE' AND v.estado != 'ELIMINADA') AS vale
        FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id JOIN empleados em ON em.id = r.empleado_id
        WHERE ri.equipo_id = ? AND r.estado != 'ELIMINADA'
        ORDER BY r.fecha DESC, r.id DESC`
@@ -95,6 +98,7 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
     pdf_firmado: string | null;
     numero_empleado: string;
     nombre: string;
+    vale: string | null;
   }[];
 
   let detalles: Record<string, string> = {};
@@ -240,6 +244,7 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
                 <th className={thCls}>Empleado</th>
                 <th className={thCls}>Fecha</th>
                 <th className={thCls}>Estado</th>
+                <th className={thCls}>Vale</th>
                 <th className={thCls}>Ver</th>
               </tr>
             </thead>
@@ -259,6 +264,20 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
                       <Badge tono="verde">Firmada</Badge>
                     ) : (
                       <Badge tono="rojo">Sin firmar</Badge>
+                    )}
+                  </td>
+                  <td className={tdCls}>
+                    {c.vale ? (
+                      <span className="mono text-xs text-kraft-dark">{c.vale}</span>
+                    ) : c.tipo === "ASIGNACION" ? (
+                      <GenerarValeBtn
+                        responsivaId={c.id}
+                        folio={c.folio}
+                        conceptoSugerido={`${ETIQUETA_TIPO[equipo.tipo] ?? equipo.tipo} ${equipo.marca} ${equipo.modelo}${equipo.numero_serie ? `, serie ${equipo.numero_serie}` : ""}`.trim()}
+                        montoSugerido={equipo.costo !== null ? String(equipo.costo) : undefined}
+                      />
+                    ) : (
+                      <span className="text-soft">—</span>
                     )}
                   </td>
                   <td className={tdCls}>

@@ -68,6 +68,12 @@ export default function ValesClient({
   const [pendiente, iniciar] = useTransition();
 
   const elegido = activos.find((c) => c.id === conceptoId);
+  // La vista previa arma el PDF de verdad, sin guardar nada: lo que se ve aquí
+  // es lo que va a salir impreso.
+  const listo = !!empleado && !!conceptoId;
+  const urlPrevia = listo
+    ? `/api/vale/preview?empleado=${empleado.id}&concepto=${conceptoId}&fecha=${fecha}#toolbar=0&navpanes=0&view=FitH`
+    : "";
 
   const generar = () => {
     setError("");
@@ -148,10 +154,35 @@ export default function ValesClient({
               </p>
             </div>
             <div className="sm:col-span-2 lg:col-span-3">
+              <Label>Vista previa</Label>
+              {listo ? (
+                <>
+                  <iframe
+                    key={urlPrevia}
+                    src={urlPrevia}
+                    title="Vista previa del vale"
+                    className="h-[560px] w-full rounded-md border border-line bg-white"
+                  />
+                  <p className="mt-1 text-xs text-soft">
+                    Así va a salir impreso. Todavía no se guarda nada: el folio y el registro se crean al pulsar
+                    “Generar vale”.{" "}
+                    <a href={urlPrevia.split("#")[0]} target="_blank" className="underline hover:text-ink">
+                      Abrir en otra pestaña
+                    </a>
+                  </p>
+                </>
+              ) : (
+                <p className="rounded-md border border-dashed border-line bg-paper/60 px-4 py-10 text-center text-sm text-soft">
+                  Elige al empleado y el concepto para ver cómo queda el vale.
+                </p>
+              )}
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-3">
               {error ? (
                 <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
               ) : null}
-              <button className={btnPrimary} onClick={generar} disabled={pendiente || !empleado || !conceptoId}>
+              <button className={btnPrimary} onClick={generar} disabled={pendiente || !listo}>
                 {pendiente ? "Generando…" : "Generar vale e imprimir"}
               </button>
             </div>

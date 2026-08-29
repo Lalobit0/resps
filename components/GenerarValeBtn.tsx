@@ -37,6 +37,10 @@ export default function GenerarValeBtn({
   const [pendiente, iniciar] = useTransition();
 
   const elegido = conceptos.find((c) => c.id === conceptoId);
+  // Se arma el PDF de verdad, sin guardar: lo que se ve es lo que se imprime.
+  const urlPrevia = conceptoId
+    ? `/api/vale/preview?empleado=${empleadoId}&concepto=${conceptoId}#toolbar=0&navpanes=0&view=FitH`
+    : "";
 
   /** Propone el concepto del tarifario que menciona la marca del equipo. */
   const sugerir = () => {
@@ -78,7 +82,7 @@ export default function GenerarValeBtn({
 
       {abierto ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-          <div className="my-10 w-full max-w-lg rounded-lg border border-line bg-card p-5 shadow-xl">
+          <div className="my-10 w-full max-w-3xl rounded-lg border border-line bg-card p-5 shadow-xl">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold text-ink">Vale de descuento</h2>
@@ -119,6 +123,22 @@ export default function GenerarValeBtn({
                   {elegido ? elegido.texto || dinero(elegido.monto) : <span className="text-soft">Sale del concepto</span>}
                 </p>
               </div>
+            </div>
+
+            <div className="mt-3">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-soft">Vista previa</label>
+              {urlPrevia ? (
+                <iframe
+                  key={urlPrevia}
+                  src={urlPrevia}
+                  title="Vista previa del vale"
+                  className="h-[460px] w-full rounded-md border border-line bg-white"
+                />
+              ) : (
+                <p className="rounded-md border border-dashed border-line bg-paper/60 px-4 py-8 text-center text-sm text-soft">
+                  Elige el concepto para ver cómo queda el vale.
+                </p>
+              )}
             </div>
 
             {error ? (

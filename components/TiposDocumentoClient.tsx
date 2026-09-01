@@ -56,6 +56,13 @@ export default function TiposDocumentoClient({
     });
   }, [tipos, filtro, soloSinVigencia]);
 
+  // Los nombres de grupo que ya existen, para escribirlos igual y no crear
+  // "Identificacion oficial" al lado de "Identificación oficial".
+  const grupos = useMemo(
+    () => [...new Set(tipos.map((t) => t.grupo_equivalencia).filter((g): g is string => !!g))].sort(),
+    [tipos]
+  );
+
   const porCategoria = useMemo(() => {
     const mapa = new Map<string, TipoDocumento[]>();
     for (const t of visibles) {
@@ -134,7 +141,7 @@ export default function TiposDocumentoClient({
         <Card className="mb-5">
           <h2 className="text-sm font-bold uppercase tracking-wide text-soft">Tipo de documento nuevo</h2>
           <form onSubmit={enviar} className="mt-4">
-            <CamposTipo categorias={categorias} />
+            <CamposTipo categorias={categorias} grupos={grupos} />
             <button type="submit" disabled={pendiente} className={`${btnPrimary} mt-5`}>
               {pendiente ? "Guardando…" : "Crear"}
             </button>
@@ -166,6 +173,17 @@ export default function TiposDocumentoClient({
                       <td className={tdCls}>
                         <div className="font-medium">{t.nombre}</div>
                         <div className="font-mono text-[11px] text-soft">{t.codigo}</div>
+                        {t.grupo_equivalencia ? (
+                          <div className="mt-0.5 text-xs text-soft">
+                            Vale por: {t.grupo_equivalencia}
+                            {(() => {
+                              const otros = tipos
+                                .filter((o) => o.id !== t.id && o.grupo_equivalencia === t.grupo_equivalencia)
+                                .map((o) => o.nombre);
+                              return otros.length ? ` (o ${otros.join(", ")})` : "";
+                            })()}
+                          </div>
+                        ) : null}
                         <div className="mt-1 flex flex-wrap gap-1">
                           {t.obligatorio ? <Badge tono="petrol">Obligatorio</Badge> : <Badge tono="gris">Opcional</Badge>}
                           {t.critico ? <Badge tono="rojo">Crítico</Badge> : null}
@@ -226,7 +244,7 @@ export default function TiposDocumentoClient({
                         <td colSpan={6} className="bg-paper/50 px-4 py-5">
                           <form onSubmit={enviar}>
                             <input type="hidden" name="id" value={t.id} />
-                            <CamposTipo categorias={categorias} tipo={t} />
+                            <CamposTipo categorias={categorias} grupos={grupos} tipo={t} />
                             <button type="submit" disabled={pendiente} className={`${btnPrimary} mt-5`}>
                               {pendiente ? "Guardando…" : "Guardar"}
                             </button>
@@ -276,7 +294,15 @@ function Interruptor({
   );
 }
 
-function CamposTipo({ categorias, tipo }: { categorias: Categoria[]; tipo?: TipoDocumento }) {
+function CamposTipo({
+  categorias,
+  grupos,
+  tipo,
+}: {
+  categorias: Categoria[];
+  grupos: string[];
+  tipo?: TipoDocumento;
+}) {
   const [vigencia, setVigencia] = useState(tipo?.vigencia_tipo ?? "SIN");
   const porPlazo = vigencia === "DIAS" || vigencia === "MESES" || vigencia === "ANIOS";
 
@@ -399,6 +425,27 @@ function CamposTipo({ categorias, tipo }: { categorias: Categoria[]; tipo?: Tipo
               activo={tipo ? !!tipo.conserva_versiones : true}
             />
             <Interruptor nombre="activo" etiqueta="Activo" activo={tipo ? !!tipo.activo : true} />
+          </div>
+
+          <div className="mt-4 border-t border-line pt-4">
+            <Label>Vale por otro documento</Label>
+            <input
+              name="grupo_equivalencia"
+              list="grupos-equivalencia"
+              defaultValue={tipo?.grupo_equivalencia ?? ""}
+              placeholder="Sin equivalentes"
+              className={inputCls}
+            />
+            <datalist id="grupos-equivalencia">
+              {grupos.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+            <p className="mt-1 text-xs text-soft">
+              Los documentos que comparten este nombre cubren el mismo hueco: con cualquiera de ellos basta. Para
+              “Identificación oficial” da igual si trae INE, pasaporte, cédula profesional o cartilla militar, y el
+              expediente los cuenta como un solo requisito, no como cuatro.
+            </p>
           </div>
         </fieldset>
 

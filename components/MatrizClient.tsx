@@ -5,7 +5,7 @@ import { aplicarPaqueteBasico, eliminarRegla, guardarRegla } from "../app/config
 import { CAMPOS_MATRIZ, type ReglaMatriz, type TipoDocumento } from "../lib/expedientes-comun";
 import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
 
-type Regla = ReglaMatriz & { tipo_nombre: string; tipo_codigo: string };
+type Regla = ReglaMatriz & { tipo_nombre: string; tipo_codigo: string; tipo_grupo: string | null };
 type Aviso = { ok: boolean; texto: string } | null;
 
 const ETIQUETA_CAMPO: Record<string, string> = Object.fromEntries(CAMPOS_MATRIZ.map((c) => [c.clave, c.etiqueta]));
@@ -131,6 +131,11 @@ export default function MatrizClient({
                         <td className={tdCls}>
                           <span className="font-medium">{r.tipo_nombre}</span>
                           <div className="font-mono text-[11px] text-soft">{r.tipo_codigo}</div>
+                          {r.tipo_grupo ? (
+                            <div className="mt-0.5 text-xs text-soft">
+                              También se cumple con cualquier otro documento de “{r.tipo_grupo}”
+                            </div>
+                          ) : null}
                         </td>
                         <td className={tdCls}>
                           {r.obligatorio === null ? (
@@ -192,13 +197,23 @@ function CamposRegla({
   regla?: Regla;
 }) {
   const [campo, setCampo] = useState<string>(regla?.campo ?? "TODOS");
+  const [tipoId, setTipoId] = useState<string>(regla?.doc_tipo_id ? String(regla.doc_tipo_id) : "");
   const lista = opciones[campo] ?? [];
+  // La descripción del documento elegido, para no confundir una licencia
+  // categoría B con una categoría C al armar la regla.
+  const elegido = tipos.find((t) => String(t.id) === tipoId);
 
   return (
     <div className="grid gap-4 md:grid-cols-4">
       <div className="md:col-span-2">
         <Label>Documento</Label>
-        <select name="doc_tipo_id" required defaultValue={regla?.doc_tipo_id ?? ""} className={inputCls}>
+        <select
+          name="doc_tipo_id"
+          required
+          value={tipoId}
+          onChange={(e) => setTipoId(e.target.value)}
+          className={inputCls}
+        >
           <option value="" disabled>
             Elige…
           </option>
@@ -209,6 +224,12 @@ function CamposRegla({
             </option>
           ))}
         </select>
+        {elegido?.descripcion ? <p className="mt-1 text-xs text-soft">{elegido.descripcion}</p> : null}
+        {elegido?.grupo_equivalencia ? (
+          <p className="mt-1 text-xs text-soft">
+            También se cumple con cualquier otro documento de “{elegido.grupo_equivalencia}”.
+          </p>
+        ) : null}
       </div>
 
       <div>

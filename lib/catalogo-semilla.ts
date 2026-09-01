@@ -17,10 +17,31 @@
  *    la matriz empieza vacía: es RH quien decide qué pide a quién.
  */
 
+/**
+ * El grupo que trae el sistema de fábrica: las cuatro identificaciones que en
+ * México se aceptan indistintamente. Con cualquiera de ellas el empleado tiene
+ * cubierta su identificación, y el expediente cuenta el grupo como un solo
+ * requisito en vez de cuatro.
+ */
+export const IDENTIFICACION_OFICIAL = "Identificación oficial";
+
+/**
+ * Las licencias de manejo van en su propio apartado.
+ *
+ * No son una identificación más: la categoría decide si alguien puede o no
+ * hacer su trabajo, y confundir una con otra es justo lo que hay que evitar.
+ */
+export const LICENCIAS_DE_MANEJO = "Licencias de conducir";
+
 export type CategoriaSemilla = { nombre: string; descripcion: string; orden: number };
 
 export const CATEGORIAS_SEMILLA: CategoriaSemilla[] = [
   { nombre: "Identificación", descripcion: "Con qué se acredita quién es la persona.", orden: 10 },
+  {
+    nombre: LICENCIAS_DE_MANEJO,
+    descripcion: "Quién puede manejar qué. La categoría no es un detalle: es lo que habilita el puesto.",
+    orden: 15,
+  },
   { nombre: "Fiscal", descripcion: "Lo que pide el SAT.", orden: 20 },
   { nombre: "Seguridad social", descripcion: "IMSS, Infonavit y Fonacot.", orden: 30 },
   { nombre: "Laboral", descripcion: "Lo que se firma con la empresa.", orden: 40 },
@@ -44,17 +65,68 @@ export type TipoSemilla = {
   critico?: boolean;
   /** Varios documentos vigentes a la vez bajo el mismo requisito. */
   multiples?: boolean;
+  /**
+   * Documentos que valen uno por otro. Los que comparten grupo cubren el mismo
+   * hueco: con cualquiera de ellos el requisito queda resuelto.
+   */
+  grupo?: string;
   firmaEmpleado?: boolean;
   notas?: string;
 };
 
 export const TIPOS_SEMILLA: TipoSemilla[] = [
   // --- Identificación ---
-  { codigo: "INE", nombre: "Credencial para votar (INE)", categoria: "Identificación", vigencia: "FECHA", critico: true, descripcion: "Ambos lados. La vigencia es la que trae impresa." },
+  { codigo: "INE", nombre: "Credencial para votar (INE)", categoria: "Identificación", vigencia: "FECHA", critico: true, grupo: IDENTIFICACION_OFICIAL, descripcion: "Ambos lados. La vigencia es la que trae impresa." },
   { codigo: "CURP", nombre: "CURP", categoria: "Identificación", critico: true, descripcion: "Impresión del registro nacional de población." },
-  { codigo: "PASAPORTE", nombre: "Pasaporte", categoria: "Identificación", vigencia: "FECHA" },
-  { codigo: "LICENCIA_CONDUCIR", nombre: "Licencia de conducir", categoria: "Identificación", vigencia: "FECHA" },
+  { codigo: "PASAPORTE", nombre: "Pasaporte", categoria: "Identificación", vigencia: "FECHA", grupo: IDENTIFICACION_OFICIAL },
+  { codigo: "CEDULA_PROFESIONAL", nombre: "Cédula profesional", categoria: "Identificación", grupo: IDENTIFICACION_OFICIAL, descripcion: "También sirve como comprobante de estudios si el puesto lo pide." },
+  { codigo: "CARTILLA_MILITAR", nombre: "Cartilla del servicio militar", categoria: "Identificación", grupo: IDENTIFICACION_OFICIAL },
   { codigo: "VISA", nombre: "Visa", categoria: "Identificación", vigencia: "FECHA" },
+
+  // --- Licencias de conducir ---
+  // La licencia federal (SICT) se divide en categorías y cada una habilita un
+  // tipo de vehículo distinto. Las descripciones están para que RH sepa cuál
+  // pedir sin tener que consultar la norma, pero conviene confirmarlas contra
+  // una licencia real: el texto se edita desde Configuración.
+  {
+    codigo: "LICENCIA_CONDUCIR",
+    nombre: "Licencia de conducir estatal",
+    categoria: LICENCIAS_DE_MANEJO,
+    vigencia: "FECHA",
+    descripcion: "La que expide el estado. Sirve para manejar dentro de la ciudad, no para transporte federal.",
+  },
+  {
+    codigo: "LICENCIA_FED_A",
+    nombre: "Licencia federal · Categoría A",
+    categoria: LICENCIAS_DE_MANEJO,
+    vigencia: "FECHA",
+    critico: true,
+    descripcion: "Pasaje y turismo: autobuses. Confirma la categoría contra la licencia física.",
+  },
+  {
+    codigo: "LICENCIA_FED_B",
+    nombre: "Licencia federal · Categoría B",
+    categoria: LICENCIAS_DE_MANEJO,
+    vigencia: "FECHA",
+    critico: true,
+    descripcion: "Carga general: tractocamión y camión de carga. Es la de los choferes de reparto y traslado.",
+  },
+  {
+    codigo: "LICENCIA_FED_C",
+    nombre: "Licencia federal · Categoría C",
+    categoria: LICENCIAS_DE_MANEJO,
+    vigencia: "FECHA",
+    critico: true,
+    descripcion: "Chofer-guía de turismo. Confirma la categoría contra la licencia física.",
+  },
+  {
+    codigo: "LICENCIA_FED_DE",
+    nombre: "Licencia federal · Categoría D/E",
+    categoria: LICENCIAS_DE_MANEJO,
+    vigencia: "FECHA",
+    critico: true,
+    descripcion: "Servicios auxiliares (grúas, arrastre) y materiales o residuos peligrosos. Confirma cuál de las dos trae la licencia.",
+  },
 
   // --- Fiscal ---
   { codigo: "RFC", nombre: "RFC", categoria: "Fiscal", critico: true },

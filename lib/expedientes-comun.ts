@@ -56,6 +56,15 @@ export type TipoDocumento = {
   notas: string | null;
   orden: number;
   activo: number;
+  /**
+   * Documentos que valen uno por otro.
+   *
+   * Los que comparten grupo cubren el mismo hueco: para "identificación
+   * oficial" da igual si trae INE, pasaporte, cédula profesional o cartilla
+   * militar. Con uno basta, y el expediente cuenta el grupo como un solo
+   * requisito en vez de cuatro.
+   */
+  grupo_equivalencia: string | null;
 };
 
 export type VersionDocumento = {
@@ -126,6 +135,14 @@ export type RequisitoVista = {
   dias: number | null;
   /** Sirve para el porcentaje: cubierto = ya no hay nada que hacer con él. */
   cubierto: boolean;
+  /** Grupo de documentos que valen uno por otro; null si va solo. */
+  grupo: string | null;
+  /**
+   * Cuando otro documento del grupo ya resolvió el hueco, el nombre de ese
+   * documento. Es lo que permite decir "no hace falta la INE, ya trae el
+   * pasaporte" en vez de marcarla en rojo.
+   */
+  cubiertoPor: string | null;
 };
 
 // --------------------------------------------------------- estados y vigencia
@@ -307,29 +324,122 @@ export type Cumplimiento = {
   nivel: "COMPLETO" | "INCOMPLETO" | "CRITICO";
 };
 
-export function calcularCumplimiento(reqs: RequisitoVista[]): Cumplimiento {
-  const obligatorios = reqs.filter((r) => r.obligatorio);
-  const obligatoriosCubiertos = obligatorios.filter((r) => r.cubierto).length;
-  const totalCubiertos = reqs.filter((r) => r.cubierto).length;
-  const cuenta = (e: EstadoEfectivo) => reqs.filter((r) => r.estado === e).length;
+/**
+ * Qué tan cerca está un requisito de quedar resuelto.
+ *
+ * Sirve para elegir quién representa a un grupo de equivalentes cuando ninguno
+ * está cubierto todavía: si de las cuatro identificaciones una ya está cargada
+ * esperando revisión, el grupo entero se reporta como "por validar" y no como
+ * "faltante", porque eso es lo que RH tiene que atender.
+ */
+const AVANCE: Record<EstadoEfectivo, number> = {
+  NO_APLICA: 8,
+  VIGENTE: 7,
+  POR_VENCER: 6,
+  PENDIENTE_FIRMA: 5,
+  EN_REVISION: 4,
+  CARGADO: 3,
+  VENCIDO: 2,
+  RECHAZADO: 1,
+  FALTANTE: 0,
+};
 
-  const criticosPendientes = reqs.filter((r) => r.obligatorio && r.tipo.critico && !r.cubierto).length;
+/**
+ * Marca los equivalentes que ya no hacen falta.
+ *
+ * Se corre después de calcular el estado de cada requisito: si alguien del
+ * grupo "identificación oficial" ya tiene su documento en regla, a los demás
+ * del grupo se les anota con qué quedaron cubiertos, en vez de dejarlos en
+ * rojo pidiendo algo que la persona no necesita entregar.
+ */
+export function resolverEquivalencias(reqs: RequisitoVista[]): RequisitoVista[] {
+  const grupos = new Map<string, RequisitoVista[]>();
+  for (const r of reqs) {
+    if (!r.grupo) continue;
+    grupos.set(r.grupo, [...(grupos.get(r.grupo) ?? []), r]);
+  }
+
+  for (const miembros of grupos.values()) {
+    const cubre = miembros.find((m) => m.cubierto);
+    if (!cubre) continue;
+    for (const m of miembros) {
+      if (m === cubre || m.cubierto) continue;
+      m.cubierto = true;
+      m.cubiertoPor = cubre.tipo.nombre;
+    }
+  }
+  return reqs;
+}
+
+/**
+ * Las unidades que de verdad se cuentan.
+ *
+ * Un requisito suelto es una unidad. Un grupo de equivalentes también es UNA
+ * unidad, por más documentos que tenga dentro: pedir cuatro identificaciones y
+ * contarlas por separado haría que quien trae pasaporte apareciera al 25% de
+ * su identificación, cuando en realidad ya la cumplió.
+ */
+function unidades(reqs: RequisitoVista[]) {
+  const sueltos = reqs.filter((r) => !r.grupo);
+  const porGrupo = new Map<string, RequisitoVista[]>();
+  for (const r of reqs) {
+    if (!r.grupo) continue;
+    porGrupo.set(r.grupo, [...(porGrupo.get(r.grupo) ?? []), r]);
+  }
+
+  const deSueltos = sueltos.map((r) => ({
+    obligatorio: !!r.obligatorio,
+    critico: !!r.tipo.critico,
+    cubierto: r.cubierto,
+    estado: r.estado,
+  }));
+
+  const deGrupos = [...porGrupo.values()].map((miembros) => {
+    // Quien lo cubre de verdad es el que trae su propio documento; los demás
+    // solo llevan la anotación de con qué quedaron cubiertos.
+    const cubre = miembros.find((m) => m.cubierto && !m.cubiertoPor);
+    const representante = cubre ?? [...miembros].sort((a, b) => AVANCE[b.estado] - AVANCE[a.estado])[0];
+    return {
+      obligatorio: miembros.some((m) => m.obligatorio),
+      critico: miembros.some((m) => m.obligatorio && m.tipo.critico),
+      cubierto: !!cubre,
+      estado: representante.estado,
+    };
+  });
+
+  return [...deSueltos, ...deGrupos];
+}
+
+export function calcularCumplimiento(reqs: RequisitoVista[]): Cumplimiento {
+  const us = unidades(reqs);
+  const obligatorios = us.filter((u) => u.obligatorio);
+  const obligatoriosCubiertos = obligatorios.filter((u) => u.cubierto).length;
+  const totalCubiertos = us.filter((u) => u.cubierto).length;
+  // Solo cuentan los problemas de lo que sigue pendiente: si el grupo ya quedó
+  // cubierto con otro documento, el que falta dentro del grupo no es un pendiente.
+  const cuenta = (e: EstadoEfectivo) => us.filter((u) => !u.cubierto && u.estado === e).length;
+
+  const criticosPendientes = obligatorios.filter((u) => u.critico && !u.cubierto).length;
   const porcentaje = obligatorios.length ? Math.round((obligatoriosCubiertos / obligatorios.length) * 100) : 100;
 
   return {
     obligatorios: obligatorios.length,
     obligatoriosCubiertos,
     porcentaje,
-    total: reqs.length,
+    total: us.length,
     totalCubiertos,
-    porcentajeTotal: reqs.length ? Math.round((totalCubiertos / reqs.length) * 100) : 100,
+    porcentajeTotal: us.length ? Math.round((totalCubiertos / us.length) * 100) : 100,
     faltantes: cuenta("FALTANTE"),
     vencidos: cuenta("VENCIDO"),
-    porVencer: cuenta("POR_VENCER"),
+    // "Por vencer" es la excepción: el requisito está cubierto hoy, pero es
+    // justo lo que hay que renovar antes de que deje de estarlo.
+    porVencer: us.filter((u) => u.estado === "POR_VENCER").length,
     porValidar: cuenta("CARGADO") + cuenta("EN_REVISION"),
     rechazados: cuenta("RECHAZADO"),
     porFirmar: cuenta("PENDIENTE_FIRMA"),
-    noAplica: cuenta("NO_APLICA"),
+    // Los "no aplica" sí están cubiertos, pero se enseñan aparte para que se
+    // vea cuántas excepciones lleva el expediente.
+    noAplica: us.filter((u) => u.estado === "NO_APLICA").length,
     criticosPendientes,
     nivel: criticosPendientes > 0 ? "CRITICO" : porcentaje >= 100 ? "COMPLETO" : "INCOMPLETO",
   };

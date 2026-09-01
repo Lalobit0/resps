@@ -636,6 +636,9 @@ function migrar(db: Database.Database) {
   agregarColumna(db, "bitacora", "antes", "TEXT");
   agregarColumna(db, "bitacora", "despues", "TEXT");
   agregarColumna(db, "bitacora", "resultado", "TEXT NOT NULL DEFAULT 'OK'");
+  // Documentos que valen uno por otro: con el pasaporte, la INE deja de hacer
+  // falta. El grupo se edita por tipo desde Configuración.
+  agregarColumna(db, "doc_tipos", "grupo_equivalencia", "TEXT");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
   // A los equipos que ya están entregados se les copia el área de su dueño:
@@ -726,8 +729,8 @@ function sembrarCatalogoDocumental(db: Database.Database) {
     `INSERT OR IGNORE INTO doc_tipos
        (codigo, nombre, descripcion, categoria_id, obligatorio, critico, vigencia_tipo, vigencia_valor,
         requiere_emision, requiere_vencimiento, requiere_validacion, requiere_firma_empleado,
-        multiples_vigentes, confidencialidad, orden)
-     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
+        multiples_vigentes, confidencialidad, grupo_equivalencia, orden)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`
   );
   TIPOS_SEMILLA.forEach((t, i) => {
     const vigencia = t.vigencia ?? "SIN";
@@ -748,9 +751,27 @@ function sembrarCatalogoDocumental(db: Database.Database) {
       t.firmaEmpleado ? 1 : 0,
       t.multiples ? 1 : 0,
       t.confidencialidad ?? "GENERAL",
+      t.grupo ?? null,
       (i + 1) * 10
     );
   });
+
+  // A quien ya tenía el catálogo de antes, los tipos existentes no se le
+  // vuelven a insertar, así que los grupos de equivalencia hay que ponérselos
+  // una vez. Solo una: después manda lo que RH haya decidido, aunque sea
+  // dejarlos sin grupo.
+  const yaSembrados = db.prepare("SELECT valor FROM config WHERE clave = 'equivalencias_sembradas'").get() as
+    | { valor: string }
+    | undefined;
+  if (!yaSembrados) {
+    const ponerGrupo = db.prepare(
+      "UPDATE doc_tipos SET grupo_equivalencia = ? WHERE codigo = ? AND grupo_equivalencia IS NULL"
+    );
+    for (const t of TIPOS_SEMILLA) {
+      if (t.grupo) ponerGrupo.run(t.grupo, t.codigo);
+    }
+    db.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('equivalencias_sembradas', '1')").run();
+  }
 }
 
 // Si hay un respaldo marcado para restaurar (app.db.restore), se intercambia

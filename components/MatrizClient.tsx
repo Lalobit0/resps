@@ -5,7 +5,7 @@ import { aplicarPaqueteBasico, eliminarRegla, guardarRegla } from "../app/config
 import { CAMPOS_MATRIZ, type ReglaMatriz, type TipoDocumento } from "../lib/expedientes-comun";
 import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
 
-type Regla = ReglaMatriz & { tipo_nombre: string; tipo_codigo: string };
+type Regla = ReglaMatriz & { tipo_nombre: string; tipo_codigo: string; tipo_grupo: string | null };
 type Aviso = { ok: boolean; texto: string } | null;
 
 const ETIQUETA_CAMPO: Record<string, string> = Object.fromEntries(CAMPOS_MATRIZ.map((c) => [c.clave, c.etiqueta]));
@@ -131,6 +131,11 @@ export default function MatrizClient({
                         <td className={tdCls}>
                           <span className="font-medium">{r.tipo_nombre}</span>
                           <div className="font-mono text-[11px] text-soft">{r.tipo_codigo}</div>
+                          {r.tipo_grupo ? (
+                            <div className="mt-0.5 text-xs text-soft">
+                              También se cumple con cualquier otro documento de “{r.tipo_grupo}”
+                            </div>
+                          ) : null}
                         </td>
                         <td className={tdCls}>
                           {r.obligatorio === null ? (

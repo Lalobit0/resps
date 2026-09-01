@@ -17,6 +17,14 @@
  *    la matriz empieza vacía: es RH quien decide qué pide a quién.
  */
 
+/**
+ * El grupo que trae el sistema de fábrica: las cuatro identificaciones que en
+ * México se aceptan indistintamente. Con cualquiera de ellas el empleado tiene
+ * cubierta su identificación, y el expediente cuenta el grupo como un solo
+ * requisito en vez de cuatro.
+ */
+export const IDENTIFICACION_OFICIAL = "Identificación oficial";
+
 export type CategoriaSemilla = { nombre: string; descripcion: string; orden: number };
 
 export const CATEGORIAS_SEMILLA: CategoriaSemilla[] = [
@@ -44,16 +52,23 @@ export type TipoSemilla = {
   critico?: boolean;
   /** Varios documentos vigentes a la vez bajo el mismo requisito. */
   multiples?: boolean;
+  /**
+   * Documentos que valen uno por otro. Los que comparten grupo cubren el mismo
+   * hueco: con cualquiera de ellos el requisito queda resuelto.
+   */
+  grupo?: string;
   firmaEmpleado?: boolean;
   notas?: string;
 };
 
 export const TIPOS_SEMILLA: TipoSemilla[] = [
   // --- Identificación ---
-  { codigo: "INE", nombre: "Credencial para votar (INE)", categoria: "Identificación", vigencia: "FECHA", critico: true, descripcion: "Ambos lados. La vigencia es la que trae impresa." },
+  { codigo: "INE", nombre: "Credencial para votar (INE)", categoria: "Identificación", vigencia: "FECHA", critico: true, grupo: IDENTIFICACION_OFICIAL, descripcion: "Ambos lados. La vigencia es la que trae impresa." },
   { codigo: "CURP", nombre: "CURP", categoria: "Identificación", critico: true, descripcion: "Impresión del registro nacional de población." },
-  { codigo: "PASAPORTE", nombre: "Pasaporte", categoria: "Identificación", vigencia: "FECHA" },
-  { codigo: "LICENCIA_CONDUCIR", nombre: "Licencia de conducir", categoria: "Identificación", vigencia: "FECHA" },
+  { codigo: "PASAPORTE", nombre: "Pasaporte", categoria: "Identificación", vigencia: "FECHA", grupo: IDENTIFICACION_OFICIAL },
+  { codigo: "CEDULA_PROFESIONAL", nombre: "Cédula profesional", categoria: "Identificación", grupo: IDENTIFICACION_OFICIAL, descripcion: "También sirve como comprobante de estudios si el puesto lo pide." },
+  { codigo: "CARTILLA_MILITAR", nombre: "Cartilla del servicio militar", categoria: "Identificación", grupo: IDENTIFICACION_OFICIAL },
+  { codigo: "LICENCIA_CONDUCIR", nombre: "Licencia de conducir", categoria: "Identificación", vigencia: "FECHA", descripcion: "Si en tu empresa cuenta como identificación oficial, ponle ese grupo." },
   { codigo: "VISA", nombre: "Visa", categoria: "Identificación", vigencia: "FECHA" },
 
   // --- Fiscal ---

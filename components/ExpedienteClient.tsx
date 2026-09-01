@@ -293,7 +293,23 @@ function Documentos({
       const clave = r.tipo.categoria ?? "Sin categoría";
       mapa.set(clave, [...(mapa.get(clave) ?? []), r]);
     }
-    return [...mapa.entries()];
+
+    // Dentro de cada categoría, los documentos que valen uno por otro se
+    // enseñan juntos: son un solo hueco del expediente, no varios.
+    return [...mapa.entries()].map(([categoria, lista]) => {
+      const bloques: { grupo: string | null; miembros: RequisitoVista[] }[] = [];
+      const puestos = new Set<string>();
+      for (const r of lista) {
+        if (!r.grupo) {
+          bloques.push({ grupo: null, miembros: [r] });
+          continue;
+        }
+        if (puestos.has(r.grupo)) continue;
+        puestos.add(r.grupo);
+        bloques.push({ grupo: r.grupo, miembros: lista.filter((o) => o.grupo === r.grupo) });
+      }
+      return { categoria, bloques };
+    });
   }, [requisitos]);
 
   const correr = (accion: () => Promise<{ ok: boolean; error?: string; mensaje?: string }>) =>
@@ -368,23 +384,56 @@ function Documentos({
       ) : null}
 
       <div className="space-y-6">
-        {porCategoria.map(([categoria, lista]) => (
+        {porCategoria.map(({ categoria, bloques }) => (
           <section key={categoria}>
             <h2 className="mb-2 text-xs font-bold uppercase tracking-[0.14em] text-soft">{categoria}</h2>
-            <div className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
-              {lista.map((r) => (
-                <FilaRequisito
-                  key={r.id}
-                  req={r}
-                  empleado={empleado}
-                  permisos={permisos}
-                  abierto={abierto === r.id}
-                  alternar={() => setAbierto(abierto === r.id ? null : r.id)}
-                  correr={correr}
-                  pendiente={pendiente}
-                  avisar={avisar}
-                />
-              ))}
+            <div className="space-y-3">
+              {bloques.map((bloque) => {
+                const filas = bloque.miembros.map((r) => (
+                  <FilaRequisito
+                    key={r.id}
+                    req={r}
+                    empleado={empleado}
+                    permisos={permisos}
+                    abierto={abierto === r.id}
+                    alternar={() => setAbierto(abierto === r.id ? null : r.id)}
+                    correr={correr}
+                    pendiente={pendiente}
+                    avisar={avisar}
+                  />
+                ));
+
+                if (!bloque.grupo) {
+                  return (
+                    <div
+                      key={bloque.miembros[0].id}
+                      className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card"
+                    >
+                      {filas}
+                    </div>
+                  );
+                }
+
+                const cubierto = bloque.miembros.find((m) => m.cubierto && !m.cubiertoPor);
+                return (
+                  <div key={bloque.grupo} className="overflow-hidden rounded-lg border border-line bg-card">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-paper/60 px-4 py-2">
+                      <p className="text-sm font-semibold text-ink">
+                        {bloque.grupo}
+                        <span className="ml-2 text-xs font-normal text-soft">
+                          basta con uno de los {bloque.miembros.length}
+                        </span>
+                      </p>
+                      {cubierto ? (
+                        <Badge tono="verde">Cubierto con {cubierto.tipo.nombre}</Badge>
+                      ) : (
+                        <Badge tono="rojo">Falta cualquiera de estos</Badge>
+                      )}
+                    </div>
+                    <div className="divide-y divide-line">{filas}</div>
+                  </div>
+                );
+              })}
             </div>
           </section>
         ))}
@@ -465,16 +514,27 @@ function FilaRequisito({
           ) : null}
           {req.no_aplica ? <span className="block text-xs text-soft">No aplica: {req.no_aplica_motivo}</span> : null}
         </span>
-        <Badge tono={TONO_ESTADO_DOC[req.estado]}>
-          {ETIQUETA_ESTADO_DOC[req.estado]}
-          {req.estado === "POR_VENCER" && req.dias !== null ? ` · ${req.dias} días` : ""}
-          {req.estado === "VENCIDO" && req.dias !== null ? ` hace ${Math.abs(req.dias)} días` : ""}
-        </Badge>
+        {req.cubiertoPor ? (
+          <Badge tono="gris">No hace falta · trae {req.cubiertoPor}</Badge>
+        ) : (
+          <Badge tono={TONO_ESTADO_DOC[req.estado]}>
+            {ETIQUETA_ESTADO_DOC[req.estado]}
+            {req.estado === "POR_VENCER" && req.dias !== null ? ` · ${req.dias} días` : ""}
+            {req.estado === "VENCIDO" && req.dias !== null ? ` hace ${Math.abs(req.dias)} días` : ""}
+          </Badge>
+        )}
       </button>
 
       {abierto ? (
         <div className="border-t border-line bg-paper/40 px-4 py-5">
           {req.tipo.descripcion ? <p className="mb-4 text-sm text-soft">{req.tipo.descripcion}</p> : null}
+
+          {req.cubiertoPor ? (
+            <p className="mb-4 rounded-md border border-line bg-white px-3 py-2 text-sm text-soft">
+              Este requisito ya quedó cubierto con <b className="text-ink">{req.cubiertoPor}</b>, que vale por lo
+              mismo. No hace falta pedirlo, pero si la persona lo entrega igual se puede cargar aquí.
+            </p>
+          ) : null}
 
           {v ? (
             <VersionActual

@@ -4,6 +4,7 @@ import {
   calcularCumplimiento,
   esCubierto,
   estadoEfectivo,
+  resolverEquivalencias,
   type Cumplimiento,
   type ArchivoDocumento,
   type EstadoEfectivo,
@@ -55,14 +56,14 @@ export function categorias(): { id: number; nombre: string; descripcion: string 
 
 // ------------------------------------------------------------------ la matriz
 
-export function reglasMatriz(): (ReglaMatriz & { tipo_nombre: string; tipo_codigo: string })[] {
+export function reglasMatriz(): (ReglaMatriz & { tipo_nombre: string; tipo_codigo: string; tipo_grupo: string | null })[] {
   return db
     .prepare(
-      `SELECT m.*, t.nombre AS tipo_nombre, t.codigo AS tipo_codigo
+      `SELECT m.*, t.nombre AS tipo_nombre, t.codigo AS tipo_codigo, t.grupo_equivalencia AS tipo_grupo
        FROM matriz_reglas m JOIN doc_tipos t ON t.id = m.doc_tipo_id
        ORDER BY CASE m.campo WHEN 'TODOS' THEN 0 ELSE 1 END, m.campo, m.valor, t.nombre`
     )
-    .all() as (ReglaMatriz & { tipo_nombre: string; tipo_codigo: string })[];
+    .all() as (ReglaMatriz & { tipo_nombre: string; tipo_codigo: string; tipo_grupo: string | null })[];
 }
 
 const normaliza = (v: string | null | undefined) => (v ?? "").trim().toUpperCase();
@@ -107,7 +108,44 @@ export function requisitosSegunMatriz(emp: EmpleadoParaMatriz): Map<number, { ob
     const previo = salida.get(r.doc_tipo_id);
     salida.set(r.doc_tipo_id, { obligatorio: Math.max(previo?.obligatorio ?? 0, obligatorio) });
   }
-  return salida;
+
+  return conEquivalentes(salida);
+}
+
+/**
+ * Los documentos que valen por los que sí pide la matriz.
+ *
+ * Si la matriz pide INE, el pasaporte y las demás identificaciones oficiales
+ * entran también al expediente, pero como alternativa: no suman al total —el
+ * grupo cuenta como un solo requisito— y están ahí para poder cargarlas cuando
+ * la persona trae una en lugar de la otra. Sin esto habría que agregarlas a
+ * mano cada vez que alguien no tiene INE.
+ */
+function conEquivalentes(pedidos: Map<number, { obligatorio: number }>): Map<number, { obligatorio: number }> {
+  if (pedidos.size === 0) return pedidos;
+
+  const marcas = [...pedidos.keys()].map(() => "?").join(",");
+  const grupos = (
+    db
+      .prepare(
+        `SELECT DISTINCT grupo_equivalencia AS g FROM doc_tipos
+         WHERE id IN (${marcas}) AND grupo_equivalencia IS NOT NULL AND TRIM(grupo_equivalencia) != ''`
+      )
+      .all(...pedidos.keys()) as { g: string }[]
+  ).map((r) => r.g);
+  if (!grupos.length) return pedidos;
+
+  const hermanos = db
+    .prepare(
+      `SELECT id FROM doc_tipos
+       WHERE activo = 1 AND grupo_equivalencia IN (${grupos.map(() => "?").join(",")})`
+    )
+    .all(...grupos) as { id: number }[];
+
+  for (const h of hermanos) {
+    if (!pedidos.has(h.id)) pedidos.set(h.id, { obligatorio: 0 });
+  }
+  return pedidos;
 }
 
 // --------------------------------------------------------------- el expediente
@@ -306,8 +344,13 @@ export function requisitosDe(empleadoId: number, tiposPrecargados?: Map<number, 
       vence,
       dias,
       cubierto,
+      grupo: tipo.grupo_equivalencia,
+      cubiertoPor: null,
     });
   }
+
+  // Con uno del grupo basta: si ya trae pasaporte, la INE deja de hacer falta.
+  resolverEquivalencias(vistas);
 
   const orden: EstadoEfectivo[] = [
     "VENCIDO",

@@ -181,6 +181,9 @@ export async function guardarTipoDocumento(datos: FormData): Promise<ResultadoAc
     visible_empleado: bandera(datos, "visible_empleado"),
     descargable_empleado: bandera(datos, "descargable_empleado"),
     confidencialidad,
+    // Documentos que valen uno por otro. Se guarda el nombre del grupo tal
+    // cual lo escribe RH: es lo que se enseña en el expediente.
+    grupo_equivalencia: texto(datos, "grupo_equivalencia").slice(0, 60) || null,
     responsable: texto(datos, "responsable") || null,
     dias_alerta: diasAlerta,
     formatos,
@@ -210,11 +213,13 @@ export async function guardarTipoDocumento(datos: FormData): Promise<ResultadoAc
         obligatorio: antes.obligatorio,
         vigencia: `${antes.vigencia_tipo} ${antes.vigencia_valor ?? ""}`.trim(),
         confidencialidad: antes.confidencialidad,
+        grupo: antes.grupo_equivalencia,
       },
       despues: {
         obligatorio: campos.obligatorio,
         vigencia: `${campos.vigencia_tipo} ${campos.vigencia_valor ?? ""}`.trim(),
         confidencialidad: campos.confidencialidad,
+        grupo: campos.grupo_equivalencia,
       },
     });
     refrescar();

@@ -36,6 +36,21 @@ Y en todos los casos, **tus datos nunca se tocan**: la carpeta `data` (base de d
 - **Actualizar a lo último:** doble clic en **`actualizar.bat`** (hace `git pull`, revisa
   dependencias y arranca). 30 segundos, sin bajar zips, sin borrar nada.
 
+### Si al actualizar sale "Your local changes ... would be overwritten"
+
+`npm install` reescribe por su cuenta el archivo `package-lock.json`, y ese cambio
+trababa la siguiente actualización. **`actualizar.bat` ya lo resuelve solo:** descarta
+ese archivo antes de bajar nada y, si aun así algo estorba, lo guarda a un lado con
+`git stash` y sigue. Si ves el error con una versión vieja del `.bat`, corre esto una
+vez en la carpeta del proyecto y vuelve a intentar:
+
+```
+git checkout -- package-lock.json
+```
+
+Tu base de datos y tus PDF nunca corren riesgo: viven en `data` y `storage`, que están
+fuera del control de versiones.
+
 ## Alternativa sin instalar nada: ponerlo en línea
 
 Si las actualizaciones se vuelven muy frecuentes, la opción más cómoda es **hospedarlo**

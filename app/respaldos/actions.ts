@@ -5,6 +5,7 @@ import path from "path";
 import { revalidatePath } from "next/cache";
 import { db, BACKUP_DIR, DB_PATH } from "../../lib/db";
 import type { ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 const NOMBRE_OK = /^app-\d{8}-\d{6}\.db$/;
 
@@ -15,6 +16,7 @@ function selloDeTiempo(): string {
 }
 
 export async function crearRespaldo(): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     fs.mkdirSync(BACKUP_DIR, { recursive: true });
     const nombre = `app-${selloDeTiempo()}.db`;
@@ -29,6 +31,7 @@ export async function crearRespaldo(): Promise<ResultadoAccion> {
 }
 
 export async function eliminarRespaldo(nombre: string): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     if (!NOMBRE_OK.test(nombre)) return { ok: false, error: "Nombre de respaldo no válido." };
     fs.rmSync(path.join(BACKUP_DIR, nombre), { force: true });
@@ -41,6 +44,7 @@ export async function eliminarRespaldo(nombre: string): Promise<ResultadoAccion>
 }
 
 export async function restaurarRespaldo(nombre: string): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     if (!NOMBRE_OK.test(nombre)) return { ok: false, error: "Nombre de respaldo no válido." };
     const origen = path.join(BACKUP_DIR, nombre);
@@ -58,6 +62,7 @@ export async function restaurarRespaldo(nombre: string): Promise<ResultadoAccion
 }
 
 export async function restaurarDesdeArchivo(formData: FormData): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     const archivo = formData.get("archivo") as File | null;
     if (!archivo || typeof archivo.arrayBuffer !== "function") return { ok: false, error: "No se recibió ningún archivo." };
@@ -79,6 +84,7 @@ export async function restaurarDesdeArchivo(formData: FormData): Promise<Resulta
 }
 
 export async function cancelarRestauracion(): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     fs.rmSync(`${DB_PATH}.restore`, { force: true });
     revalidatePath("/respaldos");

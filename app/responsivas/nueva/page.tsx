@@ -3,6 +3,7 @@ import type { Empleado, Equipo, FirmaGuardada } from "../../../lib/types";
 import NuevaResponsivaClient from "../../../components/NuevaResponsivaClient";
 import { conceptosVale } from "../../../lib/vales";
 import { PageHeader } from "../../../components/ui";
+import { exigirPagina } from "../../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ export default async function PaginaNuevaResponsiva({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.editar");
   const sp = await searchParams;
   const equipoParam = typeof sp.equipo === "string" ? Number(sp.equipo) : NaN;
   const empleados = db

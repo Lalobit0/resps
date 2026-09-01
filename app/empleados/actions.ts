@@ -5,7 +5,9 @@ import { db } from "../../lib/db";
 import { importarDeExcel, serialExcelAISO, type Mapeo } from "../../lib/importar";
 import { guardarEquipo } from "../inventario/actions";
 import { anotarMovimiento } from "../../lib/historial";
+import { sincronizarRequisitos } from "../../lib/expedientes";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 function revalidar() {
   revalidatePath("/empleados");
@@ -26,6 +28,7 @@ export async function guardarEmpleado(datos: {
   correo: string;
   telefono: string;
 }): Promise<ResultadoAccion> {
+  await exigir("empleados.editar");
   try {
     const numero = datos.numero_empleado.trim();
     const nombre = datos.nombre.trim();
@@ -51,17 +54,31 @@ export async function guardarEmpleado(datos: {
       datos.telefono.trim() || null,
     ];
 
+    let empleadoId = datos.id ?? 0;
     if (datos.id) {
       db.prepare(
         "UPDATE empleados SET numero_empleado=?, nombre=?, puesto=?, departamento=?, area=?, clase=?, supervisor=?, fecha_alta=?, correo=?, telefono=? WHERE id=?"
       ).run(...vals, datos.id);
     } else {
-      db.prepare(
-        "INSERT INTO empleados (numero_empleado, nombre, puesto, departamento, area, clase, supervisor, fecha_alta, correo, telefono) VALUES (?,?,?,?,?,?,?,?,?,?)"
-      ).run(...vals);
+      const res = db
+        .prepare(
+          "INSERT INTO empleados (numero_empleado, nombre, puesto, departamento, area, clase, supervisor, fecha_alta, correo, telefono) VALUES (?,?,?,?,?,?,?,?,?,?)"
+        )
+        .run(...vals);
+      empleadoId = Number(res.lastInsertRowid);
     }
+
+    // Al dar de alta a alguien su expediente queda abierto con la lista de
+    // documentos que le tocan, y al cambiarle el puesto, el área o el
+    // departamento esa lista se recalcula: un ayudante que pasa a
+    // montacarguista necesita licencia y DC-3 desde hoy. Lo que ya tenía
+    // cargado nunca se toca.
+    sincronizarRequisitos(empleadoId);
+    revalidatePath("/expedientes");
+    revalidatePath(`/expedientes/${empleadoId}`);
+
     revalidar();
-    return { ok: true };
+    return { ok: true, id: empleadoId };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo guardar el empleado." };
@@ -80,6 +97,7 @@ const MAPEO_EMPLEADOS: Mapeo = {
 };
 
 export async function importarEmpleados(formData: FormData): Promise<ResultadoAccion> {
+  await exigir("empleados.editar");
   try {
     const archivo = formData.get("archivo") as File | null;
     if (!archivo || typeof archivo.arrayBuffer !== "function") {
@@ -143,6 +161,7 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
 }
 
 export async function cambiarActivoEmpleado(id: number, activo: boolean): Promise<ResultadoAccion> {
+  await exigir("empleados.editar");
   try {
     if (!activo) {
       const conEquipos = db
@@ -162,6 +181,7 @@ export async function cambiarActivoEmpleado(id: number, activo: boolean): Promis
 }
 
 export async function eliminarEmpleado(id: number): Promise<ResultadoAccion> {
+  await exigir("empleados.editar");
   try {
     const historial = db
       .prepare("SELECT COUNT(*) AS c FROM responsivas WHERE empleado_id = ?")
@@ -188,6 +208,7 @@ export async function eliminarEmpleado(id: number): Promise<ResultadoAccion> {
  * mostrará de inmediato en "Le faltan N responsivas" para generarla.
  */
 export async function asignarEquipo(empleadoId: number, equipoId: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const emp = db.prepare("SELECT id, numero_empleado, nombre FROM empleados WHERE id = ?").get(empleadoId) as
       | { id: number; numero_empleado: string; nombre: string }
@@ -262,6 +283,7 @@ export async function guardarYAsignarEquipo(
     detalles: Record<string, string>;
   }
 ): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   const guardado = await guardarEquipo({ ...datos, estado: "DISPONIBLE" });
   if (!guardado.ok || !guardado.id) return guardado;
   return asignarEquipo(empleadoId, guardado.id);
@@ -272,6 +294,7 @@ export async function guardarYAsignarEquipo(
  * disponible. Es lo que se usa cuando la asignación estaba mal.
  */
 export async function quitarEquipoAEmpleado(equipoId: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(equipoId) as Equipo | undefined;
     if (!eq) return { ok: false, error: "El equipo ya no existe." };
@@ -336,6 +359,7 @@ export type ResumenBaja = {
 
 /** Lo que hay que resolver antes de dar de baja: sus equipos y sus cartas. */
 export async function resumenBajaEmpleado(id: number): Promise<ResumenBaja | null> {
+  await exigir("empleados.ver");
   const emp = db.prepare("SELECT numero_empleado, nombre, departamento, area FROM empleados WHERE id = ?").get(id) as
     | { numero_empleado: string; nombre: string; departamento: string | null; area: string | null }
     | undefined;
@@ -385,6 +409,7 @@ export async function darDeBajaEmpleado(datos: {
   /** Equipos que sí entregó. Los demás siguen a su nombre. */
   recibidos: number[];
 }): Promise<ResultadoAccion> {
+  await exigir("empleados.editar");
   try {
     const emp = db.prepare("SELECT * FROM empleados WHERE id = ?").get(datos.id) as
       | { id: number; numero_empleado: string; nombre: string; departamento: string | null; area: string | null; activo: number }

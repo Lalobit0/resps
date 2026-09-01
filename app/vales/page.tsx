@@ -3,6 +3,7 @@ import type { Empleado } from "../../lib/types";
 import { conceptosVale } from "../../lib/vales";
 import ValesClient, { type ValeEnLista } from "../../components/ValesClient";
 import { PageHeader } from "../../components/ui";
+import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export default async function PaginaVales({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.ver");
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
   const nuevo = typeof sp.nuevo === "string" ? sp.nuevo : "";

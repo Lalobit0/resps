@@ -4,6 +4,7 @@ import { ETIQUETA_TIPO } from "../../../lib/constants";
 import { nombreSinPistas, sugerirDepartamento } from "../../../lib/ubicar";
 import UbicarClient, { type EquipoPorUbicar } from "../../../components/UbicarClient";
 import { Empty, PageHeader, btnGhost } from "../../../components/ui";
+import { exigirPagina } from "../../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function PaginaUbicar({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.ver");
   const sp = await searchParams;
   // "faltan" (el de siempre), "conresp", "sinclase" o "todos".
   const ver = typeof sp.ver === "string" ? sp.ver : sp.todos === "1" ? "todos" : "faltan";

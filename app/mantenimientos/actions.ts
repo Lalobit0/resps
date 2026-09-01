@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "../../lib/db";
 import type { ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 function revalidar() {
   revalidatePath("/mantenimientos");
@@ -20,6 +21,7 @@ export async function guardarMantenimiento(datos: {
   notas: string;
   ponerEnMantenimiento: boolean;
 }): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     if (!datos.equipo_id) return { ok: false, error: "Selecciona un equipo." };
     if (!datos.descripcion.trim()) return { ok: false, error: "Describe el mantenimiento a realizar." };
@@ -73,6 +75,7 @@ export async function completarMantenimiento(datos: {
   costo: string;
   notas: string;
 }): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const mant = db.prepare("SELECT equipo_id FROM mantenimientos WHERE id=?").get(datos.id) as
       | { equipo_id: number }
@@ -107,6 +110,7 @@ export async function completarMantenimiento(datos: {
 }
 
 export async function cancelarMantenimiento(id: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     db.prepare("UPDATE mantenimientos SET estado='CANCELADO' WHERE id=?").run(id);
     revalidar();
@@ -118,6 +122,7 @@ export async function cancelarMantenimiento(id: number): Promise<ResultadoAccion
 }
 
 export async function eliminarMantenimiento(id: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     db.prepare("DELETE FROM mantenimientos WHERE id=?").run(id);
     revalidar();

@@ -1,10 +1,14 @@
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
+import { ROLES_SEMILLA } from "./permisos";
+import { CATEGORIAS_SEMILLA, TIPOS_SEMILLA } from "./catalogo-semilla";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 export const STORAGE_DIR = path.join(process.cwd(), "storage", "responsivas");
 export const STORAGE_ELIMINADAS = path.join(process.cwd(), "storage", "responsivas_eliminadas");
+/** Archivos de los expedientes de personal. Nunca se sirven por ruta directa. */
+export const STORAGE_EXPEDIENTES = path.join(process.cwd(), "storage", "expedientes");
 export const DB_PATH = path.join(DATA_DIR, "app.db");
 export const BACKUP_DIR = path.join(DATA_DIR, "backups");
 
@@ -166,6 +170,268 @@ CREATE TABLE IF NOT EXISTS duplicados_revisados (
   fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   UNIQUE(campo, valor)
 );
+
+-- ======================================================================
+-- Identidad. Hasta ahora el sistema no sabía quién lo estaba usando; con
+-- expedientes de personal eso deja de ser aceptable: hay que poder contestar
+-- quién validó, quién descargó y quién cambió un permiso.
+-- ======================================================================
+
+CREATE TABLE IF NOT EXISTS roles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clave TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  -- El superadministrador no se limita con la lista de permisos.
+  todo INTEGER NOT NULL DEFAULT 0,
+  -- Los roles de fábrica no se pueden borrar; sus permisos sí se editan.
+  sistema INTEGER NOT NULL DEFAULT 0,
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS rol_permisos (
+  rol_id INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  permiso TEXT NOT NULL,
+  PRIMARY KEY (rol_id, permiso)
+);
+
+CREATE TABLE IF NOT EXISTS usuarios (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- Con lo que se entra. Se guarda en minúsculas para que no dependa de cómo lo escriban.
+  usuario TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  correo TEXT,
+  rol_id INTEGER NOT NULL REFERENCES roles(id),
+  -- scrypt: sal y llave en hexadecimal, separadas por dos puntos.
+  clave_hash TEXT NOT NULL,
+  -- Obliga a cambiar la contraseña temporal en el primer acceso.
+  debe_cambiar INTEGER NOT NULL DEFAULT 0,
+  -- Si esta persona además es empleado, para el portal y para saber de quién es el expediente.
+  empleado_id INTEGER REFERENCES empleados(id) ON DELETE SET NULL,
+  activo INTEGER NOT NULL DEFAULT 1,
+  ultimo_acceso TEXT,
+  intentos_fallidos INTEGER NOT NULL DEFAULT 0,
+  bloqueado_hasta TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS sesiones (
+  token TEXT PRIMARY KEY,
+  usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  creada TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  expira TEXT NOT NULL,
+  ip TEXT,
+  agente TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_sesiones_usuario ON sesiones (usuario_id);
+
+-- ======================================================================
+-- Expedientes digitales de personal.
+-- ======================================================================
+
+CREATE TABLE IF NOT EXISTS doc_categorias (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nombre TEXT NOT NULL UNIQUE,
+  descripcion TEXT,
+  orden INTEGER NOT NULL DEFAULT 0,
+  activo INTEGER NOT NULL DEFAULT 1
+);
+
+-- Un tipo de documento y todo lo que el sistema necesita saber de él para
+-- decidir solo si el requisito está cumplido, cuándo vence y quién puede verlo.
+CREATE TABLE IF NOT EXISTS doc_tipos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  codigo TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  categoria_id INTEGER REFERENCES doc_categorias(id) ON DELETE SET NULL,
+
+  -- Obligatorio cuenta para el porcentaje; opcional no penaliza.
+  obligatorio INTEGER NOT NULL DEFAULT 1,
+  -- Crítico: su falta pone el expediente en rojo aunque el resto esté bien.
+  critico INTEGER NOT NULL DEFAULT 0,
+  permite_no_aplica INTEGER NOT NULL DEFAULT 1,
+
+  -- SIN | FECHA | DIAS | MESES | ANIOS
+  vigencia_tipo TEXT NOT NULL DEFAULT 'SIN',
+  vigencia_valor INTEGER,
+  requiere_emision INTEGER NOT NULL DEFAULT 0,
+  requiere_vencimiento INTEGER NOT NULL DEFAULT 0,
+  requiere_renovacion INTEGER NOT NULL DEFAULT 0,
+
+  requiere_validacion INTEGER NOT NULL DEFAULT 1,
+  requiere_firma_empleado INTEGER NOT NULL DEFAULT 0,
+  requiere_firma_jefe INTEGER NOT NULL DEFAULT 0,
+  requiere_firma_rh INTEGER NOT NULL DEFAULT 0,
+
+  multiples_vigentes INTEGER NOT NULL DEFAULT 0,
+  conserva_versiones INTEGER NOT NULL DEFAULT 1,
+
+  visible_empleado INTEGER NOT NULL DEFAULT 1,
+  descargable_empleado INTEGER NOT NULL DEFAULT 0,
+  -- GENERAL | RESTRINGIDO | CONFIDENCIAL | ALTO
+  confidencialidad TEXT NOT NULL DEFAULT 'GENERAL',
+
+  responsable TEXT,
+  -- Días de anticipación para avisar, separados por comas: "60,30,15,7,1".
+  dias_alerta TEXT NOT NULL DEFAULT '60,30,15,7',
+  formatos TEXT NOT NULL DEFAULT 'pdf,jpg,jpeg,png',
+  tam_max_mb INTEGER NOT NULL DEFAULT 20,
+  notas TEXT,
+  orden INTEGER NOT NULL DEFAULT 0,
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- Qué documentos pide cada quién. Una regla dice "a los del campo X con valor Y
+-- pídeles este documento"; con campo TODOS aplica a la empresa entera. Las
+-- reglas se suman: el empleado acaba con la unión de todas las que le tocan.
+CREATE TABLE IF NOT EXISTS matriz_reglas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_tipo_id INTEGER NOT NULL REFERENCES doc_tipos(id) ON DELETE CASCADE,
+  -- TODOS | DEPARTAMENTO | AREA | PUESTO | CLASE
+  campo TEXT NOT NULL DEFAULT 'TODOS',
+  valor TEXT,
+  -- Deja forzar obligatorio/opcional distinto al del tipo para este grupo.
+  obligatorio INTEGER,
+  nota TEXT,
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_matriz_tipo ON matriz_reglas (doc_tipo_id);
+
+CREATE TABLE IF NOT EXISTS expedientes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  empleado_id INTEGER NOT NULL UNIQUE REFERENCES empleados(id) ON DELETE CASCADE,
+  responsable TEXT,
+  notas TEXT,
+  -- Última vez que se recalcularon los requisitos contra la matriz.
+  revisado_en TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- La lista de pendientes del empleado: un renglón por documento que le toca.
+CREATE TABLE IF NOT EXISTS expediente_requisitos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  expediente_id INTEGER NOT NULL REFERENCES expedientes(id) ON DELETE CASCADE,
+  doc_tipo_id INTEGER NOT NULL REFERENCES doc_tipos(id) ON DELETE CASCADE,
+  -- MATRIZ (lo puso la regla) | MANUAL (lo agregó alguien a mano)
+  origen TEXT NOT NULL DEFAULT 'MATRIZ',
+  obligatorio INTEGER NOT NULL DEFAULT 1,
+  -- Excepción autorizada: no penaliza el cumplimiento, pero deja constancia.
+  no_aplica INTEGER NOT NULL DEFAULT 0,
+  no_aplica_motivo TEXT,
+  no_aplica_usuario TEXT,
+  no_aplica_fecha TEXT,
+  responsable TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE(expediente_id, doc_tipo_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_req_exp ON expediente_requisitos (expediente_id);
+
+-- Un documento lógico ("la INE de Juan"). Sus versiones cuelgan de aquí.
+CREATE TABLE IF NOT EXISTS documentos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  requisito_id INTEGER NOT NULL REFERENCES expediente_requisitos(id) ON DELETE CASCADE,
+  expediente_id INTEGER NOT NULL REFERENCES expedientes(id) ON DELETE CASCADE,
+  doc_tipo_id INTEGER NOT NULL REFERENCES doc_tipos(id) ON DELETE CASCADE,
+  empleado_id INTEGER NOT NULL REFERENCES empleados(id) ON DELETE CASCADE,
+  titulo TEXT,
+  -- ACTIVO | ARCHIVADO | PAPELERA
+  situacion TEXT NOT NULL DEFAULT 'ACTIVO',
+  archivado_motivo TEXT,
+  archivado_por TEXT,
+  archivado_en TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_doc_req ON documentos (requisito_id);
+CREATE INDEX IF NOT EXISTS idx_doc_exp ON documentos (expediente_id);
+
+-- Cada carga es una versión nueva. La anterior nunca se borra: se marca
+-- sustituida y se queda para consulta.
+CREATE TABLE IF NOT EXISTS doc_versiones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  documento_id INTEGER NOT NULL REFERENCES documentos(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  -- CARGADO | EN_REVISION | VALIDADO | RECHAZADO | SUSTITUIDA
+  estado TEXT NOT NULL DEFAULT 'CARGADO',
+  vigente INTEGER NOT NULL DEFAULT 1,
+  fecha_emision TEXT,
+  fecha_vencimiento TEXT,
+  folio TEXT,
+  entidad_emisora TEXT,
+  notas TEXT,
+  -- RH | EMPLEADO | IMPORTACION | MIGRACION
+  origen TEXT NOT NULL DEFAULT 'RH',
+  cargado_por TEXT,
+  cargado_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  validado_por TEXT,
+  validado_en TEXT,
+  motivo_rechazo TEXT,
+  comentario_rechazo TEXT,
+  rechazado_por TEXT,
+  rechazado_en TEXT,
+  sustituida_en TEXT,
+  motivo_sustitucion TEXT,
+  -- Firma y aceptación (la lógica queda lista aunque todavía se firme en papel)
+  firma_estado TEXT,
+  firma_empleado_en TEXT,
+  firma_jefe_en TEXT,
+  firma_rh_en TEXT,
+  UNIQUE(documento_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ver_doc ON doc_versiones (documento_id);
+
+-- Una versión puede traer varios archivos: la INE tiene dos caras y un acta
+-- puede venir en varias hojas escaneadas.
+CREATE TABLE IF NOT EXISTS doc_archivos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  version_id INTEGER NOT NULL REFERENCES doc_versiones(id) ON DELETE CASCADE,
+  nombre_original TEXT NOT NULL,
+  ruta TEXT NOT NULL,
+  mime TEXT,
+  tamano INTEGER,
+  etiqueta TEXT,
+  orden INTEGER NOT NULL DEFAULT 0,
+  hash TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_arch_ver ON doc_archivos (version_id);
+
+-- Notas del expediente. Las internas no las ve el empleado.
+CREATE TABLE IF NOT EXISTS exp_notas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  expediente_id INTEGER NOT NULL REFERENCES expedientes(id) ON DELETE CASCADE,
+  documento_id INTEGER REFERENCES documentos(id) ON DELETE CASCADE,
+  texto TEXT NOT NULL,
+  visibilidad TEXT NOT NULL DEFAULT 'INTERNA',
+  autor TEXT,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_notas_exp ON exp_notas (expediente_id);
+
+-- Todo lo que le ha pasado a un expediente, en orden. Es la vista con la que
+-- se contesta una auditoría sin leer la bitácora completa del sistema.
+CREATE TABLE IF NOT EXISTS exp_historial (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  expediente_id INTEGER NOT NULL REFERENCES expedientes(id) ON DELETE CASCADE,
+  documento_id INTEGER,
+  doc_tipo_id INTEGER,
+  accion TEXT NOT NULL,
+  detalle TEXT,
+  usuario TEXT,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_hist_exp ON exp_historial (expediente_id, fecha);
 `;
 
 // ---------- Plantillas por clase de carta (intro + {{tabla_equipo}} + normas) ----------
@@ -356,6 +622,20 @@ function migrar(db: Database.Database) {
   // Baja del empleado: cuándo dejó la empresa y por qué.
   agregarColumna(db, "empleados", "fecha_baja", "TEXT");
   agregarColumna(db, "empleados", "motivo_baja", "TEXT");
+  // Estatus del empleado más allá de activo/inactivo: preingreso, incapacidad,
+  // suspensión, reingreso, archivado. Se deriva del activo cuando no existe.
+  agregarColumna(db, "empleados", "estatus", "TEXT");
+  db.exec("UPDATE empleados SET estatus = CASE WHEN activo = 1 THEN 'ACTIVO' ELSE 'BAJA' END WHERE estatus IS NULL");
+  // La bitácora ahora tiene que decir quién y desde dónde: con expedientes de
+  // personal, un cambio sin responsable no sirve para auditar.
+  agregarColumna(db, "bitacora", "usuario_id", "INTEGER");
+  agregarColumna(db, "bitacora", "usuario", "TEXT");
+  agregarColumna(db, "bitacora", "ip", "TEXT");
+  agregarColumna(db, "bitacora", "entidad", "TEXT");
+  agregarColumna(db, "bitacora", "entidad_id", "INTEGER");
+  agregarColumna(db, "bitacora", "antes", "TEXT");
+  agregarColumna(db, "bitacora", "despues", "TEXT");
+  agregarColumna(db, "bitacora", "resultado", "TEXT NOT NULL DEFAULT 'OK'");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
   // A los equipos que ya están entregados se les copia el área de su dueño:
@@ -397,6 +677,80 @@ function seed(db: Database.Database) {
   insConf.run("firma_empleado", "Nombre, Firma y No. de empleado quien recibe");
   insConf.run("firma_sistemas", "Nombre y firma del Jefe de sistemas");
   insConf.run("firma_rh", "RECURSOS HUMANOS");
+  // El sistema dejó de ser solo de TI: ahora también lleva los expedientes de
+  // personal. El nombre se edita en Plantillas y datos.
+  insConf.run("app_nombre", "Control Sultana");
+
+  sembrarRoles(db);
+  sembrarCatalogoDocumental(db);
+}
+
+/**
+ * Roles de fábrica.
+ *
+ * Se crean si no existen y se les ponen sus permisos solo la primera vez: si
+ * alguien ya editó qué puede hacer el analista de RH, un reinicio no se lo
+ * deshace.
+ */
+function sembrarRoles(db: Database.Database) {
+  const insRol = db.prepare(
+    "INSERT OR IGNORE INTO roles (clave, nombre, descripcion, todo, sistema) VALUES (?, ?, ?, ?, 1)"
+  );
+  const insPerm = db.prepare("INSERT OR IGNORE INTO rol_permisos (rol_id, permiso) VALUES (?, ?)");
+  for (const rol of ROLES_SEMILLA) {
+    const res = insRol.run(rol.clave, rol.nombre, rol.descripcion, rol.todo ? 1 : 0);
+    if (res.changes === 0) continue; // ya existía: no se le tocan los permisos
+    const id = (db.prepare("SELECT id FROM roles WHERE clave = ?").get(rol.clave) as { id: number }).id;
+    for (const p of rol.permisos) insPerm.run(id, p);
+  }
+}
+
+/**
+ * Categorías y tipos de documento con los que arranca el módulo.
+ *
+ * Solo se insertan los que faltan. Nada de esto le pide documentos a nadie
+ * todavía: eso lo decide la matriz de requisitos, que empieza vacía.
+ */
+function sembrarCatalogoDocumental(db: Database.Database) {
+  const insCat = db.prepare(
+    "INSERT OR IGNORE INTO doc_categorias (nombre, descripcion, orden) VALUES (?, ?, ?)"
+  );
+  for (const c of CATEGORIAS_SEMILLA) insCat.run(c.nombre, c.descripcion, c.orden);
+
+  const catId = new Map<string, number>();
+  for (const r of db.prepare("SELECT id, nombre FROM doc_categorias").all() as { id: number; nombre: string }[]) {
+    catId.set(r.nombre, r.id);
+  }
+
+  const insTipo = db.prepare(
+    `INSERT OR IGNORE INTO doc_tipos
+       (codigo, nombre, descripcion, categoria_id, obligatorio, critico, vigencia_tipo, vigencia_valor,
+        requiere_emision, requiere_vencimiento, requiere_validacion, requiere_firma_empleado,
+        multiples_vigentes, confidencialidad, orden)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`
+  );
+  TIPOS_SEMILLA.forEach((t, i) => {
+    const vigencia = t.vigencia ?? "SIN";
+    // Solo se piden las fechas que de verdad hacen falta: si el documento trae
+    // impreso su vencimiento, con esa basta; si el vencimiento se calcula a
+    // partir de un plazo, entonces la que hace falta es la de emisión.
+    const porPlazo = vigencia === "DIAS" || vigencia === "MESES" || vigencia === "ANIOS";
+    insTipo.run(
+      t.codigo,
+      t.nombre,
+      t.descripcion ?? null,
+      catId.get(t.categoria) ?? null,
+      t.critico ? 1 : 0,
+      vigencia,
+      t.vigenciaValor ?? null,
+      porPlazo ? 1 : 0,
+      vigencia === "FECHA" ? 1 : 0,
+      t.firmaEmpleado ? 1 : 0,
+      t.multiples ? 1 : 0,
+      t.confidencialidad ?? "GENERAL",
+      (i + 1) * 10
+    );
+  });
 }
 
 // Si hay un respaldo marcado para restaurar (app.db.restore), se intercambia
@@ -418,6 +772,7 @@ function crearDb(): Database.Database {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(STORAGE_DIR, { recursive: true });
   fs.mkdirSync(STORAGE_ELIMINADAS, { recursive: true });
+  fs.mkdirSync(STORAGE_EXPEDIENTES, { recursive: true });
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
   aplicarRestauracionPendiente();
   const db = new Database(DB_PATH);

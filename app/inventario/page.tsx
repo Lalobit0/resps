@@ -12,6 +12,7 @@ import { revisarCelulares } from "../../lib/celulares";
 import ExportarBotones from "../../components/ExportarBotones";
 import FiltrosAuto from "../../components/FiltrosAuto";
 import { PageHeader, btnGhost, btnPrimary, inputCls } from "../../components/ui";
+import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function PaginaInventario({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.ver");
   const sp = await searchParams;
   const estado = typeof sp.estado === "string" ? sp.estado : "";
   const tipo = typeof sp.tipo === "string" ? sp.tipo : "";

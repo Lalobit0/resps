@@ -1,12 +1,15 @@
 import fs from "fs";
 import path from "path";
 import { BACKUP_DIR } from "../../../../lib/db";
+import { puedeApi } from "../../../../lib/apiGuardia";
 
 export const dynamic = "force-dynamic";
 
 const NOMBRE_OK = /^app-\d{8}-\d{6}\.db$/;
 
 export async function GET(_req: Request, { params }: { params: Promise<{ nombre: string }> }) {
+  const veto = await puedeApi("config.administrar");
+  if (veto) return veto;
   const { nombre } = await params;
   if (!NOMBRE_OK.test(nombre)) return new Response("Nombre no válido", { status: 400 });
   const ruta = path.join(BACKUP_DIR, nombre);

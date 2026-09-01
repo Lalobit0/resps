@@ -6,6 +6,7 @@ import { hoyISO } from "../../lib/helpers";
 import { camposDe, tipoRevision } from "../../lib/formatos/tipos";
 import { siguienteFolioRevision } from "../../lib/revisiones";
 import type { ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 function revalidar() {
   revalidatePath("/revisiones");
@@ -35,6 +36,7 @@ export type DatosRevision = {
  * respalda el formato es el registro, no una firma en papel.
  */
 export async function guardarRevision(datos: DatosRevision): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const tipo = tipoRevision(datos.tipo);
     if (!tipo) return { ok: false, error: "Tipo de documento no válido." };
@@ -92,6 +94,7 @@ export async function guardarRevision(datos: DatosRevision): Promise<ResultadoAc
 }
 
 export async function eliminarRevision(id: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const r = db.prepare("SELECT folio FROM revisiones WHERE id = ?").get(id) as { folio: string } | undefined;
     if (!r) return { ok: false, error: "Ese registro ya no existe." };
@@ -109,6 +112,7 @@ export async function eliminarRevision(id: number): Promise<ResultadoAccion> {
 export async function equiposDelEmpleado(
   empleadoId: number
 ): Promise<{ equipos: { id: number; codigo: string; texto: string }[] }> {
+  await exigir("ti.ver");
   if (!Number.isInteger(empleadoId) || empleadoId <= 0) return { equipos: [] };
   const filas = db
     .prepare(
@@ -142,6 +146,7 @@ export type MantenimientoParaFormato = {
 };
 
 export async function mantenimientosParaFormato(): Promise<{ mantenimientos: MantenimientoParaFormato[] }> {
+  await exigir("ti.ver");
   const filas = db
     .prepare(
       `SELECT m.id, m.equipo_id, m.tipo, m.descripcion, m.notas, m.tecnico,

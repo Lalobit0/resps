@@ -3,6 +3,7 @@ import { db } from "../../lib/db";
 import type { MantenimientoConEquipo } from "../../lib/types";
 import MantenimientosClient from "../../components/MantenimientosClient";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
+import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ export default async function PaginaMantenimientos({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.ver");
   const sp = await searchParams;
   const equipoId = typeof sp.equipo === "string" ? Number(sp.equipo) : 0;
   const estado = typeof sp.estado === "string" ? sp.estado : "";

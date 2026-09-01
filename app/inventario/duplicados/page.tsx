@@ -5,6 +5,7 @@ import { ETIQUETA_TIPO } from "../../../lib/constants";
 import type { Equipo } from "../../../lib/types";
 import DuplicadosClient, { type EquipoDup, type GrupoVista } from "../../../components/DuplicadosClient";
 import { Empty, PageHeader, btnGhost } from "../../../components/ui";
+import { exigirPagina } from "../../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export const dynamic = "force-dynamic";
  * son equipos distintos.
  */
 export default async function PaginaDuplicados() {
+  await exigirPagina("ti.ver");
   const revisables = db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[];
   const grupos = agruparDuplicados(revisables);
 

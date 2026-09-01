@@ -2,6 +2,7 @@ import { db } from "../../../lib/db";
 import type { Empleado, Equipo } from "../../../lib/types";
 import CargarResponsivaClient from "../../../components/CargarResponsivaClient";
 import { PageHeader } from "../../../components/ui";
+import { exigirPagina } from "../../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export default async function PaginaCargarResponsiva({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.editar");
   const sp = await searchParams;
   // Se puede llegar desde la ficha del empleado con el equipo ya elegido.
   const empleadoInicial = typeof sp.empleado === "string" ? Number(sp.empleado) : null;

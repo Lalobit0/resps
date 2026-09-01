@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 import { ROLES_SEMILLA } from "./permisos";
-import { CATEGORIAS_SEMILLA, TIPOS_SEMILLA } from "./catalogo-semilla";
+import { CATEGORIAS_SEMILLA, LICENCIAS_DE_MANEJO, TIPOS_SEMILLA } from "./catalogo-semilla";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 export const STORAGE_DIR = path.join(process.cwd(), "storage", "responsivas");
@@ -771,6 +771,26 @@ function sembrarCatalogoDocumental(db: Database.Database) {
       if (t.grupo) ponerGrupo.run(t.grupo, t.codigo);
     }
     db.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('equivalencias_sembradas', '1')").run();
+  }
+
+  // Las licencias de manejo pasaron a tener apartado propio, y la estatal
+  // estaba suelta en Identificación. Se mueve una sola vez, y solo si nadie la
+  // ha renombrado ni recategorizado: si RH ya la acomodó a su manera, manda eso.
+  const yaMovidas = db.prepare("SELECT valor FROM config WHERE clave = 'licencias_apartado'").get() as
+    | { valor: string }
+    | undefined;
+  if (!yaMovidas) {
+    const destino = db.prepare("SELECT id FROM doc_categorias WHERE nombre = ?").get(LICENCIAS_DE_MANEJO) as
+      | { id: number }
+      | undefined;
+    if (destino) {
+      db.prepare(
+        `UPDATE doc_tipos SET categoria_id = ?, nombre = 'Licencia de conducir estatal',
+           descripcion = 'La que expide el estado. Sirve para manejar dentro de la ciudad, no para transporte federal.'
+         WHERE codigo = 'LICENCIA_CONDUCIR' AND nombre = 'Licencia de conducir'`
+      ).run(destino.id);
+    }
+    db.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('licencias_apartado', '1')").run();
   }
 }
 

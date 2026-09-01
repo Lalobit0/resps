@@ -238,7 +238,15 @@ function versionesDe(documentoIds: number[]): Map<number, VersionDocumento[]> {
 }
 
 /** El expediente completo de una persona, listo para pintarse. */
-export function requisitosDe(empleadoId: number): RequisitoVista[] {
+/**
+ * El catálogo entero como diccionario, para no volver a pedirlo por cada
+ * empleado cuando se está armando el tablero de toda la plantilla.
+ */
+function mapaDeTipos(): Map<number, TipoDocumento> {
+  return new Map(tiposDocumento(false).map((t) => [t.id, t]));
+}
+
+export function requisitosDe(empleadoId: number, tiposPrecargados?: Map<number, TipoDocumento>): RequisitoVista[] {
   const expediente = db.prepare("SELECT id FROM expedientes WHERE empleado_id = ?").get(empleadoId) as
     | { id: number }
     | undefined;
@@ -253,7 +261,7 @@ export function requisitosDe(empleadoId: number): RequisitoVista[] {
     )
     .all(expediente.id) as (RequisitoVista & { documento_id: number | null })[];
 
-  const tipos = new Map(tiposDocumento(false).map((t) => [t.id, t]));
+  const tipos = tiposPrecargados ?? mapaDeTipos();
   const docIds = filas.map((f) => f.documento_id).filter((d): d is number => !!d);
   const versiones = versionesDe(docIds);
 
@@ -374,11 +382,13 @@ export function resumenExpedientes(opciones?: { incluirBajas?: boolean }): Resum
     ])
   );
 
+  // El catálogo se lee una sola vez para toda la plantilla, no una por persona.
+  const tipos = mapaDeTipos();
   return empleados.map(({ id, ...e }) => ({
     ...e,
     empleado_id: id,
     expediente_id: expedientes.get(id) ?? null,
-    cumplimiento: calcularCumplimiento(requisitosDe(id)),
+    cumplimiento: calcularCumplimiento(requisitosDe(id, tipos)),
   }));
 }
 

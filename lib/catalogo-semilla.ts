@@ -84,48 +84,70 @@ export const TIPOS_SEMILLA: TipoSemilla[] = [
   { codigo: "VISA", nombre: "Visa", categoria: "Identificación", vigencia: "FECHA" },
 
   // --- Licencias de conducir ---
-  // La licencia federal (SICT) se divide en categorías y cada una habilita un
-  // tipo de vehículo distinto. Las descripciones están para que RH sepa cuál
-  // pedir sin tener que consultar la norma, pero conviene confirmarlas contra
-  // una licencia real: el texto se edita desde Configuración.
+  // Clasificación de Baja California: automovilista, motociclista y las cuatro
+  // categorías de chofer, que es lo que expide el estado y lo que trae el
+  // personal. La federal (SICT) va aparte y solo hace falta para circular por
+  // carretera federal.
+  //
+  // OJO con las letras: la categoría B del estado NO es la B federal. Aquí la B
+  // es camión urbano de pasajeros y carga de menos de ocho toneladas; el
+  // tractocamión y el camión foráneo pesado son categoría A. Por eso cada una
+  // lleva escrito qué ampara.
   {
     codigo: "LICENCIA_CONDUCIR",
-    nombre: "Licencia de conducir estatal",
+    nombre: "Licencia de automovilista",
     categoria: LICENCIAS_DE_MANEJO,
     vigencia: "FECHA",
-    descripcion: "La que expide el estado. Sirve para manejar dentro de la ciudad, no para transporte federal.",
+    descripcion: "Vehículos de servicio particular. Es la que trae la mayoría del personal administrativo.",
   },
   {
-    codigo: "LICENCIA_FED_A",
-    nombre: "Licencia federal · Categoría A",
+    codigo: "LICENCIA_MOTOCICLISTA",
+    nombre: "Licencia de motociclista",
+    categoria: LICENCIAS_DE_MANEJO,
+    vigencia: "FECHA",
+    descripcion: "Motocicleta de cualquier cilindrada, sea particular o de trabajo.",
+  },
+  {
+    codigo: "LICENCIA_CHOFER_A",
+    nombre: "Licencia de chofer · Tipo A",
     categoria: LICENCIAS_DE_MANEJO,
     vigencia: "FECHA",
     critico: true,
-    descripcion: "Pasaje y turismo: autobuses. Confirma la categoría contra la licencia física.",
+    descripcion:
+      "Tractocamión y camión foráneo de ocho toneladas o más, o de tres ejes o más, y camión foráneo de pasajeros.",
   },
   {
-    codigo: "LICENCIA_FED_B",
-    nombre: "Licencia federal · Categoría B",
+    codigo: "LICENCIA_CHOFER_B",
+    nombre: "Licencia de chofer · Tipo B",
     categoria: LICENCIAS_DE_MANEJO,
     vigencia: "FECHA",
     critico: true,
-    descripcion: "Carga general: tractocamión y camión de carga. Es la de los choferes de reparto y traslado.",
+    descripcion: "Camión urbano de pasajeros y camión de carga de menos de ocho toneladas, de dos ejes.",
   },
   {
-    codigo: "LICENCIA_FED_C",
-    nombre: "Licencia federal · Categoría C",
+    codigo: "LICENCIA_CHOFER_C",
+    nombre: "Licencia de chofer · Tipo C",
     categoria: LICENCIAS_DE_MANEJO,
     vigencia: "FECHA",
     critico: true,
-    descripcion: "Chofer-guía de turismo. Confirma la categoría contra la licencia física.",
+    descripcion: "Vehículos comerciales: pick-up, panel cerrado y camión rabón de hasta tres toneladas.",
   },
   {
-    codigo: "LICENCIA_FED_DE",
-    nombre: "Licencia federal · Categoría D/E",
+    codigo: "LICENCIA_CHOFER_D",
+    nombre: "Licencia de chofer · Tipo D",
     categoria: LICENCIAS_DE_MANEJO,
     vigencia: "FECHA",
     critico: true,
-    descripcion: "Servicios auxiliares (grúas, arrastre) y materiales o residuos peligrosos. Confirma cuál de las dos trae la licencia.",
+    descripcion: "Vehículos de alquiler.",
+  },
+  {
+    codigo: "LICENCIA_FEDERAL",
+    nombre: "Licencia federal de conductor (SICT)",
+    categoria: LICENCIAS_DE_MANEJO,
+    vigencia: "FECHA",
+    critico: true,
+    descripcion:
+      "Se pide ADEMÁS de la estatal, solo si el chofer circula por carreteras o puentes de jurisdicción federal. La expide la SICT y trae su propia categoría.",
   },
 
   // --- Fiscal ---

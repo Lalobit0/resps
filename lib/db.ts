@@ -792,6 +792,43 @@ function sembrarCatalogoDocumental(db: Database.Database) {
     }
     db.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('licencias_apartado', '1')").run();
   }
+
+  // Las licencias se sembraron primero con el esquema federal (categorías A a
+  // E). El que aplica al personal es el del estado —automovilista, motociclista
+  // y chofer tipo A a D— porque es el que expide Baja California y el que trae
+  // la gente. Los cuatro tipos federales sueltos se retiran: si nadie los usó
+  // se borran, y si ya hay una regla o un documento colgando se desactivan,
+  // para no llevarse nada por delante.
+  const yaBC = db.prepare("SELECT valor FROM config WHERE clave = 'licencias_bc'").get() as
+    | { valor: string }
+    | undefined;
+  if (!yaBC) {
+    for (const codigo of ["LICENCIA_FED_A", "LICENCIA_FED_B", "LICENCIA_FED_C", "LICENCIA_FED_DE"]) {
+      const tipo = db.prepare("SELECT id FROM doc_tipos WHERE codigo = ?").get(codigo) as { id: number } | undefined;
+      if (!tipo) continue;
+      const enUso =
+        (db.prepare("SELECT COUNT(*) AS c FROM matriz_reglas WHERE doc_tipo_id = ?").get(tipo.id) as { c: number }).c +
+        (db.prepare("SELECT COUNT(*) AS c FROM expediente_requisitos WHERE doc_tipo_id = ?").get(tipo.id) as { c: number })
+          .c;
+      if (enUso > 0) {
+        db.prepare(
+          `UPDATE doc_tipos SET activo = 0,
+             notas = 'Categoría del esquema federal. Se reemplazó por las licencias del estado de Baja California.'
+           WHERE id = ?`
+        ).run(tipo.id);
+      } else {
+        db.prepare("DELETE FROM doc_tipos WHERE id = ?").run(tipo.id);
+      }
+    }
+    // La estatal genérica pasa a llamarse por su nombre real. Si RH ya le puso
+    // otro, se respeta.
+    db.prepare(
+      `UPDATE doc_tipos SET nombre = 'Licencia de automovilista',
+         descripcion = 'Vehículos de servicio particular. Es la que trae la mayoría del personal administrativo.'
+       WHERE codigo = 'LICENCIA_CONDUCIR' AND nombre IN ('Licencia de conducir', 'Licencia de conducir estatal')`
+    ).run();
+    db.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('licencias_bc', '1')").run();
+  }
 }
 
 // Si hay un respaldo marcado para restaurar (app.db.restore), se intercambia

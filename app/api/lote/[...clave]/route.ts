@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { puedeApi } from "../../../../lib/apiGuardia";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
  * dura la revisión: al confirmar, la carpeta temporal se borra.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ clave: string[] }> }) {
+  const veto = await puedeApi("ti.ver");
+  if (veto) return veto;
   const { clave } = await params;
   const relativa = clave.join("/");
   // Solo se admite <sesion>/<n>.pdf: nada de subir por el árbol de carpetas.

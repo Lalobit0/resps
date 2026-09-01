@@ -19,6 +19,7 @@ export default function PlantillasClient({
 }: {
   plantillas: Plantilla[];
   config: {
+    app_nombre: string;
     empresa: string;
     ciudad: string;
     entrega_default: string;
@@ -80,6 +81,15 @@ export default function PlantillasClient({
       <Card>
         <h2 className="mb-4 text-base font-bold text-ink">Datos de la empresa</h2>
         <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <Label>Nombre del sistema</Label>
+            <input
+              className={inputCls}
+              value={conf.app_nombre}
+              onChange={(e) => setConf((c) => ({ ...c, app_nombre: e.target.value }))}
+            />
+            <p className="mt-1 text-xs text-soft">Es lo que se lee bajo el logotipo, en el menú de la izquierda.</p>
+          </div>
           <div>
             <Label>Empresa</Label>
             <input className={inputCls} value={conf.empresa} onChange={(e) => setConf((c) => ({ ...c, empresa: e.target.value }))} />

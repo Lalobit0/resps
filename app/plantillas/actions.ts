@@ -8,8 +8,10 @@ import { filasEquipo, filasUsuario, partirPlantilla } from "../../lib/carta";
 import { CARTAS, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, type ClaseCarta } from "../../lib/constants";
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import type { Empleado, Equipo, ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 export async function guardarPlantilla(clave: string, contenido: string): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     if (!contenido.trim()) return { ok: false, error: "La plantilla no puede quedar vacía." };
     // El marcador {{tabla_equipo}} es opcional (la carta de Wi-Fi y el vale no llevan tabla de equipo).
@@ -23,6 +25,7 @@ export async function guardarPlantilla(clave: string, contenido: string): Promis
 }
 
 export async function guardarConfig(datos: {
+  app_nombre: string;
   empresa: string;
   ciudad: string;
   entrega_default: string;
@@ -31,10 +34,12 @@ export async function guardarConfig(datos: {
   firma_sistemas: string;
   firma_rh: string;
 }): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     const upsert = db.prepare(
       "INSERT INTO config (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor"
     );
+    upsert.run("app_nombre", datos.app_nombre.trim().slice(0, 40) || "Control Sultana");
     upsert.run("empresa", datos.empresa.trim() || "Sultana Packaging");
     upsert.run("ciudad", datos.ciudad.trim() || "Tijuana, Baja California");
     upsert.run("entrega_default", datos.entrega_default.trim() || "Departamento de TI");
@@ -46,6 +51,8 @@ export async function guardarConfig(datos: {
     revalidatePath("/plantillas");
     revalidatePath("/responsivas");
     revalidatePath("/responsivas/nueva");
+    // El nombre del sistema se lee en el menú, que vive en el layout.
+    revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {
     console.error(e);
@@ -129,6 +136,7 @@ const EQ_DEMO: Record<string, Equipo> = {
 };
 
 export async function previsualizarPlantilla(clave: string, contenido: string): Promise<ResultadoAccion & { pdf?: string }> {
+  await exigir("config.administrar");
   try {
     if (!contenido.trim()) return { ok: false, error: "La plantilla está vacía." };
     const fecha = hoyISO();
@@ -163,6 +171,7 @@ export async function previsualizarPlantilla(clave: string, contenido: string): 
     };
 
     if (entrada) {
+  await exigir("config.administrar");
       const [claseCarta, cfg] = entrada;
       const equipoDemoUso = cfg.tiposEquipo.length ? EQ_DEMO[claseCarta] : undefined;
       base = {

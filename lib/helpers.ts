@@ -84,3 +84,11 @@ export function montoEnLetra(valor: number): string {
   const money = new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(valor);
   return `${money} (${numeroALetras(entero)} PESOS ${String(centavos).padStart(2, "0")}/100 M.N.)`;
 }
+
+/** "1.4 MB", "820 KB": el peso de un archivo como lo lee una persona. */
+export function tamanoLegible(bytes: number | null): string {
+  if (!bytes) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

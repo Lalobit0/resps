@@ -1,6 +1,7 @@
 import path from "path";
 import { responsivasDeLote } from "../../../../lib/pendientes";
 import { unirPdfs } from "../../../../lib/lote";
+import { puedeApi } from "../../../../lib/apiGuardia";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,8 @@ export const dynamic = "force-dynamic";
  *   /api/impresion/L-20260806-1432?pendientes=1   -> solo las que faltan firmar
  */
 export async function GET(req: Request, { params }: { params: Promise<{ lote: string }> }) {
+  const veto = await puedeApi("ti.ver");
+  if (veto) return veto;
   const { lote } = await params;
   if (!/^[\w-]{3,40}$/.test(lote)) return new Response("Lote no válido", { status: 400 });
 

@@ -2,10 +2,12 @@ import { db } from "../../lib/db";
 import type { EmpleadoConEquipos } from "../../lib/types";
 import EmpleadosClient from "../../components/EmpleadosClient";
 import { PageHeader } from "../../components/ui";
+import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
 export default async function PaginaEmpleados() {
+  await exigirPagina("empleados.ver");
   const empleados = db
     .prepare(
       `SELECT e.*, (SELECT COUNT(*) FROM equipos q WHERE q.asignado_a = e.id) AS equipos_asignados,

@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { db } from "../../../lib/db";
+import { puedeApi } from "../../../lib/apiGuardia";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,8 @@ type Fila = {
 };
 
 export async function GET(req: Request) {
+  const veto = await puedeApi("ti.ver");
+  if (veto) return veto;
   const porEmpleado = new URL(req.url).searchParams.get("por") === "empleado";
 
   const filas = db

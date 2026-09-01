@@ -5,10 +5,12 @@ import { TIPOS_REVISION } from "../../lib/formatos/tipos";
 import { listarRevisiones } from "../../lib/revisiones";
 import RevisionesClient from "../../components/RevisionesClient";
 import { PageHeader } from "../../components/ui";
+import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
 export default async function PaginaRevisiones() {
+  await exigirPagina("ti.ver");
   const empleados = db.prepare("SELECT * FROM empleados WHERE activo = 1 ORDER BY nombre ASC").all() as Empleado[];
 
   return (

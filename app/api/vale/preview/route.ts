@@ -4,6 +4,7 @@ import { bytesAsignacion } from "../../../../lib/documento";
 import { conceptoVale } from "../../../../lib/vales";
 import { hoyISO } from "../../../../lib/helpers";
 import type { Empleado } from "../../../../lib/types";
+import { puedeApi } from "../../../../lib/apiGuardia";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export const dynamic = "force-dynamic";
  * opinión las veces que haga falta.
  */
 export async function GET(req: NextRequest) {
+  const veto = await puedeApi("ti.editar");
+  if (veto) return veto;
   const sp = req.nextUrl.searchParams;
   const empleadoId = Number(sp.get("empleado"));
   const conceptoId = Number(sp.get("concepto"));

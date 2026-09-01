@@ -4,6 +4,7 @@ import type { Empleado } from "../../../lib/types";
 import { lotesGenerados, responsivasDeLote } from "../../../lib/pendientes";
 import CargaMasivaClient, { type CartaDeLote } from "../../../components/CargaMasivaClient";
 import { PageHeader, btnGhost, inputCls } from "../../../components/ui";
+import { exigirPagina } from "../../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,7 @@ export default async function PaginaCargaMasiva({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.editar");
   const sp = await searchParams;
   const loteElegido = typeof sp.lote === "string" ? sp.lote : "";
 

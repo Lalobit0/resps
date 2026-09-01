@@ -3,10 +3,12 @@ import { equiposSinResponsivaParaGenerar, lotesGenerados } from "../../../lib/pe
 import { hoyISO } from "../../../lib/helpers";
 import GenerarLoteClient from "../../../components/GenerarLoteClient";
 import { PageHeader, btnGhost } from "../../../components/ui";
+import { exigirPagina } from "../../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
 export default async function PaginaGenerarLote() {
+  await exigirPagina("ti.editar");
   const equipos = equiposSinResponsivaParaGenerar();
   const lotes = lotesGenerados();
 

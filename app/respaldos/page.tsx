@@ -3,6 +3,7 @@ import path from "path";
 import { BACKUP_DIR, DB_PATH } from "../../lib/db";
 import { PageHeader } from "../../components/ui";
 import RespaldosClient, { type Respaldo } from "../../components/RespaldosClient";
+import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,8 @@ function tamanoLegible(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function PaginaRespaldos() {
+export default async function PaginaRespaldos() {
+  await exigirPagina("config.administrar");
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
   const respaldos: Respaldo[] = fs
     .readdirSync(BACKUP_DIR)

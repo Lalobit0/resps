@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { db } from "../../../../lib/db";
+import { puedeApi } from "../../../../lib/apiGuardia";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,8 @@ const TIPOS_CONTENIDO: Record<string, string> = {
 };
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const veto = await puedeApi("ti.ver");
+  if (veto) return veto;
   const { id } = await params;
   const r = db.prepare("SELECT folio, pdf_path, pdf_firmado FROM responsivas WHERE id = ?").get(Number(id)) as
     | { folio: string; pdf_path: string | null; pdf_firmado: string | null }

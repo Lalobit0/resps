@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "../../lib/db";
 import { listaOficial, revisarCelulares, type CelularOficial } from "../../lib/celulares";
 import type { ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 const limpio = (v: unknown) => String(v ?? "").trim();
 const dig = (v: unknown) => String(v ?? "").replace(/\D/g, "");
@@ -50,6 +51,7 @@ function detallesDe(c: CelularOficial): Record<string, string> {
  * los deja asignados a su empleado.
  */
 export async function agregarCelularesFaltantes(): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const { faltan } = revisarCelulares();
     if (!faltan.length) return { ok: true, mensaje: "El inventario ya tiene todos los teléfonos del listado." };

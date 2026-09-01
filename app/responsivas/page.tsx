@@ -8,6 +8,7 @@ import AvisoParesPartidos from "../../components/AvisoParesPartidos";
 import ResponsivasClient from "../../components/ResponsivasClient";
 import { paresPartidos } from "../../lib/pendientes";
 import { ETIQUETA_CLASE } from "../../lib/constants";
+import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export default async function PaginaResponsivas({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.ver");
   const sp = await searchParams;
   const tipo = typeof sp.tipo === "string" ? sp.tipo : "";
   const clase = typeof sp.clase === "string" ? sp.clase : "";

@@ -12,6 +12,7 @@ import { fusionarInventario } from "../../lib/fusionar.mjs";
 import { equiposPorLigar, idsSinResponsiva } from "../../lib/pendientes";
 import { anotarMovimiento } from "../../lib/historial";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 function revalidar() {
   revalidatePath("/inventario");
@@ -96,6 +97,7 @@ export async function guardarEquipo(datos: {
   /** Empleado al que se le entrega. null = queda libre. */
   asignado_a?: number | null;
 }): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const tipo = (TIPOS_EQUIPO as readonly string[]).includes(datos.tipo) ? (datos.tipo as TipoEquipo) : "OTRO";
     if (!datos.marca.trim() && !datos.modelo.trim()) {
@@ -250,6 +252,7 @@ export async function guardarEquipo(datos: {
 }
 
 export async function eliminarEquipo(id: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const equipo = db.prepare("SELECT estado FROM equipos WHERE id=?").get(id) as { estado: string } | undefined;
     if (!equipo) return { ok: false, error: "El equipo ya no existe." };
@@ -339,6 +342,7 @@ const MAPEOS: Record<TipoEquipo, { hoja: string; mapeo: Mapeo }> = {
 };
 
 export async function importarInventario(tipoRaw: string, formData: FormData): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const tipo = (TIPOS_EQUIPO as readonly string[]).includes(tipoRaw) ? (tipoRaw as TipoEquipo) : null;
     if (!tipo || tipo === "OTRO") return { ok: false, error: "Tipo de inventario no válido para importar." };
@@ -465,6 +469,7 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
  * así que siempre se puede volver atrás desde la pantalla de Respaldos.
  */
 export async function unirDuplicados(): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const antes = Object.keys(
       detectarDuplicados(db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[])
@@ -518,6 +523,7 @@ export async function unirDuplicados(): Promise<ResultadoAccion> {
  *   ligarConSuResponsiva(id)    -> solo ese equipo
  */
 export async function ligarConSuResponsiva(equipoId?: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const pendientes = equiposPorLigar().filter((p) => !equipoId || p.equipo_id === equipoId);
     if (!pendientes.length) {
@@ -610,6 +616,7 @@ export async function importarEscaneoComputo(
     const filas: Awaited<ReturnType<typeof leerEscaneo>> = [];
     const ilegibles: string[] = [];
     for (const archivo of archivos) {
+  await exigir("ti.editar");
       const buf = Buffer.from(await archivo.arrayBuffer());
       if (/\.zip$/i.test(archivo.name)) {
         const JSZip = (await import("jszip")).default;
@@ -1020,6 +1027,7 @@ export async function candidatosFusion(
     // Cuántos equipos comparten cada valor: lo que se repite mucho no sirve.
     const repetidos = new Map<string, number>();
     for (const e of [base, ...otros]) {
+  await exigir("ti.ver");
       const d = detallesDe(e);
       for (const clave of ["imei", "numero", "activo", "nombre_computadora"]) {
         const v = valorUtil(d[clave]);
@@ -1083,6 +1091,7 @@ export async function buscarParaFusion(
   equipoId: number,
   texto: string
 ): Promise<ResultadoAccion & { equipos?: EquipoFusionable[]; aviso?: string }> {
+  await exigir("ti.ver");
   try {
     const q = (texto || "").trim();
     if (q.length < 2) return { ok: true, equipos: [] };
@@ -1095,6 +1104,7 @@ export async function buscarParaFusion(
     let filas: Equipo[] = [];
 
     if (esFolio) {
+  await exigir("ti.ver");
       const carta = db.prepare("SELECT id, folio FROM responsivas WHERE folio LIKE ? LIMIT 1").get(like) as
         | { id: number; folio: string }
         | undefined;
@@ -1144,6 +1154,7 @@ export async function camposFusion(
   idA: number,
   idB: number
 ): Promise<ResultadoAccion & { campos?: CampoFusion[] }> {
+  await exigir("ti.ver");
   try {
     const a = db.prepare("SELECT * FROM equipos WHERE id = ?").get(idA) as Equipo | undefined;
     const b = db.prepare("SELECT * FROM equipos WHERE id = ?").get(idB) as Equipo | undefined;
@@ -1162,6 +1173,7 @@ export async function camposFusion(
     const detB = detallesDe(b);
     const vistos = new Set<string>();
     for (const tipo of [a.tipo, b.tipo] as TipoEquipo[]) {
+  await exigir("ti.ver");
       for (const c of CAMPOS_DETALLE[tipo] ?? []) {
         if (vistos.has(c.clave)) continue;
         vistos.add(c.clave);
@@ -1204,6 +1216,7 @@ export async function fusionarEquiposManual(datos: {
   eliminarId: number;
   valores: { clave: string; donde: "equipo" | "detalle"; valor: string }[];
 }): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     if (datos.conservarId === datos.eliminarId) return { ok: false, error: "Son el mismo registro." };
     const queda = db.prepare("SELECT * FROM equipos WHERE id = ?").get(datos.conservarId) as Equipo | undefined;
@@ -1310,6 +1323,7 @@ export async function parejaFusion(
     if (!base || !otro) return { ok: false, error: "Uno de los dos registros ya no existe." };
     return { ok: true, base: aFusionable(base, "este equipo"), pareja: aFusionable(otro, "dato repetido") };
   } catch (e) {
+  await exigir("ti.ver");
     console.error(e);
     return { ok: false, error: "No se pudieron cargar los dos equipos." };
   }
@@ -1321,6 +1335,7 @@ export async function parejaFusion(
  * si hay que volver a mirarlo.
  */
 export async function descartarDuplicado(campo: string, valor: string, nota?: string): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     if (!campo || !valor) return { ok: false, error: "Falta saber qué dato se está descartando." };
     db.prepare(
@@ -1342,6 +1357,7 @@ export async function descartarDuplicado(campo: string, valor: string, nota?: st
 
 /** Devuelve a la revisión un dato repetido que se había descartado. */
 export async function reabrirDuplicado(campo: string, valor: string): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     db.prepare("DELETE FROM duplicados_revisados WHERE campo = ? AND valor = ?").run(campo, valor);
     revalidar();
@@ -1365,6 +1381,7 @@ export async function reabrirDuplicado(campo: string, valor: string): Promise<Re
 export async function ubicarEquipos(
   cambios: { id: number; departamento?: string; area?: string; clasificacion?: string }[]
 ): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const utiles = (cambios ?? []).filter(
       (c) => Number.isFinite(c.id) && ((c.departamento ?? "").trim() || (c.area ?? "").trim() || (c.clasificacion ?? "").trim())
@@ -1438,6 +1455,7 @@ export async function ubicarEquipos(
  * de un archivo que se llena a medias y se sube varias veces.
  */
 export async function importarUbicaciones(formData: FormData): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const archivo = formData.get("archivo") as File | null;
     if (!archivo || !archivo.size) return { ok: false, error: "Elige el archivo Excel." };

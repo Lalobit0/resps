@@ -7,6 +7,7 @@ import FiltrosAuto from "../../components/FiltrosAuto";
 import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
 import { revisarCelulares } from "../../lib/celulares";
 import { ETIQUETA_ESTADO } from "../../lib/constants";
+import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export default async function PaginaLineas({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPagina("ti.ver");
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
 

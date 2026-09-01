@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "../../lib/db";
 import { ROLES_FIRMA, type RolFirma } from "../../lib/constants";
 import type { ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 function revalidar() {
   revalidatePath("/firmas");
@@ -29,6 +30,7 @@ export async function guardarFirma(datos: {
   rol: string;
   imagen: string;
 }): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     const nombre = datos.nombre.trim();
     if (!nombre) return { ok: false, error: "Escribe el nombre de quien firma." };
@@ -70,6 +72,7 @@ export async function guardarFirma(datos: {
 }
 
 export async function eliminarFirma(id: number): Promise<ResultadoAccion> {
+  await exigir("config.administrar");
   try {
     const firma = db.prepare("SELECT id FROM firmas WHERE id = ?").get(id);
     if (!firma) return { ok: false, error: "La firma ya no existe." };

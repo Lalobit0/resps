@@ -8,6 +8,7 @@ import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquip
 import VerPdfBtn from "../../../components/VerPdfBtn";
 import GenerarValeBtn from "../../../components/GenerarValeBtn";
 import { conceptosVale } from "../../../lib/vales";
+import { exigirPagina } from "../../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ const TONO: Record<string, "verde" | "kraft" | "petrol" | "ambar" | "gris" | "ro
 };
 
 export default async function PaginaEquipo({ params }: { params: Promise<{ id: string }> }) {
+  await exigirPagina("ti.ver");
   const { id } = await params;
   const equipoId = Number(id);
   const equipo = db

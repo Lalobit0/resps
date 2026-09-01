@@ -12,12 +12,16 @@ import { idsSinResponsiva, responsivasSinFirmaDe } from "../../../lib/pendientes
 import SubirFirmadaBtn from "../../../components/SubirFirmadaBtn";
 import EditarEmpleadoBtn from "../../../components/EditarEmpleadoBtn";
 import DarDeBajaBtn from "../../../components/DarDeBajaBtn";
+import { exigirPagina } from "../../../lib/guardia";
+import { puede } from "../../../lib/auth";
 
 export const dynamic = "force-dynamic";
 
 type ResponsivaEmp = Responsiva & { equipos: string | null };
 
 export default async function PaginaEmpleado({ params }: { params: Promise<{ id: string }> }) {
+  const quien = await exigirPagina("empleados.ver");
+  const verExpediente = puede(quien, "exp.ver");
   const { id } = await params;
   const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(Number(id)) as Empleado | undefined;
 
@@ -110,6 +114,15 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           <Badge tono="gris">Baja{empleado.fecha_baja ? ` · ${fechaCorta(empleado.fecha_baja)}` : ""}</Badge>
         )}
         <EditarEmpleadoBtn empleado={empleado} />
+        {verExpediente ? (
+          <Link
+            href={`/expedientes/${empleado.id}`}
+            className={btnGhost}
+            title="Documentos de personal: qué tiene, qué le falta y qué se le vence"
+          >
+            📁 Expediente
+          </Link>
+        ) : null}
         <Link href={`/vales?empleado=${empleado.id}`} className={btnGhost} title="Vale de descuento de nómina de esta persona">
           🧾 Generar vale
         </Link>

@@ -3,10 +3,12 @@ import { db } from "../../../../lib/db";
 import type { ItemConEquipo, Responsiva } from "../../../../lib/types";
 import DevolucionClient from "../../../../components/DevolucionClient";
 import { Empty, PageHeader, btnGhost } from "../../../../components/ui";
+import { exigirPagina } from "../../../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
 export default async function PaginaDevolucion({ params }: { params: Promise<{ id: string }> }) {
+  await exigirPagina("ti.editar");
   const { id } = await params;
   const responsiva = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(Number(id)) as Responsiva | undefined;
 

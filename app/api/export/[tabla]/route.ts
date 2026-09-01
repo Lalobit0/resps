@@ -2,6 +2,7 @@ import { db } from "../../../../lib/db";
 import { construirPdf, construirXlsx, type Celda } from "../../../../lib/exportar";
 import { ETIQUETA_CLASE, ETIQUETA_ESTADO, ETIQUETA_TIPO } from "../../../../lib/constants";
 import { dinero, fechaCorta } from "../../../../lib/helpers";
+import { puedeApi } from "../../../../lib/apiGuardia";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +184,8 @@ const REPORTES: Record<string, (sp: URLSearchParams) => Reporte> = {
 };
 
 export async function GET(req: Request, { params }: { params: Promise<{ tabla: string }> }) {
+  const veto = await puedeApi("ti.ver");
+  if (veto) return veto;
   const { tabla } = await params;
   const constructor = REPORTES[tabla];
   if (!constructor) return new Response("Reporte no válido", { status: 404 });

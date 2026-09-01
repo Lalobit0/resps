@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "../../lib/db";
 import { Badge, Card, Empty, PageHeader, tdCls, thCls, tonoEstadoEquipo } from "../../components/ui";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO } from "../../lib/constants";
+import { exigirPaginaAlguno } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function PaginaBuscar({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await exigirPaginaAlguno("ti.ver", "empleados.ver");
   const sp = await searchParams;
   const q = typeof sp.q === "string" ? sp.q.trim() : "";
 

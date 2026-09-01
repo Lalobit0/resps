@@ -14,6 +14,7 @@ import { CAMPOS_DETALLE, CARTAS, CLASE_POR_TIPO, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SI
 import { fechaCorta, fechaLarga, hoyISO, montoEnLetra } from "../../lib/helpers";
 import { responsivasSinFirmaDe, type ResponsivaSinFirma } from "../../lib/pendientes";
 import type { Empleado, Equipo, ItemConEquipo, Responsiva, ResultadoAccion } from "../../lib/types";
+import { exigir } from "../../lib/auth";
 
 function revalidar() {
   revalidatePath("/");
@@ -206,6 +207,7 @@ async function crearUnaResponsiva(datos: DatosNuevaResponsiva): Promise<Resultad
 }
 
 export async function crearResponsiva(datos: DatosNuevaResponsiva): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   const res = await crearUnaResponsiva(datos);
   if (res.ok) revalidar();
   return res;
@@ -248,6 +250,7 @@ export async function generarResponsivasEnLote(
     const pedida = (opciones.fecha ?? "").trim();
     if (pedida && !/^\d{4}-\d{2}-\d{2}$/.test(pedida)) return { ok: false, error: "La fecha de las cartas no es válida." };
     if (pedida && pedida > limiteAdelante()) {
+  await exigir("ti.editar");
       return { ok: false, error: `La fecha no puede pasar de ${fechaCorta(limiteAdelante())}. Revisa que esté bien escrita.` };
     }
 
@@ -338,6 +341,7 @@ export async function firmarAutoridad(
   firma: string,
   firmante?: Firmante | null
 ): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     if (!firma) return { ok: false, error: "Falta la firma: dibújala, elige una guardada o carga un archivo." };
     if (!/^data:image\/(png|jpe?g);base64,/i.test(firma)) return { ok: false, error: "La firma debe ser PNG o JPG." };
@@ -408,6 +412,7 @@ export async function registrarDevolucion(datos: {
   observaciones: string;
   firma: string;
 }): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const origen = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(datos.responsivaId) as Responsiva | undefined;
     if (!origen || origen.tipo !== "ASIGNACION" || origen.estado !== "VIGENTE") {
@@ -545,6 +550,7 @@ export async function cargarResponsivaFirmada(
   try {
     const archivo = formData.get("archivo") as File | null;
     if (!archivo || typeof archivo.arrayBuffer !== "function") {
+  await exigir("ti.ver");
       return { ok: false, error: "Sube el archivo escaneado de la responsiva (PDF o foto)." };
     }
     const empleadoId = Number(formData.get("empleadoId"));
@@ -730,6 +736,7 @@ type SnapEquipo =
   | { modo: "LIBERADO"; equipoId: number; estadoPrev: string; asignadoPrev: number | null };
 
 export async function eliminarResponsiva(id: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(id) as Responsiva | undefined;
     if (!r) return { ok: false, error: "La responsiva ya no existe." };
@@ -784,6 +791,7 @@ export async function eliminarResponsiva(id: number): Promise<ResultadoAccion> {
 }
 
 export async function revertirBitacora(bitacoraId: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const b = db.prepare("SELECT * FROM bitacora WHERE id = ?").get(bitacoraId) as
       | { id: number; accion: string; snapshot: string | null; revertible: number; revertida: number }
@@ -849,6 +857,7 @@ export async function revertirBitacora(bitacoraId: number): Promise<ResultadoAcc
  * y es el que se muestra a partir de ese momento.
  */
 export async function subirResponsivaFirmada(responsivaId: number, formData: FormData): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const archivo = formData.get("archivo") as File | null;
     if (!archivo || typeof archivo.arrayBuffer !== "function") {
@@ -938,6 +947,7 @@ function sugerenciasDe(empleadoId: number | null | undefined): SugerenciaFirma[]
 
 /** Sugerencias para el empleado que se elige a mano en la pantalla del lote. */
 export async function sugerenciasFirmaDe(empleadoId: number): Promise<{ sugerencias: SugerenciaFirma[] }> {
+  await exigir("ti.ver");
   return { sugerencias: sugerenciasDe(empleadoId) };
 }
 
@@ -961,6 +971,7 @@ export async function analizarLoteResponsivas(formData: FormData): Promise<Resul
 
     const renglones: RenglonLote[] = [];
     for (const archivo of archivos) {
+  await exigir("ti.ver");
       if (!/\.pdf$/i.test(archivo.name)) continue;
       const paginas = await partirLote(new Uint8Array(await archivo.arrayBuffer()), archivo.name);
 
@@ -1070,6 +1081,7 @@ export async function confirmarLoteResponsivas(
     forzarNueva?: boolean;
   }[]
 ): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const nuevas: string[] = [];
     const firmadas: string[] = [];
@@ -1219,6 +1231,7 @@ export async function confirmarLoteResponsivas(
  * entra como cómputo y hay que decirle que era, por ejemplo, de Wi-Fi.
  */
 export async function cambiarClaseResponsiva(id: number, clase: string): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     if (!(CARTAS as Record<string, unknown>)[clase]) return { ok: false, error: "Tipo de carta no válido." };
     const r = db.prepare("SELECT folio, clase, estado FROM responsivas WHERE id = ?").get(id) as
@@ -1271,6 +1284,7 @@ export type EquipoDeCarta = {
 export async function equiposParaResponsiva(
   responsivaId: number
 ): Promise<ResultadoAccion & { equipos?: EquipoDeCarta[]; empleado?: string; folio?: string }> {
+  await exigir("ti.ver");
   try {
     const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(responsivaId) as Responsiva | undefined;
     if (!r) return { ok: false, error: "La responsiva ya no existe." };
@@ -1313,6 +1327,7 @@ export async function equiposParaResponsiva(
       })),
     };
   } catch (e) {
+  await exigir("ti.ver");
     console.error(e);
     return { ok: false, error: "No se pudieron leer los equipos." };
   }
@@ -1324,6 +1339,7 @@ export async function equiposParaResponsiva(
  * más los ampara.
  */
 export async function ligarEquiposAResponsiva(responsivaId: number, equipoIds: number[]): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(responsivaId) as Responsiva | undefined;
     if (!r) return { ok: false, error: "La responsiva ya no existe." };
@@ -1414,6 +1430,7 @@ export type CartaHermana = {
 export async function cartasHermanas(
   responsivaId: number
 ): Promise<ResultadoAccion & { candidatas?: CartaHermana[] }> {
+  await exigir("ti.ver");
   const r = db.prepare("SELECT empleado_id, clase FROM responsivas WHERE id = ?").get(responsivaId) as
     | { empleado_id: number; clase: string }
     | undefined;
@@ -1439,6 +1456,7 @@ export async function cartasHermanas(
  * que se conserva terminan las dos cosas y la otra se va a la papelera.
  */
 export async function unirResponsivas(conservarId: number, eliminarId: number): Promise<ResultadoAccion> {
+  await exigir("ti.ver");
   try {
     if (conservarId === eliminarId) return { ok: false, error: "Son la misma carta." };
     const queda = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(conservarId) as Responsiva | undefined;
@@ -1534,6 +1552,7 @@ export async function unirResponsivas(conservarId: number, eliminarId: number): 
 export async function unirParesPartidos(
   pares: { conservarId: number; eliminarId: number }[]
 ): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     if (!pares.length) return { ok: false, error: "No marcaste ningún par." };
     const unidos: string[] = [];
@@ -1569,6 +1588,7 @@ export async function unirParesPartidos(
  * el papel que alguien firmó y no se puede rehacer.
  */
 export async function regenerarResponsiva(id: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const r = db.prepare("SELECT * FROM responsivas WHERE id = ?").get(id) as Responsiva | undefined;
     if (!r) return { ok: false, error: "La responsiva ya no existe." };
@@ -1697,6 +1717,7 @@ export async function crearVale(datos: {
   /** Si viene, el vale queda colgado de esa entrega. */
   responsivaOrigenId?: number | null;
 }): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const empleado = db.prepare("SELECT * FROM empleados WHERE id = ?").get(datos.empleadoId) as Empleado | undefined;
     if (!empleado) return { ok: false, error: "Selecciona al empleado." };
@@ -1782,6 +1803,7 @@ export async function guardarConceptoVale(datos: {
   monto: string;
   texto: string;
 }): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     const concepto = (datos.concepto || "").trim().toUpperCase();
     if (!concepto) return { ok: false, error: "Escribe el concepto." };
@@ -1809,6 +1831,7 @@ export async function guardarConceptoVale(datos: {
 
 /** Saca un concepto del catálogo sin borrar los vales que ya lo usaron. */
 export async function archivarConceptoVale(id: number, activo: boolean): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
   try {
     db.prepare("UPDATE conceptos_vale SET activo=? WHERE id=?").run(activo ? 1 : 0, id);
     revalidatePath("/vales");

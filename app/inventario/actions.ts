@@ -417,19 +417,41 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
             if (val) detalles[k] = val;
           }
         }
-        if (!marca && !modelo && !serie && Object.keys(detalles).length === 0) {
+        // +2: el encabezado ocupa el primer renglón del Excel.
+        const omitir = (motivo: string) =>
           omitidos.push({
-            // +2: el encabezado ocupa el primer renglón del Excel.
             renglon: indice + 2,
-            motivo: "El renglón venía sin marca, modelo, serie ni ningún dato del equipo.",
+            motivo,
             datos: Object.fromEntries(
               Object.entries(f)
                 .map(([k, v]) => [k, naVacio(v)])
                 .filter(([, v]) => v)
             ) as Record<string, string>,
           });
+
+        if (!marca && !modelo && !serie && Object.keys(detalles).length === 0) {
+          omitir("El renglón venía sin marca, modelo, serie ni ningún dato del equipo.");
           return;
         }
+
+        // Sin serie ni IMEI no hay con qué reconocer el equipo, y volver a
+        // subir el archivo lo daría de alta otra vez. Antes se colaba y el
+        // inventario se llenaba de duplicados en silencio; ahora el renglón se
+        // señala para capturarlo a mano.
+        const imei = (detalles.imei ?? "").replace(/\D/g, "");
+        if (!serie && !imei) {
+          omitir(
+            "Sin número de serie no hay cómo saber si es un equipo nuevo o uno que ya estaba, y volver a subir " +
+              "el archivo lo daría de alta otra vez. Regístralo a mano desde el inventario, o ponle su serie al Excel."
+          );
+          return;
+        }
+
+        // El área del equipo. En radios la columna se llama "Area/Dpto", en
+        // celulares "Area" y en cómputo "Departamento", pero las tres dicen lo
+        // mismo —dónde está el equipo—, así que caen en el mismo campo, que es
+        // el que lee la pantalla.
+        const area = naVacio(f.area || f.departamento || "");
 
         // vínculo con empleado
         const numEmp = naVacio(f.num_emp || "");
@@ -445,17 +467,28 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
         const specs = componerSpecs(tipo, detalles);
         const detallesJson = Object.keys(detalles).length ? JSON.stringify(detalles) : null;
 
-        const existente = buscarExistente(serie, (detalles.imei ?? "").replace(/\D/g, ""));
+        const existente = buscarExistente(serie, imei);
         if (existente) {
+          // Reimportar no puede deshacer lo que alguien capturó a mano: el
+          // Excel llena huecos, no pisa. Un campo que el archivo trae vacío
+          // deja lo que ya había —antes lo borraba—, y el área solo se pone
+          // si el equipo no la tenía.
           db.prepare(
-            "UPDATE equipos SET tipo=?, marca=?, modelo=?, specs=?, detalles=?, estado=?, asignado_a=?, importacion_id=? WHERE id=?"
-          ).run(tipo, marca, modelo, specs || null, detallesJson, estado, asignado, importacionId, existente.id);
+            `UPDATE equipos SET tipo = ?,
+                    marca = COALESCE(NULLIF(?, ''), marca),
+                    modelo = COALESCE(NULLIF(?, ''), modelo),
+                    specs = COALESCE(NULLIF(?, ''), specs),
+                    detalles = COALESCE(?, detalles),
+                    area = COALESCE(NULLIF(area, ''), NULLIF(?, '')),
+                    estado = ?, asignado_a = ?, importacion_id = ?
+             WHERE id = ?`
+          ).run(tipo, marca, modelo, specs, detallesJson, area, estado, asignado, importacionId, existente.id);
           actualizados++;
         } else {
           const codigo = generarCodigo(TIPO_DEFAULTS[tipo].prefijo);
           db.prepare(
-            "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, estado, asignado_a, importacion_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-          ).run(codigo, tipo, TIPO_DEFAULTS[tipo].categoria, marca, modelo, serie || null, specs || null, detallesJson, estado, asignado, importacionId);
+            "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, estado, asignado_a, area, importacion_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+          ).run(codigo, tipo, TIPO_DEFAULTS[tipo].categoria, marca, modelo, serie || null, specs || null, detallesJson, estado, asignado, area || null, importacionId);
           const nuevoId = db.prepare("SELECT id FROM equipos WHERE codigo = ?").get(codigo) as { id: number };
           catalogo.push({ id: nuevoId.id, codigo, numero_serie: serie || null, detalles: detallesJson });
           nuevos++;

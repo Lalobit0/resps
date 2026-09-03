@@ -12,7 +12,8 @@ import { fusionarInventario } from "../../lib/fusionar.mjs";
 import { equiposPorLigar, idsSinResponsiva } from "../../lib/pendientes";
 import { anotarMovimiento } from "../../lib/historial";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
-import { exigir } from "../../lib/auth";
+import { exigir, usuarioActual } from "../../lib/auth";
+import { cerrarImportacion, registrarImportacion, type RenglonOmitido } from "../../lib/importaciones";
 
 function revalidar() {
   revalidatePath("/inventario");
@@ -357,8 +358,18 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
     const camposDetalle = new Set(CAMPOS_DETALLE[tipo].map((c) => c.clave));
     let nuevos = 0;
     let actualizados = 0;
-    let omitidos = 0;
     let vinculados = 0;
+    // Los omitidos se guardan con su renglón y su motivo: "1 omitido" a secas
+    // no dice cuál fue ni por qué, y era imposible ir a buscarlo al Excel.
+    const omitidos: RenglonOmitido[] = [];
+
+    const quien = await usuarioActual();
+    const importacionId = registrarImportacion({
+      tipo,
+      archivo: archivo.name || null,
+      usuario: quien ? `${quien.nombre} (${quien.usuario})` : null,
+      renglones: filas.length,
+    });
 
     const proceso = db.transaction(() => {
       const buscarEmp = db.prepare("SELECT id FROM empleados WHERE numero_empleado = ?");
@@ -394,7 +405,7 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
         });
       };
 
-      for (const f of filas) {
+      filas.forEach((f, indice) => {
         const marca = naVacio(f.marca || "");
         const modelo = naVacio(f.modelo || "");
         const serie = naVacio(f.serie || "");
@@ -407,8 +418,17 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
           }
         }
         if (!marca && !modelo && !serie && Object.keys(detalles).length === 0) {
-          omitidos++;
-          continue;
+          omitidos.push({
+            // +2: el encabezado ocupa el primer renglón del Excel.
+            renglon: indice + 2,
+            motivo: "El renglón venía sin marca, modelo, serie ni ningún dato del equipo.",
+            datos: Object.fromEntries(
+              Object.entries(f)
+                .map(([k, v]) => [k, naVacio(v)])
+                .filter(([, v]) => v)
+            ) as Record<string, string>,
+          });
+          return;
         }
 
         // vínculo con empleado
@@ -428,25 +448,26 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
         const existente = buscarExistente(serie, (detalles.imei ?? "").replace(/\D/g, ""));
         if (existente) {
           db.prepare(
-            "UPDATE equipos SET tipo=?, marca=?, modelo=?, specs=?, detalles=?, estado=?, asignado_a=? WHERE id=?"
-          ).run(tipo, marca, modelo, specs || null, detallesJson, estado, asignado, existente.id);
+            "UPDATE equipos SET tipo=?, marca=?, modelo=?, specs=?, detalles=?, estado=?, asignado_a=?, importacion_id=? WHERE id=?"
+          ).run(tipo, marca, modelo, specs || null, detallesJson, estado, asignado, importacionId, existente.id);
           actualizados++;
         } else {
           const codigo = generarCodigo(TIPO_DEFAULTS[tipo].prefijo);
           db.prepare(
-            "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, estado, asignado_a) VALUES (?,?,?,?,?,?,?,?,?,?)"
-          ).run(codigo, tipo, TIPO_DEFAULTS[tipo].categoria, marca, modelo, serie || null, specs || null, detallesJson, estado, asignado);
+            "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, estado, asignado_a, importacion_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+          ).run(codigo, tipo, TIPO_DEFAULTS[tipo].categoria, marca, modelo, serie || null, specs || null, detallesJson, estado, asignado, importacionId);
           const nuevoId = db.prepare("SELECT id FROM equipos WHERE codigo = ?").get(codigo) as { id: number };
           catalogo.push({ id: nuevoId.id, codigo, numero_serie: serie || null, detalles: detallesJson });
           nuevos++;
         }
-      }
+      });
     });
     proceso();
+    cerrarImportacion(importacionId, { nuevos, actualizados, vinculados, omitidos });
 
     revalidar();
     const partes = [`${nuevos} nuevos`, `${actualizados} actualizados`, `${vinculados} ligados a empleado`];
-    if (omitidos) partes.push(`${omitidos} omitidos`);
+    if (omitidos.length) partes.push(`${omitidos.length} omitidos`);
 
     // Aviso de datos repetidos en todo el inventario tras la importación.
     const todos = db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[];
@@ -454,7 +475,11 @@ export async function importarInventario(tipoRaw: string, formData: FormData): P
     const aviso = conDuplicados
       ? ` ⚠️ Hay ${conDuplicados} equipo(s) con datos repetidos: revísalos con el filtro “Solo duplicados”.`
       : "";
-    return { ok: true, mensaje: `Importación lista: ${partes.join(", ")}.${aviso}` };
+    return {
+      ok: true,
+      id: importacionId,
+      mensaje: `Importación lista: ${partes.join(", ")}. Revisa qué les falta en “Lo que subí”.${aviso}`,
+    };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo leer el archivo. Asegúrate de que sea un Excel (.xlsx) válido." };

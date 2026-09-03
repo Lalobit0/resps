@@ -171,6 +171,26 @@ CREATE TABLE IF NOT EXISTS duplicados_revisados (
   UNIQUE(campo, valor)
 );
 
+-- Cada carga de Excel al inventario, con su resultado. Sirve para volver
+-- después a lo que se subió y revisar qué le falta, en vez de tener que
+-- acordarse de cuáles eran entre 165 equipos.
+CREATE TABLE IF NOT EXISTS importaciones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  -- COMPUTO | CELULAR | RADIO | ESCANEO
+  tipo TEXT NOT NULL,
+  archivo TEXT,
+  usuario TEXT,
+  renglones INTEGER NOT NULL DEFAULT 0,
+  nuevos INTEGER NOT NULL DEFAULT 0,
+  actualizados INTEGER NOT NULL DEFAULT 0,
+  vinculados INTEGER NOT NULL DEFAULT 0,
+  omitidos INTEGER NOT NULL DEFAULT 0,
+  -- Los renglones que no entraron, con el motivo: sin esto "1 omitido" no
+  -- dice cuál ni por qué.
+  omitidos_detalle TEXT
+);
+
 -- ======================================================================
 -- Identidad. Hasta ahora el sistema no sabía quién lo estaba usando; con
 -- expedientes de personal eso deja de ser aceptable: hay que poder contestar
@@ -639,6 +659,8 @@ function migrar(db: Database.Database) {
   // Documentos que valen uno por otro: con el pasaporte, la INE deja de hacer
   // falta. El grupo se edita por tipo desde Configuración.
   agregarColumna(db, "doc_tipos", "grupo_equivalencia", "TEXT");
+  // Qué carga de Excel trajo (o tocó por última vez) este equipo.
+  agregarColumna(db, "equipos", "importacion_id", "INTEGER");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
   // A los equipos que ya están entregados se les copia el área de su dueño:

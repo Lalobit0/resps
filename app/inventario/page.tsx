@@ -91,6 +91,20 @@ export default async function PaginaInventario({
   const total = (db.prepare("SELECT COUNT(*) AS c FROM equipos").get() as { c: number }).c;
 
   // Para poder elegir a quién se le entrega el equipo desde el formulario.
+  // Los departamentos que de verdad existen en la empresa. Salen de la
+  // plantilla y no de un catálogo aparte, para que no haya dos verdades.
+  const departamentosDePlantilla = (
+    db
+      .prepare(
+        `SELECT DISTINCT departamento AS d FROM empleados
+         WHERE departamento IS NOT NULL AND TRIM(departamento) != ''
+         UNION
+         SELECT DISTINCT area AS d FROM empleados WHERE area IS NOT NULL AND TRIM(area) != ''
+         ORDER BY d`
+      )
+      .all() as { d: string }[]
+  ).map((r) => r.d);
+
   const empleados = db.prepare("SELECT * FROM empleados WHERE activo = 1 ORDER BY nombre ASC").all() as Empleado[];
 
   // Los duplicados se buscan contra TODO el inventario, no solo contra lo filtrado.
@@ -328,6 +342,7 @@ export default async function PaginaInventario({
         editarId={editarId}
         empleados={empleados}
         porLigar={porLigarPorEquipo}
+        departamentos={departamentosDePlantilla}
       />
     </>
   );

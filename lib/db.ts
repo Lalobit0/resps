@@ -171,6 +171,26 @@ CREATE TABLE IF NOT EXISTS duplicados_revisados (
   UNIQUE(campo, valor)
 );
 
+-- Cada carga de Excel al inventario, con su resultado. Sirve para volver
+-- después a lo que se subió y revisar qué le falta, en vez de tener que
+-- acordarse de cuáles eran entre 165 equipos.
+CREATE TABLE IF NOT EXISTS importaciones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  -- COMPUTO | CELULAR | RADIO | ESCANEO
+  tipo TEXT NOT NULL,
+  archivo TEXT,
+  usuario TEXT,
+  renglones INTEGER NOT NULL DEFAULT 0,
+  nuevos INTEGER NOT NULL DEFAULT 0,
+  actualizados INTEGER NOT NULL DEFAULT 0,
+  vinculados INTEGER NOT NULL DEFAULT 0,
+  omitidos INTEGER NOT NULL DEFAULT 0,
+  -- Los renglones que no entraron, con el motivo: sin esto "1 omitido" no
+  -- dice cuál ni por qué.
+  omitidos_detalle TEXT
+);
+
 -- ======================================================================
 -- Identidad. Hasta ahora el sistema no sabía quién lo estaba usando; con
 -- expedientes de personal eso deja de ser aceptable: hay que poder contestar
@@ -493,9 +513,41 @@ const PLANTILLA_WIFI_ANTERIOR = PLANTILLA_WIFI.replace("\n5. Uso responsable:", 
   .replace("\n6. Supervisión y control:", "\n5. Supervisión y control:")
   .replace("\n7. Consecuencias por incumplimiento:", "\n6. Consecuencias por incumplimiento:");
 
-// Los renglones con guiones bajos se dejan en blanco a propósito: el empleado
-// los llena a mano cuando firma el papel, como en el formato de RH.
-const PLANTILLA_VALE = `En {{ciudad}}, a {{fecha}}.
+/**
+ * El vale, calcado del formato en papel de Recursos Humanos.
+ *
+ * Se lee distinto a las demás plantillas porque el vale no es un texto corrido
+ * sino un formulario. Tres cosas hay que saber para editarlo:
+ *
+ * - Los bloques se separan con un renglón en blanco: primero la fecha de
+ *   arriba, luego los renglones que se llenan, y al final la cláusula.
+ * - Una corrida de guiones bajos es un espacio que el empleado llena a mano al
+ *   firmar; se alarga o se acorta poniendo más o menos guiones. La que cierra
+ *   un renglón se estira sola hasta el margen.
+ * - "||" parte el renglón en dos columnas, como en el papel.
+ *
+ * Lo que va entre llaves lo imprime el sistema y sale en negritas.
+ */
+const PLANTILLA_VALE = `{{ciudad}} a: ______________________________
+
+Yo {{nombre_empleado}} con número de empleado {{numero_empleado}} || por medio del presente
+estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}} ____
+Que recibí el día ______________________________, || dicho descuento será efectivo
+en la semana _______ del año _________ con un valor de reposición de: || {{monto}}
+
+CLAÚSULA:
+Cantidad que me será descontada vía nómina en caso de robo o extravío. Estoy de acuerdo que, en caso de terminación de la relación laboral, dicho monto será descontado de mi finiquito.
+Se omitirá el descuento en caso de entregar el equipo.`;
+
+// Las dos formas anteriores de la plantilla. Se usan para reconocerlas y
+// actualizarlas sin pisar la que el usuario haya editado a mano.
+const PLANTILLAS_VALE_ANTERIORES = [
+  `En {{ciudad}}, a {{fecha}}. Yo {{nombre_empleado}}, con número de empleado {{numero_empleado}}, por medio del presente estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}}, con un valor de reposición de {{monto}}.
+
+CLÁUSULA:
+Cantidad que me será descontada vía nómina en caso de robo o extravío. Estoy de acuerdo que, en caso de terminación de la relación laboral, dicho monto será descontado de mi finiquito.
+Por sanidad no se recibe en devolución y su costo debe ser descontado de su último recibo de nómina, a excepción de que ya haya cumplido sus 6 meses de vida.`,
+  `En {{ciudad}}, a {{fecha}}.
 
 Yo {{nombre_empleado}}, con número de empleado {{numero_empleado}}, por medio del presente estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}}
 
@@ -503,15 +555,8 @@ Que recibí el día ____________________________, dicho descuento será efectivo
 
 CLAÚSULA:
 Cantidad que me será descontada vía nómina en caso de robo o extravío. Estoy de acuerdo que, en caso de terminación de la relación laboral, dicho monto será descontado de mi finiquito.
-Por sanidad no se recibe a devolución y su costo debe ser descontado de su último recibo de nómina a excepción de que ya haya cumplido sus 6 meses de vida.`;
-
-// Como estaba antes de traer el formato de RH: se usa para reconocerla y
-// actualizarla sin pisar la que el usuario haya editado a mano.
-const PLANTILLA_VALE_ANTERIOR = `En {{ciudad}}, a {{fecha}}. Yo {{nombre_empleado}}, con número de empleado {{numero_empleado}}, por medio del presente estoy de acuerdo se me realice el descuento vía nómina por concepto de: {{concepto}}, con un valor de reposición de {{monto}}.
-
-CLÁUSULA:
-Cantidad que me será descontada vía nómina en caso de robo o extravío. Estoy de acuerdo que, en caso de terminación de la relación laboral, dicho monto será descontado de mi finiquito.
-Por sanidad no se recibe en devolución y su costo debe ser descontado de su último recibo de nómina, a excepción de que ya haya cumplido sus 6 meses de vida.`;
+Por sanidad no se recibe a devolución y su costo debe ser descontado de su último recibo de nómina a excepción de que ya haya cumplido sus 6 meses de vida.`,
+];
 
 const PLANTILLA_DEVOLUCION = `En {{ciudad}}, a {{fecha}}, el (la) que suscribe {{nombre_empleado}}, con número de empleado {{numero_empleado}}, quien desempeña el puesto de {{puesto}} en el área de {{departamento}} de {{empresa}}, hace constar que realiza la devolución al departamento de TI del equipo que se describe a continuación, mismo que le fue entregado bajo la carta responsiva con folio {{folio_origen}}:
 
@@ -639,6 +684,8 @@ function migrar(db: Database.Database) {
   // Documentos que valen uno por otro: con el pasaporte, la INE deja de hacer
   // falta. El grupo se edita por tipo desde Configuración.
   agregarColumna(db, "doc_tipos", "grupo_equivalencia", "TEXT");
+  // Qué carga de Excel trajo (o tocó por última vez) este equipo.
+  agregarColumna(db, "equipos", "importacion_id", "INTEGER");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
   // A los equipos que ya están entregados se les copia el área de su dueño:
@@ -660,17 +707,18 @@ function seed(db: Database.Database) {
     PLANTILLA_WIFI_ANTERIOR
   );
 
-  // El vale pasó al formato de RH, con los renglones que se llenan a mano.
-  db.prepare("UPDATE plantillas SET contenido = ? WHERE clave = 'vale_descuento' AND contenido = ?").run(
-    PLANTILLA_VALE,
-    PLANTILLA_VALE_ANTERIOR
-  );
+  // El vale pasó al formato de RH: los renglones que se llenan a mano quedaron
+  // como rayas y el papel se arma con esa estructura, no como texto corrido.
+  const actVale = db.prepare("UPDATE plantillas SET contenido = ? WHERE clave = 'vale_descuento' AND contenido = ?");
+  for (const anterior of PLANTILLAS_VALE_ANTERIORES) actVale.run(PLANTILLA_VALE, anterior);
 
   const insCon = db.prepare("INSERT OR IGNORE INTO conceptos_vale (concepto, monto, texto) VALUES (?, ?, ?)");
   for (const [concepto, monto, texto] of CONCEPTOS_VALE_SEED) insCon.run(concepto, monto, texto);
 
   const insConf = db.prepare("INSERT OR IGNORE INTO config (clave, valor) VALUES (?, ?)");
   insConf.run("empresa", "Sultana Packaging");
+  // El encabezado del vale lleva la razón social completa, como el papel.
+  insConf.run("razon_social", "SULTANA PACKAGING S.A DE C.V.");
   insConf.run("ciudad", "Tijuana, Baja California");
   insConf.run("entrega_default", "Departamento de TI");
   insConf.run(

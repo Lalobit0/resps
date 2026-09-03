@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import type { Empleado, EquipoConAsignado } from "../lib/types";
 import { CAMPOS_DETALLE, CLASIFICACIONES_EQUIPO, ETIQUETA_CLASIFICACION, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
 import { dinero, fechaCorta } from "../lib/helpers";
@@ -154,6 +154,7 @@ export default function InventarioClient({
   editarId = null,
   empleados = [],
   porLigar = {},
+  departamentos = [],
 }: {
   equipos: EquipoConAsignado[];
   /** Tipo de equipo de la sección abierta; vacío = todo el inventario. */
@@ -165,8 +166,23 @@ export default function InventarioClient({
   empleados?: Empleado[];
   /** Equipos con responsiva vigente pero sin empleado: se pueden ligar de un clic. */
   porLigar?: Record<number, { empleado_numero: string; empleado_nombre: string; folio: string }>;
+  /** Los departamentos que existen de verdad, para elegirlos en vez de escribirlos. */
+  departamentos?: string[];
 }) {
   const faltaResponsiva = new Set(sinResponsiva);
+  // Los departamentos que de verdad existen: los de la plantilla y los que ya
+  // trae algún equipo. Escribirlos a mano cada vez terminaba en "COMPRAS" y
+  // "COMPRAS " conviviendo como si fueran dos áreas distintas.
+  const opcionesDepartamento = useMemo(() => {
+    const vistos = new Set<string>();
+    for (const d of departamentos) if (d?.trim()) vistos.add(d.trim().toUpperCase());
+    for (const e of equipos) {
+      for (const d of [e.departamento, e.area, e.asignado_departamento, e.asignado_area]) {
+        if (d?.trim()) vistos.add(d.trim().toUpperCase());
+      }
+    }
+    return [...vistos].sort((a, b) => a.localeCompare(b)).map((d) => ({ valor: d, etiqueta: d }));
+  }, [departamentos, equipos]);
   const columnas = columnasPara(seccion);
   // Cada juego de columnas recuerda sus anchos por separado.
   const { anchos, orden, empezarArrastre, alternarOrden } = useTabla(
@@ -350,6 +366,13 @@ export default function InventarioClient({
           className="hidden"
           onChange={importarEscaneo}
         />
+        <Link
+          href="/inventario/importaciones"
+          className={btnGhost}
+          title="Lo que se subió por Excel, con lo que le falta a cada equipo"
+        >
+          📋 Lo que subí
+        </Link>
       </div>
 
       {form ? (
@@ -435,12 +458,12 @@ export default function InventarioClient({
             </div>
             <div>
               <Label>Área / Departamento del equipo</Label>
-              <input
-                className={inputCls}
-                list="departamentos-equipos"
+              <SelectConOtro
                 value={form.departamento}
-                onChange={(ev) => setForm((f) => (f ? { ...f, departamento: ev.target.value.toUpperCase() } : f))}
-                placeholder="CONTABILIDAD, PRODUCCION…"
+                onChange={(v) => setForm((f) => (f ? { ...f, departamento: v.toUpperCase() } : f))}
+                opciones={opcionesDepartamento}
+                permitirOtro
+                placeholder="Escribe el departamento nuevo"
               />
               <p className="mt-1 text-xs text-soft">Se queda con el aparato aunque cambie de dueño.</p>
             </div>
@@ -466,13 +489,6 @@ export default function InventarioClient({
               <Label>Notas</Label>
               <textarea className={inputCls} rows={2} value={form.notas} onChange={setC("notas")} />
             </div>
-            <datalist id="departamentos-equipos">
-              {[...new Set(equipos.map((x) => x.departamento || x.asignado_departamento || "").filter(Boolean))]
-                .sort()
-                .map((d) => (
-                  <option key={d} value={d} />
-                ))}
-            </datalist>
           </div>
           <div className="mt-4 flex gap-2">
             <button className={btnPrimary} onClick={enviar} disabled={pendiente}>

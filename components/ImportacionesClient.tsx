@@ -41,6 +41,12 @@ export default function ImportacionesClient({
   const conteo = useMemo(() => conteoDeHuecos(equipos), [equipos]);
   const completos = useMemo(() => equipos.filter((e) => huecosDe(e).length === 0).length, [equipos]);
 
+  // Un equipo cuelga de la última carga que lo tocó, así que al volver a subir
+  // el mismo archivo las cargas viejas se quedan sin equipos. No es que no
+  // hayan entrado: es que ya los tiene la nueva, y hay que decirlo o parece
+  // que la subida no sirvió de nada.
+  const relevada = equipos.length === 0 && elegida.nuevos + elegida.actualizados > 0;
+
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     return equipos.filter((e) => {
@@ -93,11 +99,25 @@ export default function ImportacionesClient({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-ink">
-              {completos === equipos.length ? "Todo quedó completo" : `${equipos.length - completos} de ${equipos.length} equipos quedaron a medias`}
+              {relevada
+                ? "Esta carga ya la reemplazó otra más nueva"
+                : completos === equipos.length
+                  ? "Todo quedó completo"
+                  : `${equipos.length - completos} de ${equipos.length} equipos quedaron a medias`}
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-soft">
-              El Excel casi nunca trae el área, la clasificación ni a quién se le entregó. Eso no lo puede adivinar el
-              sistema: es lo que hay que capturar a mano, y esta es la lista.
+              {relevada ? (
+                <>
+                  Sus {elegida.nuevos + elegida.actualizados} equipos se volvieron a subir después, así que ahora
+                  cuelgan de la carga más reciente. Elígela arriba para ver qué les falta; aquí solo queda constancia
+                  de que esta subida se hizo.
+                </>
+              ) : (
+                <>
+                  Lo que el Excel no trae —la clasificación, y a veces el área o a quién se le entregó— el sistema no
+                  lo puede adivinar. Es lo que hay que capturar a mano, y esta es la lista.
+                </>
+              )}
             </p>
           </div>
           <Link
@@ -108,23 +128,25 @@ export default function ImportacionesClient({
           </Link>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {pastillas.map((p) => {
-            const activa = hueco === p.clave;
-            return (
-              <button
-                key={p.etiqueta}
-                onClick={() => setHueco(p.clave)}
-                className={`rounded-md border px-3 py-2 text-left transition-colors ${
-                  activa ? "border-kraft bg-white shadow-sm" : "border-line bg-paper/60 hover:border-kraft/50"
-                }`}
-              >
-                <span className={`text-lg font-bold tabular-nums ${p.tono || "text-ink"}`}>{p.valor}</span>
-                <span className="ml-2 text-xs font-semibold uppercase tracking-wide text-soft">{p.etiqueta}</span>
-              </button>
-            );
-          })}
-        </div>
+        {relevada ? null : (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {pastillas.map((p) => {
+              const activa = hueco === p.clave;
+              return (
+                <button
+                  key={p.etiqueta}
+                  onClick={() => setHueco(p.clave)}
+                  className={`rounded-md border px-3 py-2 text-left transition-colors ${
+                    activa ? "border-kraft bg-white shadow-sm" : "border-line bg-paper/60 hover:border-kraft/50"
+                  }`}
+                >
+                  <span className={`text-lg font-bold tabular-nums ${p.tono || "text-ink"}`}>{p.valor}</span>
+                  <span className="ml-2 text-xs font-semibold uppercase tracking-wide text-soft">{p.etiqueta}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </Card>
 
       {/* --- Los renglones que no entraron --- */}
@@ -154,22 +176,24 @@ export default function ImportacionesClient({
       ) : null}
 
       {/* --- La lista --- */}
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <Label>Buscar en esta carga</Label>
-          <input
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Código, marca, serie, empleado…"
-            className={`${inputCls} w-72`}
-          />
+      {relevada ? null : (
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <Label>Buscar en esta carga</Label>
+            <input
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Código, marca, serie, empleado…"
+              className={`${inputCls} w-72`}
+            />
+          </div>
+          <p className="pb-2 text-sm text-soft">
+            {visibles.length} de {equipos.length}
+          </p>
         </div>
-        <p className="pb-2 text-sm text-soft">
-          {visibles.length} de {equipos.length}
-        </p>
-      </div>
+      )}
 
-      {equipos.length === 0 ? (
+      {relevada ? null : equipos.length === 0 ? (
         <Empty>Esta carga no dejó ningún equipo en el inventario.</Empty>
       ) : visibles.length === 0 ? (
         <Empty>Ningún equipo de esta carga coincide con eso.</Empty>

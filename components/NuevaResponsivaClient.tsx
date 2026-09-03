@@ -20,6 +20,7 @@ import { dinero, fechaCorta, hoyISO } from "../lib/helpers";
 import type { ConceptoVale } from "../lib/vales";
 import { crearResponsiva, crearVale } from "../app/responsivas/actions";
 import { guardarEquipo } from "../app/inventario/actions";
+import BuscadorConcepto from "./BuscadorConcepto";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import SelectConOtro from "./SelectConOtro";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls } from "./ui";
@@ -487,18 +488,7 @@ export default function NuevaResponsivaClient({
               <div className="mt-3 space-y-3 border-t border-line pt-3">
                 <div>
                   <Label>Concepto del descuento</Label>
-                  <select
-                    className={inputCls}
-                    value={valeConceptoId}
-                    onChange={(e) => setValeConceptoId(e.target.value ? Number(e.target.value) : "")}
-                  >
-                    <option value="">— Elige el concepto —</option>
-                    {conceptos.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.concepto} — {dinero(c.monto)}
-                      </option>
-                    ))}
-                  </select>
+                  <BuscadorConcepto conceptos={conceptos} value={valeConceptoId} onChange={setValeConceptoId} />
                 </div>
                 <div>
                   <Label>Valor de reposición</Label>

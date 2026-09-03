@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { crearVale } from "../app/responsivas/actions";
 import type { ConceptoVale } from "../lib/vales";
 import { dinero } from "../lib/helpers";
-import { btnGhost, btnPrimary, inputCls } from "./ui";
+import BuscadorConcepto from "./BuscadorConcepto";
+import { btnGhost, btnPrimary } from "./ui";
 
 /**
  * Genera el vale de descuento de una entrega que ya está hecha.
@@ -101,19 +102,12 @@ export default function GenerarValeBtn({
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-soft">
                   Concepto del descuento
                 </label>
-                <select
-                  className={inputCls}
+                <BuscadorConcepto
+                  conceptos={conceptos}
                   value={conceptoId}
-                  onChange={(e) => setConceptoId(e.target.value ? Number(e.target.value) : "")}
+                  onChange={setConceptoId}
                   disabled={pendiente}
-                >
-                  <option value="">— Elige el concepto —</option>
-                  {conceptos.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.concepto} — {dinero(c.monto)}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-soft">

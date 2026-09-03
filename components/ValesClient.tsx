@@ -7,6 +7,7 @@ import { archivarConceptoVale, crearVale, guardarConceptoVale } from "../app/res
 import type { Empleado } from "../lib/types";
 import type { ConceptoVale } from "../lib/vales";
 import { dinero, fechaCorta } from "../lib/helpers";
+import BuscadorConcepto from "./BuscadorConcepto";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import VerPdfBtn from "./VerPdfBtn";
 import SubirFirmadaBtn from "./SubirFirmadaBtn";
@@ -134,18 +135,7 @@ export default function ValesClient({
             </div>
             <div className="sm:col-span-2">
               <Label>Concepto del descuento</Label>
-              <select
-                className={inputCls}
-                value={conceptoId}
-                onChange={(e) => setConceptoId(e.target.value ? Number(e.target.value) : "")}
-              >
-                <option value="">— Elige el concepto —</option>
-                {activos.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.concepto} — {dinero(c.monto)}
-                  </option>
-                ))}
-              </select>
+              <BuscadorConcepto conceptos={activos} value={conceptoId} onChange={setConceptoId} />
             </div>
             <div>
               <Label>Valor de reposición</Label>

@@ -21,6 +21,7 @@ const SECCIONES: Seccion[] = [
     enlaces: [
       { href: "/expedientes", etiqueta: "Expedientes", permiso: "exp.ver" },
       { href: "/empleados", etiqueta: "Personal", permiso: "empleados.ver" },
+      { href: "/empleados/bajas", etiqueta: "Bajas", permiso: "empleados.ver" },
       { href: "/vales", etiqueta: "Vales de descuento", permiso: "ti.ver" },
     ],
   },

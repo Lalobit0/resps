@@ -706,6 +706,10 @@ function migrar(db: Database.Database) {
   agregarColumna(db, "conceptos_vale", "clausula", "TEXT");
   // Qué carga de Excel trajo (o tocó por última vez) este equipo.
   agregarColumna(db, "equipos", "importacion_id", "INTEGER");
+  // Al subir la plantilla de personal, quién estaba en el sistema y ya no
+  // viene en el archivo: son las bajas que hay que resolver.
+  agregarColumna(db, "importaciones", "ausentes", "INTEGER NOT NULL DEFAULT 0");
+  agregarColumna(db, "importaciones", "ausentes_detalle", "TEXT");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
   // A los equipos que ya están entregados se les copia el área de su dueño:

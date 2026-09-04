@@ -7,7 +7,9 @@ import { guardarEquipo } from "../inventario/actions";
 import { anotarMovimiento } from "../../lib/historial";
 import { sincronizarRequisitos } from "../../lib/expedientes";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
-import { exigir } from "../../lib/auth";
+import { exigir, usuarioActual } from "../../lib/auth";
+import { ausentesDe } from "../../lib/bajas";
+import { cerrarImportacion, registrarImportacion } from "../../lib/importaciones";
 
 function revalidar() {
   revalidatePath("/empleados");
@@ -113,6 +115,13 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
     let actualizados = 0;
     let omitidos = 0;
 
+    // Quién estaba activo y no viene en el archivo. Se calcula ANTES de tocar
+    // nada: el Excel de RH trae a los que siguen trabajando y nada más, así
+    // que el que falta es una baja —o un renglón que se les pasó—. No se dan
+    // de baja solos: se proponen para revisarlos uno por uno.
+    const numerosDelArchivo = filas.map((f) => (f.numero_empleado || "").trim()).filter(Boolean);
+    const ausentes = ausentesDe(numerosDelArchivo);
+
     const proceso = db.transaction(() => {
       const buscar = db.prepare("SELECT id FROM empleados WHERE numero_empleado = ?");
       const insertar = db.prepare(
@@ -150,10 +159,39 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
     });
     proceso();
 
+    const quien = await usuarioActual();
+    const importacionId = registrarImportacion({
+      tipo: "EMPLEADOS",
+      archivo: archivo.name || null,
+      usuario: quien ? `${quien.nombre} (${quien.usuario})` : null,
+      renglones: filas.length,
+    });
+    cerrarImportacion(importacionId, {
+      nuevos,
+      actualizados,
+      vinculados: 0,
+      omitidos: [],
+      ausentes: ausentes.map((a) => a.numero_empleado),
+    });
+
     revalidar();
+    revalidatePath("/empleados/bajas");
+
     const partes = [`${nuevos} nuevos`, `${actualizados} actualizados`];
     if (omitidos) partes.push(`${omitidos} omitidos (sin número o nombre)`);
-    return { ok: true, mensaje: `Importación lista: ${partes.join(", ")}.` };
+
+    const conEquipo = ausentes.filter((a) => a.equipos.length).length;
+    const aviso = ausentes.length
+      ? ` ${ausentes.length} ${ausentes.length === 1 ? "persona que estaba en el sistema ya no viene" : "personas que estaban en el sistema ya no vienen"} en el archivo` +
+        (conEquipo ? `, y ${conEquipo} ${conEquipo === 1 ? "trae equipo" : "traen equipo"} a su nombre` : "") +
+        ". Revísalas en “Bajas” antes de darlas por idas."
+      : "";
+
+    return {
+      ok: true,
+      id: importacionId,
+      mensaje: `Importación lista: ${partes.join(", ")}.${aviso}`,
+    };
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo leer el archivo. Asegúrate de que sea un Excel (.xlsx) válido." };
@@ -498,5 +536,106 @@ export async function darDeBajaEmpleado(datos: {
   } catch (e) {
     console.error(e);
     return { ok: false, error: `No se pudo dar de baja: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/**
+ * Da de baja a varias personas de un golpe.
+ *
+ * Es lo que sigue después de subir la plantilla: el archivo trajo a los que
+ * siguen trabajando y el sistema señaló a los que faltan; aquí se confirman
+ * los que de verdad se fueron. Cada una pasa por la misma baja de siempre,
+ * así que sus equipos vuelven al inventario con su área, sus cartas se
+ * cierran y el histórico del aparato queda diciendo quién lo tenía.
+ *
+ * Lo que trae equipo sin marcar como entregado se queda a su nombre: no se
+ * inventa una devolución que nadie hizo.
+ */
+export async function darDeBajaEnLote(datos: {
+  fecha: string;
+  motivo: string;
+  /** Por empleado, los equipos que sí entregó. */
+  personas: { id: number; recibidos: number[] }[];
+}): Promise<ResultadoAccion> {
+  await exigir("empleados.editar");
+
+  const personas = datos.personas ?? [];
+  if (!personas.length) return { ok: false, error: "No elegiste a nadie." };
+
+  const hechas: string[] = [];
+  const fallidas: string[] = [];
+  let equiposLiberados = 0;
+  let sinEntregar = 0;
+
+  for (const p of personas) {
+    const antes = db.prepare("SELECT COUNT(*) AS c FROM equipos WHERE asignado_a = ?").get(p.id) as { c: number };
+    const res = await darDeBajaEmpleado({
+      id: p.id,
+      fecha: datos.fecha,
+      motivo: datos.motivo,
+      recibidos: p.recibidos ?? [],
+    });
+    const nombre =
+      (db.prepare("SELECT nombre FROM empleados WHERE id = ?").get(p.id) as { nombre: string } | undefined)?.nombre ??
+      `#${p.id}`;
+    if (res.ok) {
+      hechas.push(nombre);
+      equiposLiberados += (p.recibidos ?? []).length;
+      sinEntregar += antes.c - (p.recibidos ?? []).length;
+    } else {
+      fallidas.push(`${nombre}: ${res.error ?? "no se pudo"}`);
+    }
+  }
+
+  revalidar();
+  revalidatePath("/empleados/bajas");
+  revalidatePath("/inventario");
+
+  if (!hechas.length) return { ok: false, error: `No se dio de baja a nadie. ${fallidas.join(" · ")}` };
+
+  const partes = [
+    `${hechas.length} ${hechas.length === 1 ? "persona dada de baja" : "personas dadas de baja"}`,
+    equiposLiberados ? `${equiposLiberados} equipo(s) de vuelta al inventario` : "",
+    sinEntregar ? `⚠️ ${sinEntregar} equipo(s) siguen a nombre de quien se fue` : "",
+    fallidas.length ? `No se pudo con ${fallidas.length}: ${fallidas.join(" · ")}` : "",
+  ].filter(Boolean);
+
+  return { ok: true, mensaje: `${partes.join(". ")}.` };
+}
+
+/**
+ * Revive a alguien que se dio de baja por error.
+ *
+ * Pasa: el Excel de RH viene incompleto un mes y alguien confirma la baja sin
+ * mirar. Los equipos que ya se liberaron no se le devuelven solos —eso se
+ * decide caso por caso—, pero la persona vuelve a la plantilla con su
+ * expediente intacto.
+ */
+export async function reactivarEmpleado(id: number): Promise<ResultadoAccion> {
+  await exigir("empleados.editar");
+  try {
+    const emp = db.prepare("SELECT numero_empleado, nombre, activo FROM empleados WHERE id = ?").get(id) as
+      | { numero_empleado: string; nombre: string; activo: number }
+      | undefined;
+    if (!emp) return { ok: false, error: "Ese empleado ya no existe." };
+    if (emp.activo) return { ok: false, error: "Esa persona ya está activa." };
+
+    db.prepare("UPDATE empleados SET activo = 1, fecha_baja = NULL, motivo_baja = NULL WHERE id = ?").run(id);
+
+    db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+      "REACTIVA_EMPLEADO",
+      `${emp.numero_empleado} ${emp.nombre} volvió a la plantilla`,
+      JSON.stringify({ id, numero: emp.numero_empleado })
+    );
+
+    revalidar();
+    revalidatePath("/empleados/bajas");
+    return {
+      ok: true,
+      mensaje: `${emp.nombre} volvió a la plantilla. Los equipos que ya se liberaron hay que reasignarlos a mano.`,
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: "No se pudo reactivar." };
   }
 }

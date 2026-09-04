@@ -26,6 +26,9 @@ export type Importacion = {
   vinculados: number;
   omitidos: number;
   omitidos_detalle: string | null;
+  /** Solo en la plantilla de personal: cuántos ya no vinieron. */
+  ausentes?: number;
+  ausentes_detalle?: string | null;
 };
 
 export type RenglonOmitido = { renglon: number; motivo: string; datos: Record<string, string> };

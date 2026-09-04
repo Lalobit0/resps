@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
   const empleadoId = Number(sp.get("empleado"));
   const conceptoId = Number(sp.get("concepto"));
   const fecha = (sp.get("fecha") || "").trim();
+  const clausula = (sp.get("clausula") || "").trim();
 
   const empleado = empleadoId
     ? (db.prepare("SELECT * FROM empleados WHERE id = ?").get(empleadoId) as Empleado | undefined)
@@ -46,6 +47,7 @@ export async function GET(req: NextRequest) {
       concepto: concepto.concepto,
       monto: concepto.monto,
       montoTexto: concepto.texto,
+      clausula: clausula || concepto.clausula,
       firmaEmpleado: null,
       firmaAutoridad: null,
       firmante: null,

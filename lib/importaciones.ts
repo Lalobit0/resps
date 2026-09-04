@@ -28,10 +28,19 @@ export function registrarImportacion(datos: {
 
 export function cerrarImportacion(
   id: number,
-  resumen: { nuevos: number; actualizados: number; vinculados: number; omitidos: RenglonOmitido[] }
+  resumen: {
+    nuevos: number;
+    actualizados: number;
+    vinculados: number;
+    omitidos: RenglonOmitido[];
+    /** Solo en la plantilla de personal: los números que ya no vinieron. */
+    ausentes?: string[];
+  }
 ) {
+  const ausentes = resumen.ausentes ?? [];
   db.prepare(
-    `UPDATE importaciones SET nuevos = ?, actualizados = ?, vinculados = ?, omitidos = ?, omitidos_detalle = ?
+    `UPDATE importaciones SET nuevos = ?, actualizados = ?, vinculados = ?, omitidos = ?, omitidos_detalle = ?,
+            ausentes = ?, ausentes_detalle = ?
      WHERE id = ?`
   ).run(
     resumen.nuevos,
@@ -39,6 +48,8 @@ export function cerrarImportacion(
     resumen.vinculados,
     resumen.omitidos.length,
     resumen.omitidos.length ? JSON.stringify(resumen.omitidos) : null,
+    ausentes.length,
+    ausentes.length ? JSON.stringify(ausentes) : null,
     id
   );
 }

@@ -142,6 +142,9 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         <button className={btnGhost} disabled={pendiente} onClick={() => fileRef.current?.click()}>
           {pendiente ? "Procesando…" : "↥ Importar Excel"}
         </button>
+        <Link href="/empleados/bajas" className={btnGhost}>
+          Bajas →
+        </Link>
         <button
           className={btnPrimary}
           onClick={() => {

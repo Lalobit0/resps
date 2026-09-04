@@ -78,6 +78,8 @@ export interface Responsiva {
   firma_empleado: string | null;
   concepto: string | null;
   monto: number | null;
+  /** Solo en los vales: EQUIPO o CONSUMIBLE. */
+  vale_clausula?: string | null;
   created_at: string;
   /** Escaneo de la carta ya firmada en papel. */
   pdf_firmado?: string | null;

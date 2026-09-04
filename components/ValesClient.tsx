@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { archivarConceptoVale, crearVale, guardarConceptoVale } from "../app/responsivas/actions";
 import type { Empleado } from "../lib/types";
-import type { ConceptoVale } from "../lib/vales";
+import { CLAUSULAS_VALE, type ConceptoVale } from "../lib/vales-comun";
 import { dinero, fechaCorta } from "../lib/helpers";
 import BuscadorConcepto from "./BuscadorConcepto";
 import BuscadorEmpleado from "./BuscadorEmpleado";
@@ -62,6 +62,9 @@ export default function ValesClient({
   const [empleadoId, setEmpleadoId] = useState<number | null>(empleadoPre);
   const empleado = empleados.find((e) => e.id === empleadoId) ?? null;
   const [conceptoId, setConceptoId] = useState<number | "">("");
+  // Qué cláusula lleva el papel. La propone el concepto —una playera no se
+  // recibe de vuelta, un radio sí— y se puede cambiar para este vale.
+  const [clausula, setClausula] = useState<string>(CLAUSULAS_VALE[0].clave);
   const [fecha, setFecha] = useState(hoyISO());
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
@@ -69,11 +72,17 @@ export default function ValesClient({
   const [pendiente, iniciar] = useTransition();
 
   const elegido = activos.find((c) => c.id === conceptoId);
+
+  const elegirConcepto = (id: number | "") => {
+    setConceptoId(id);
+    const c = activos.find((x) => x.id === id);
+    if (c) setClausula(CLAUSULAS_VALE.find((k) => k.clave === c.clausula)?.clave ?? CLAUSULAS_VALE[0].clave);
+  };
   // La vista previa arma el PDF de verdad, sin guardar nada: lo que se ve aquí
   // es lo que va a salir impreso.
   const listo = !!empleado && !!conceptoId;
   const urlPrevia = listo
-    ? `/api/vale/preview?empleado=${empleado.id}&concepto=${conceptoId}&fecha=${fecha}#toolbar=0&navpanes=0&view=FitH`
+    ? `/api/vale/preview?empleado=${empleado.id}&concepto=${conceptoId}&fecha=${fecha}&clausula=${clausula}#toolbar=0&navpanes=0&view=FitH`
     : "";
 
   const generar = () => {
@@ -81,7 +90,7 @@ export default function ValesClient({
     if (!empleado) return setError("Elige al empleado.");
     if (!conceptoId) return setError("Elige el concepto del descuento.");
     iniciar(async () => {
-      const res = await crearVale({ empleadoId: empleado.id, conceptoId: Number(conceptoId), fecha });
+      const res = await crearVale({ empleadoId: empleado.id, conceptoId: Number(conceptoId), fecha, clausula });
       if (res.ok && res.id) {
         window.open(`/api/pdf/${res.id}`, "_blank");
         setAbierto(false);
@@ -135,12 +144,25 @@ export default function ValesClient({
             </div>
             <div className="sm:col-span-2">
               <Label>Concepto del descuento</Label>
-              <BuscadorConcepto conceptos={activos} value={conceptoId} onChange={setConceptoId} />
+              <BuscadorConcepto conceptos={activos} value={conceptoId} onChange={elegirConcepto} />
             </div>
             <div>
               <Label>Valor de reposición</Label>
               <p className="rounded-md border border-line bg-paper/60 px-3 py-2 text-sm text-ink">
                 {elegido ? elegido.texto || dinero(elegido.monto) : <span className="text-soft">Sale del concepto</span>}
+              </p>
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Cláusula del vale</Label>
+              <select className={inputCls} value={clausula} onChange={(e) => setClausula(e.target.value)}>
+                {CLAUSULAS_VALE.map((c) => (
+                  <option key={c.clave} value={c.clave}>
+                    {c.etiqueta} — {c.resumen}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-soft">
+                La propone el concepto. Se cambia aquí solo para este vale; para dejarlo fijo, edítalo en el tarifario.
               </p>
             </div>
             <div className="sm:col-span-2 lg:col-span-3">
@@ -275,7 +297,13 @@ export default function ValesClient({
 /** El tarifario de RH: lo que se puede descontar y a qué precio. */
 function Catalogo({ conceptos }: { conceptos: ConceptoVale[] }) {
   const router = useRouter();
-  const [form, setForm] = useState<{ id?: number; concepto: string; monto: string; texto: string } | null>(null);
+  const [form, setForm] = useState<{
+    id?: number;
+    concepto: string;
+    monto: string;
+    texto: string;
+    clausula: string;
+  } | null>(null);
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
 
@@ -300,7 +328,10 @@ function Catalogo({ conceptos }: { conceptos: ConceptoVale[] }) {
             El precio con letra es el que sale impreso en el vale, tal como lo escribe Recursos Humanos.
           </p>
         </div>
-        <button className={btnGhost} onClick={() => setForm({ concepto: "", monto: "", texto: "" })}>
+        <button
+          className={btnGhost}
+          onClick={() => setForm({ concepto: "", monto: "", texto: "", clausula: CLAUSULAS_VALE[0].clave })}
+        >
           + Agregar concepto
         </button>
       </div>
@@ -336,6 +367,23 @@ function Catalogo({ conceptos }: { conceptos: ConceptoVale[] }) {
               placeholder="Se arma solo si lo dejas vacío"
             />
           </div>
+          <div className="sm:col-span-2">
+            <Label>Cláusula que le toca</Label>
+            <select
+              className={inputCls}
+              value={form.clausula}
+              onChange={(e) => setForm({ ...form, clausula: e.target.value })}
+            >
+              {CLAUSULAS_VALE.map((k) => (
+                <option key={k.clave} value={k.clave}>
+                  {k.etiqueta} — {k.resumen}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-soft">
+              Es la que se propone al generar el vale de este concepto; ahí se puede cambiar sin tocar el tarifario.
+            </p>
+          </div>
           <div className="sm:col-span-3">
             {error ? (
               <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
@@ -358,6 +406,7 @@ function Catalogo({ conceptos }: { conceptos: ConceptoVale[] }) {
             <th className={thCls}>Concepto</th>
             <th className={thCls}>Precio</th>
             <th className={thCls}>Como se escribe</th>
+            <th className={thCls}>Cláusula</th>
             <th className={thCls}>Acciones</th>
           </tr>
         </thead>
@@ -370,11 +419,27 @@ function Catalogo({ conceptos }: { conceptos: ConceptoVale[] }) {
               </td>
               <td className={`${tdCls} text-sm`}>{dinero(c.monto)}</td>
               <td className={`${tdCls} text-xs text-soft`}>{c.texto ?? "—"}</td>
+              <td className={`${tdCls} text-xs`}>
+                {c.clausula === "CONSUMIBLE" ? (
+                  <Badge tono="ambar">Uniforme o consumible</Badge>
+                ) : (
+                  <span className="text-soft">Equipo que se devuelve</span>
+                )}
+              </td>
               <td className={tdCls}>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     className={btnGhost}
-                    onClick={() => setForm({ id: c.id, concepto: c.concepto, monto: String(c.monto), texto: c.texto ?? "" })}
+                    onClick={() =>
+                      setForm({
+                        id: c.id,
+                        concepto: c.concepto,
+                        monto: String(c.monto),
+                        texto: c.texto ?? "",
+                        clausula:
+                          CLAUSULAS_VALE.find((k) => k.clave === c.clausula)?.clave ?? CLAUSULAS_VALE[0].clave,
+                      })
+                    }
                   >
                     Editar
                   </button>

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import fs from "fs";
 import path from "path";
 import { db, getConfig, STORAGE_DIR, STORAGE_ELIMINADAS } from "../../lib/db";
-import { conceptoVale } from "../../lib/vales";
+import { CLAUSULAS_VALE, conceptoVale } from "../../lib/vales";
 import { bytesAsignacion, contenidoPlantilla, etiquetaAutoridad } from "../../lib/documento";
 import type { Firmante } from "../../lib/documento";
 import { generarCarta, type FilaCarta } from "../../lib/pdf";
@@ -375,6 +375,7 @@ export async function firmarAutoridad(
       observaciones: r.observaciones,
       concepto: r.concepto,
       monto: r.monto,
+      clausula: r.vale_clausula,
       firmaEmpleado: r.firma_empleado,
       firmaAutoridad: firma,
       firmante: firmante ?? null,
@@ -1671,6 +1672,7 @@ export async function regenerarResponsiva(id: number): Promise<ResultadoAccion> 
         observaciones: r.observaciones,
         concepto: r.concepto,
         monto: r.monto,
+        clausula: r.vale_clausula,
         firmaEmpleado: r.firma_empleado,
         firmaAutoridad: r.firma_autoridad,
         firmante: r.firma_autoridad
@@ -1716,6 +1718,8 @@ export async function crearVale(datos: {
   fecha?: string;
   /** Si viene, el vale queda colgado de esa entrega. */
   responsivaOrigenId?: number | null;
+  /** EQUIPO o CONSUMIBLE. Sin esto, la que traiga el concepto. */
+  clausula?: string | null;
 }): Promise<ResultadoAccion> {
   await exigir("ti.editar");
   try {
@@ -1739,10 +1743,18 @@ export async function crearVale(datos: {
           | undefined)
       : undefined;
 
+    // La cláusula se congela en la responsiva: si mañana el concepto se
+    // reclasifica, el vale ya firmado se sigue rehaciendo con el texto que
+    // llevaba el papel.
+    const clausula =
+      CLAUSULAS_VALE.find((c) => c.clave === (datos.clausula ?? "").trim())?.clave ??
+      CLAUSULAS_VALE.find((c) => c.clave === concepto.clausula)?.clave ??
+      CLAUSULAS_VALE[0].clave;
+
     const folio = siguienteFolio("VALE");
     const info = db
       .prepare(
-        "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, responsiva_origen_id, entregado_por, concepto, monto) VALUES (?,?,?,?,?,?,?,?,?,?)"
+        "INSERT INTO responsivas (folio, tipo, clase, empleado_id, fecha, estado, responsiva_origen_id, entregado_por, concepto, monto, vale_clausula) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
       )
       .run(
         folio,
@@ -1754,7 +1766,8 @@ export async function crearVale(datos: {
         origen?.id ?? null,
         getConfig("entrega_default", "Departamento de TI"),
         concepto.concepto,
-        concepto.monto
+        concepto.monto,
+        clausula
       );
     const id = Number(info.lastInsertRowid);
 
@@ -1767,6 +1780,7 @@ export async function crearVale(datos: {
         concepto: concepto.concepto,
         monto: concepto.monto,
         montoTexto: concepto.texto,
+        clausula,
         firmaEmpleado: null,
         firmaAutoridad: null,
         firmante: null,
@@ -1802,6 +1816,8 @@ export async function guardarConceptoVale(datos: {
   concepto: string;
   monto: string;
   texto: string;
+  /** Qué cláusula propone este concepto al generar su vale. */
+  clausula?: string;
 }): Promise<ResultadoAccion> {
   await exigir("ti.editar");
   try {
@@ -1816,10 +1832,22 @@ export async function guardarConceptoVale(datos: {
     if (repetido) return { ok: false, error: `Ya existe el concepto “${concepto}”.` };
 
     const texto = (datos.texto || "").trim() || montoEnLetra(monto);
+    const clausula = CLAUSULAS_VALE.find((c) => c.clave === datos.clausula)?.clave ?? CLAUSULAS_VALE[0].clave;
     if (datos.id) {
-      db.prepare("UPDATE conceptos_vale SET concepto=?, monto=?, texto=? WHERE id=?").run(concepto, monto, texto, datos.id);
+      db.prepare("UPDATE conceptos_vale SET concepto=?, monto=?, texto=?, clausula=? WHERE id=?").run(
+        concepto,
+        monto,
+        texto,
+        clausula,
+        datos.id
+      );
     } else {
-      db.prepare("INSERT INTO conceptos_vale (concepto, monto, texto) VALUES (?,?,?)").run(concepto, monto, texto);
+      db.prepare("INSERT INTO conceptos_vale (concepto, monto, texto, clausula) VALUES (?,?,?,?)").run(
+        concepto,
+        monto,
+        texto,
+        clausula
+      );
     }
     revalidatePath("/vales");
     return { ok: true, mensaje: `Concepto “${concepto}” guardado.` };

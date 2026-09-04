@@ -20,7 +20,9 @@ export const dynamic = "force-dynamic";
  */
 export default async function PaginaDuplicados() {
   await exigirPagina("ti.ver");
-  const revisables = db.prepare("SELECT id, codigo, numero_serie, detalles FROM equipos").all() as EquipoRevisable[];
+  const revisables = db
+    .prepare("SELECT id, codigo, tipo, marca, modelo, numero_serie, detalles FROM equipos WHERE estado != 'BAJA'")
+    .all() as EquipoRevisable[];
   const grupos = agruparDuplicados(revisables);
 
   // Los grupos que ya se revisaron y resultaron ser equipos distintos.

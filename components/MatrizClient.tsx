@@ -3,9 +3,17 @@
 import { useMemo, useState, useTransition } from "react";
 import { aplicarPaqueteBasico, eliminarRegla, guardarRegla } from "../app/configuracion/actions";
 import { CAMPOS_MATRIZ, type ReglaMatriz, type TipoDocumento } from "../lib/expedientes-comun";
+import SelectorPersonas, { type PersonaOpcion } from "./SelectorPersonas";
 import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
 
-type Regla = ReglaMatriz & { tipo_nombre: string; tipo_codigo: string; tipo_grupo: string | null };
+type Regla = ReglaMatriz & {
+  tipo_nombre: string;
+  tipo_codigo: string;
+  tipo_grupo: string | null;
+  persona: string | null;
+  persona_puesto: string | null;
+  persona_departamento: string | null;
+};
 type Aviso = { ok: boolean; texto: string } | null;
 
 const ETIQUETA_CAMPO: Record<string, string> = Object.fromEntries(CAMPOS_MATRIZ.map((c) => [c.clave, c.etiqueta]));
@@ -14,10 +22,12 @@ export default function MatrizClient({
   reglas,
   tipos,
   opciones,
+  personas,
 }: {
   reglas: Regla[];
   tipos: TipoDocumento[];
   opciones: Record<string, string[]>;
+  personas: PersonaOpcion[];
 }) {
   const [aviso, setAviso] = useState<Aviso>(null);
   const [editando, setEditando] = useState<number | "nueva" | null>(null);
@@ -26,7 +36,14 @@ export default function MatrizClient({
   const grupos = useMemo(() => {
     const mapa = new Map<string, Regla[]>();
     for (const r of reglas) {
-      const clave = r.campo === "TODOS" ? "Todo el personal" : `${ETIQUETA_CAMPO[r.campo] ?? r.campo}: ${r.valor}`;
+      const clave =
+        r.campo === "TODOS"
+          ? "Todo el personal"
+          : r.campo === "EMPLEADO"
+            ? `${r.persona ?? "Alguien que ya no está en la plantilla"} · ${r.valor}${
+                r.persona_puesto ? ` · ${r.persona_puesto}` : ""
+              }`
+            : `${ETIQUETA_CAMPO[r.campo] ?? r.campo}: ${r.valor}`;
       mapa.set(clave, [...(mapa.get(clave) ?? []), r]);
     }
     // "Todo el personal" siempre primero: es la base sobre la que se suma el resto.
@@ -46,7 +63,9 @@ export default function MatrizClient({
   };
 
   const borrar = (r: Regla) => {
-    if (!confirm(`¿Dejar de pedir ${r.tipo_nombre} a ${r.campo === "TODOS" ? "todo el personal" : r.valor}?`)) return;
+    const aQuien =
+      r.campo === "TODOS" ? "todo el personal" : r.campo === "EMPLEADO" ? (r.persona ?? r.valor) : r.valor;
+    if (!confirm(`¿Dejar de pedir ${r.tipo_nombre} a ${aQuien}?`)) return;
     empezar(async () => {
       const res = await eliminarRegla(r.id);
       setAviso({ ok: res.ok, texto: res.ok ? res.mensaje ?? "Listo." : res.error ?? "No se pudo." });
@@ -97,7 +116,7 @@ export default function MatrizClient({
         <Card className="mb-5">
           <h2 className="text-sm font-bold uppercase tracking-wide text-soft">Pedir un documento</h2>
           <form onSubmit={enviar} className="mt-4">
-            <CamposRegla tipos={tipos} opciones={opciones} />
+            <CamposRegla tipos={tipos} opciones={opciones} personas={personas} />
             <button type="submit" disabled={pendiente} className={`${btnPrimary} mt-5`}>
               {pendiente ? "Guardando…" : "Crear regla"}
             </button>
@@ -165,7 +184,7 @@ export default function MatrizClient({
                           <td colSpan={4} className="bg-paper/50 px-4 py-5">
                             <form onSubmit={enviar}>
                               <input type="hidden" name="id" value={r.id} />
-                              <CamposRegla tipos={tipos} opciones={opciones} regla={r} />
+                              <CamposRegla tipos={tipos} opciones={opciones} personas={personas} regla={r} />
                               <button type="submit" disabled={pendiente} className={`${btnPrimary} mt-5`}>
                                 Guardar
                               </button>
@@ -190,10 +209,12 @@ export default function MatrizClient({
 function CamposRegla({
   tipos,
   opciones,
+  personas,
   regla,
 }: {
   tipos: TipoDocumento[];
   opciones: Record<string, string[]>;
+  personas: PersonaOpcion[];
   regla?: Regla;
 }) {
   const [campo, setCampo] = useState<string>(regla?.campo ?? "TODOS");
@@ -243,10 +264,12 @@ function CamposRegla({
         </select>
       </div>
 
-      <div>
-        <Label>{campo === "TODOS" ? "—" : "Cuál"}</Label>
+      <div className={campo === "EMPLEADO" ? "md:col-span-2" : ""}>
+        <Label>{campo === "TODOS" ? "—" : campo === "EMPLEADO" ? "¿A quiénes?" : "Cuál"}</Label>
         {campo === "TODOS" ? (
           <p className="pt-2 text-sm text-soft">Se le pide a toda la plantilla.</p>
+        ) : campo === "EMPLEADO" ? (
+          <SelectorPersonas personas={personas} iniciales={regla?.valor ? [regla.valor] : []} />
         ) : (
           <>
             <input

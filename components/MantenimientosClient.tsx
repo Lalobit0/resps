@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import type { MantenimientoConEquipo } from "../lib/types";
-import { ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENIMIENTO, TIPOS_MANTENIMIENTO } from "../lib/constants";
+import { ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENIMIENTO, ETIQUETA_TIPO, TIPOS_MANTENIMIENTO } from "../lib/constants";
 import { diasPara, dinero, fechaCorta, hoyISO } from "../lib/helpers";
+import Buscador from "./Buscador";
 import {
   cancelarMantenimiento,
   completarMantenimiento,
@@ -12,7 +13,20 @@ import {
 } from "../app/mantenimientos/actions";
 import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
 
-type EquipoOpcion = { id: number; codigo: string; marca: string; modelo: string; estado: string };
+export type EquipoOpcion = {
+  id: number;
+  codigo: string;
+  marca: string;
+  modelo: string;
+  estado: string;
+  tipo: string;
+  numero_serie: string | null;
+  area: string | null;
+  /** Quién lo trae, para poder buscarlo por su nombre. */
+  empleado: string | null;
+  numero_empleado: string | null;
+  departamento: string | null;
+};
 
 type Formulario = {
   id?: number;
@@ -44,6 +58,43 @@ export default function MantenimientosClient({
 }) {
   const [form, setForm] = useState<Formulario | null>(null);
   const [completando, setCompletando] = useState<number | null>(null);
+
+  // El equipo se busca escribiendo: por su código o su marca, pero sobre todo
+  // por quién lo trae, que es como llega el pedido —"hay que darle
+  // mantenimiento a la compu de Ricardo"—.
+  const opcionesEquipo = useMemo(
+    () =>
+      equipos.map((e) => {
+        const quien = e.empleado
+          ? `${e.empleado}${e.numero_empleado ? ` · ${e.numero_empleado}` : ""}${
+              e.departamento ? ` · ${e.departamento}` : ""
+            }`
+          : e.area
+            ? `Sin asignar · ${e.area}`
+            : "Sin asignar";
+        return {
+          id: e.id,
+          titulo: `${e.codigo} · ${[e.marca, e.modelo].filter(Boolean).join(" ") || "sin marca"}`,
+          detalle: quien,
+          // Un equipo que no es computadora solo está aquí porque ya tiene
+          // mantenimientos; conviene que se note.
+          derecha: e.tipo === "COMPUTO" ? (e.numero_serie ?? "") : ETIQUETA_TIPO[e.tipo] ?? e.tipo,
+          buscar: [
+            e.codigo,
+            e.marca,
+            e.modelo,
+            e.numero_serie,
+            e.area,
+            e.empleado,
+            e.numero_empleado,
+            e.departamento,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        };
+      }),
+    [equipos]
+  );
   const [cierre, setCierre] = useState({ fecha_realizada: hoyISO(), costo: "", notas: "" });
   const [error, setError] = useState("");
   const [pendiente, iniciar] = useTransition();
@@ -92,18 +143,17 @@ export default function MantenimientosClient({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="sm:col-span-2 lg:col-span-1">
               <Label>Equipo *</Label>
-              <select
-                className={inputCls}
-                value={form.equipo_id}
-                onChange={(e) => setForm((f) => (f ? { ...f, equipo_id: e.target.value } : f))}
-              >
-                <option value="">— Selecciona un equipo —</option>
-                {equipos.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.codigo} · {e.marca} {e.modelo}
-                  </option>
-                ))}
-              </select>
+              <Buscador
+                opciones={opcionesEquipo}
+                value={form.equipo_id ? Number(form.equipo_id) : ""}
+                onChange={(id) => setForm((f) => (f ? { ...f, equipo_id: id ? String(id) : "" } : f))}
+                placeholder="🔍 Código, marca, serie o el nombre de quien la usa…"
+                sinResultados={(q) =>
+                  `Ninguna computadora coincide con “${q}”. Se buscan por código, marca, modelo, serie y por quién la trae.`
+                }
+                nota={(o) => o.detalle ?? "toca el campo para cambiarlo"}
+                unidad="equipos"
+              />
             </div>
             <div>
               <Label>Tipo</Label>

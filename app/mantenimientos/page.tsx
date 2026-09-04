@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { db } from "../../lib/db";
 import type { MantenimientoConEquipo } from "../../lib/types";
-import MantenimientosClient from "../../components/MantenimientosClient";
+import MantenimientosClient, { type EquipoOpcion } from "../../components/MantenimientosClient";
 import { PageHeader, btnGhost, inputCls } from "../../components/ui";
 import { exigirPagina } from "../../lib/guardia";
 
@@ -39,9 +39,21 @@ export default async function PaginaMantenimientos({
     )
     .all(...valores) as MantenimientoConEquipo[];
 
+  // Los mantenimientos son de las computadoras. Se cuelan los equipos de otro
+  // tipo que ya tengan uno registrado, porque si no, esos no se podrían editar.
+  // Va también quién los trae, que es como RH y sistemas los identifican: se
+  // pide el mantenimiento de "la compu de Ricardo", no la de la serie tal.
   const equipos = db
-    .prepare("SELECT id, codigo, marca, modelo, estado FROM equipos WHERE estado != 'BAJA' ORDER BY codigo ASC")
-    .all() as { id: number; codigo: string; marca: string; modelo: string; estado: string }[];
+    .prepare(
+      `SELECT e.id, e.codigo, e.marca, e.modelo, e.estado, e.tipo, e.numero_serie, e.area,
+              em.nombre AS empleado, em.numero_empleado, em.departamento
+       FROM equipos e
+       LEFT JOIN empleados em ON em.id = e.asignado_a
+       WHERE e.estado != 'BAJA'
+         AND (e.tipo = 'COMPUTO' OR e.id IN (SELECT equipo_id FROM mantenimientos))
+       ORDER BY e.codigo ASC`
+    )
+    .all() as EquipoOpcion[];
 
   const equipoFiltrado = equipoId ? equipos.find((e) => e.id === equipoId) : undefined;
 

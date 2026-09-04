@@ -6,6 +6,7 @@ import { comprobar } from "../../lib/auth";
 import { anotar, anotarDenegado } from "../../lib/bitacora";
 import { PAQUETE_BASICO } from "../../lib/catalogo-semilla";
 import { tipoDocumento } from "../../lib/expedientes";
+import { CAMPOS_MATRIZ_VALIDOS } from "../../lib/expedientes-comun";
 import type { ResultadoAccion } from "../../lib/types";
 
 /**
@@ -284,16 +285,24 @@ export async function guardarRegla(datos: FormData): Promise<ResultadoAccion> {
   const id = numero(datos, "id");
   const tipoId = numero(datos, "doc_tipo_id");
   const campo = texto(datos, "campo") || "TODOS";
-  const valor = campo === "TODOS" ? null : texto(datos, "valor");
   const obligatorioTxt = texto(datos, "obligatorio");
   const obligatorio = obligatorioTxt === "" ? null : obligatorioTxt === "1" ? 1 : 0;
   const nota = texto(datos, "nota");
 
   const tipo = tipoDocumento(tipoId);
   if (!tipo) return { ok: false, error: "Elige el tipo de documento." };
-  if (!["TODOS", "DEPARTAMENTO", "AREA", "PUESTO", "CLASE"].includes(campo)) {
-    return { ok: false, error: "Esa condición no existe." };
-  }
+  if (!CAMPOS_MATRIZ_VALIDOS.includes(campo)) return { ok: false, error: "Esa condición no existe." };
+
+  // A una persona se le puede pedir el documento junto con varias más: se
+  // elige a todas de un jalón y cada una queda con su propia regla, para
+  // poder quitársela a una sin tocar a las demás.
+  const personas =
+    campo === "EMPLEADO"
+      ? [...new Set(datos.getAll("empleados").map((v) => String(v).trim()).filter(Boolean))]
+      : [];
+  const valor = campo === "TODOS" ? null : campo === "EMPLEADO" ? (personas[0] ?? "") : texto(datos, "valor");
+
+  if (campo === "EMPLEADO" && personas.length === 0) return { ok: false, error: "Elige al menos a una persona." };
   if (campo !== "TODOS" && !valor) return { ok: false, error: "Falta decir a qué grupo se le pide." };
 
   if (id) {
@@ -310,22 +319,44 @@ export async function guardarRegla(datos: FormData): Promise<ResultadoAccion> {
     return { ok: true, mensaje: "Regla guardada." };
   }
 
-  const repetida = db
-    .prepare("SELECT id FROM matriz_reglas WHERE doc_tipo_id = ? AND campo = ? AND IFNULL(valor,'') = ?")
-    .get(tipoId, campo, valor ?? "");
-  if (repetida) return { ok: false, error: "Esa regla ya existe." };
+  const yaExiste = db.prepare("SELECT id FROM matriz_reglas WHERE doc_tipo_id = ? AND campo = ? AND IFNULL(valor,'') = ?");
+  const insertar = db.prepare(
+    "INSERT INTO matriz_reglas (doc_tipo_id, campo, valor, obligatorio, nota) VALUES (?, ?, ?, ?, ?)"
+  );
 
-  const res = db
-    .prepare("INSERT INTO matriz_reglas (doc_tipo_id, campo, valor, obligatorio, nota) VALUES (?, ?, ?, ?, ?)")
-    .run(tipoId, campo, valor, obligatorio, nota || null);
-  await anotar({
-    accion: "MATRIZ_ALTA",
-    descripcion: `Ahora se pide ${tipo.nombre} a ${campo === "TODOS" ? "todo el personal" : `${campo.toLowerCase()} ${valor}`}`,
-    entidad: "MATRIZ",
-    entidadId: Number(res.lastInsertRowid),
-  });
+  // Con una sola persona, o con un grupo, se guarda una regla; con varias
+  // personas, una por cabeza. Las que ya la tenían se saltan en silencio: el
+  // resultado que se pidió es que todas la tengan, y ya la tienen.
+  const objetivos = campo === "EMPLEADO" ? personas : [valor];
+  const creadas: string[] = [];
+  const repetidas: string[] = [];
+
+  for (const objetivo of objetivos) {
+    if (yaExiste.get(tipoId, campo, objetivo ?? "")) {
+      repetidas.push(String(objetivo));
+      continue;
+    }
+    const res = insertar.run(tipoId, campo, objetivo, obligatorio, nota || null);
+    creadas.push(String(objetivo));
+    await anotar({
+      accion: "MATRIZ_ALTA",
+      descripcion: `Ahora se pide ${tipo.nombre} a ${
+        campo === "TODOS" ? "todo el personal" : `${campo.toLowerCase()} ${objetivo}`
+      }`,
+      entidad: "MATRIZ",
+      entidadId: Number(res.lastInsertRowid),
+    });
+  }
+
+  if (creadas.length === 0) {
+    return { ok: false, error: objetivos.length === 1 ? "Esa regla ya existe." : "Todas esas personas ya la tenían." };
+  }
+
   refrescar();
-  return { ok: true, mensaje: "Regla creada. Se aplica en cuanto se abra cada expediente." };
+  const cuantas =
+    creadas.length === 1 ? "Regla creada." : `${creadas.length} reglas creadas, una por persona.`;
+  const salto = repetidas.length ? ` ${repetidas.length} ya la tenían y se dejaron como estaban.` : "";
+  return { ok: true, mensaje: `${cuantas}${salto} Se aplica en cuanto se abra cada expediente.` };
 }
 
 export async function eliminarRegla(id: number): Promise<ResultadoAccion> {

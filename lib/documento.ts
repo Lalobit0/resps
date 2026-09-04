@@ -5,7 +5,7 @@ import { llenarPlantilla } from "./plantilla";
 import { filasEquipo, filasUsuario, partirPlantilla } from "./carta";
 import { CARTAS, ETIQ_EMPLEADO, ETIQ_RH, ETIQ_SISTEMAS, type ClaseCarta } from "./constants";
 import { fechaCorta, fechaLarga, montoEnLetra } from "./helpers";
-import { conceptoValePorNombre } from "./vales";
+import { conceptoValePorNombre, plantillaDeClausula } from "./vales";
 import type { Empleado, Equipo } from "./types";
 
 /**
@@ -49,6 +49,8 @@ export type DatosCarta = {
   monto: number | null;
   /** El precio con letra, tal como está en el catálogo. */
   montoTexto?: string | null;
+  /** Cuál cláusula lleva el vale: EQUIPO o CONSUMIBLE. */
+  clausula?: string | null;
   firmaEmpleado: string | null;
   firmaAutoridad: string | null;
   firmante: Firmante | null;
@@ -128,7 +130,10 @@ export async function bytesAsignacion(datos: DatosCarta): Promise<Uint8Array> {
  * en blanco para que el empleado las llene al firmar.
  */
 async function bytesVale(datos: DatosCarta, encabezado: string): Promise<Uint8Array> {
-  const cuerpo = llenarPlantilla(contenidoPlantilla(CARTAS[datos.clase].plantilla), {
+  // Un radio se entrega y el descuento se cancela; una playera ya no se puede
+  // recibir de vuelta. Cada caso tiene su cláusula, y su plantilla.
+  const clausula = datos.clausula?.trim() || conceptoValePorNombre(datos.concepto?.trim() ?? "")?.clausula;
+  const cuerpo = llenarPlantilla(contenidoPlantilla(plantillaDeClausula(clausula)), {
     fecha: fechaLarga(datos.fecha),
     ciudad: getConfig("ciudad"),
     empresa: getConfig("empresa"),

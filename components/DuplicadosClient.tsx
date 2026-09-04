@@ -93,10 +93,24 @@ function TarjetaGrupo({ grupo: g, revisado = false }: { grupo: GrupoVista; revis
   const difiere = (etiqueta: string) => new Set(g.equipos.map((e) => valorDe(e, etiqueta))).size > 1;
 
   const borrar = (e: EquipoDup) => {
+    // Lo que hay que mirar antes de borrar una copia: si tiene dueño, cartas o
+    // mantenimientos, el bueno es este y el que sobra es el otro.
+    const ataduras = [
+      e.asignado_nombre
+        ? `⚠️ Está asignado a ${e.asignado_nombre}${e.asignado_numero ? ` (${e.asignado_numero})` : ""}. Al borrarlo, esa persona se queda sin el equipo registrado.`
+        : "",
+      e.responsivas.length
+        ? `⚠️ Tiene ${e.responsivas.length} carta(s) responsiva(s) (${e.responsivas.join(", ")}). Si es el mismo aparato que el otro registro, conviene UNIRLOS en vez de borrar: así las cartas no se pierden.`
+        : "",
+      e.mantenimientos ? `⚠️ Tiene ${e.mantenimientos} mantenimiento(s) registrado(s).` : "",
+    ].filter(Boolean);
+
     if (
       !confirm(
         `Se va a eliminar ${e.codigo} del inventario.\n\n` +
-          `${e.responsivas.length ? `⚠️ Tiene ${e.responsivas.length} carta(s) responsiva(s) (${e.responsivas.join(", ")}). Si es el mismo aparato que el otro registro, conviene UNIRLOS en vez de borrar: así las cartas no se pierden.\n\n` : ""}` +
+          (ataduras.length
+            ? `${ataduras.join("\n\n")}\n\n`
+            : "No está asignado a nadie y no tiene cartas ni mantenimientos: se puede quitar sin perder nada.\n\n") +
           `¿Continuar?`
       )
     )
@@ -111,7 +125,9 @@ function TarjetaGrupo({ grupo: g, revisado = false }: { grupo: GrupoVista; revis
 
   const descartar = () => {
     const nota = prompt(
-      `Marcar como revisado: los equipos que comparten ${g.etiqueta} “${g.valor}” son distintos.\n\n` +
+      (g.campo === "sin_serie"
+        ? `Marcar como revisado: ${g.equipos.map((e) => e.codigo).join(", ")} son equipos distintos, no copias.\n\n`
+        : `Marcar como revisado: los equipos que comparten ${g.etiqueta} “${g.valor}” son distintos.\n\n`) +
         `Deja una nota de por qué (opcional):`,
       ""
     );
@@ -139,15 +155,41 @@ function TarjetaGrupo({ grupo: g, revisado = false }: { grupo: GrupoVista; revis
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-bold text-ink">
-              Mismo {g.etiqueta}: <span className="mono text-kraft-dark">{g.valor}</span>
+              {g.campo === "sin_serie" ? (
+                <>
+                  {g.equipos.length} equipos idénticos y sin número de serie:{" "}
+                  <span className="text-kraft-dark">
+                    {[g.equipos[0]?.marca, g.equipos[0]?.modelo].filter(Boolean).join(" ") || "sin marca"}
+                  </span>
+                </>
+              ) : (
+                <>
+                  Mismo {g.etiqueta}: <span className="mono text-kraft-dark">{g.valor}</span>
+                </>
+              )}
             </h2>
-            {g.bloqueante ? <Badge tono="rojo">No debería repetirse</Badge> : <Badge tono="ambar">Solo aviso</Badge>}
+            {g.campo === "sin_serie" ? (
+              <Badge tono="ambar">Puede ser el mismo, subido dos veces</Badge>
+            ) : g.bloqueante ? (
+              <Badge tono="rojo">No debería repetirse</Badge>
+            ) : (
+              <Badge tono="ambar">Solo aviso</Badge>
+            )}
             {revisado ? <Badge tono="gris">Ya revisado</Badge> : null}
           </div>
           <p className="mt-0.5 text-xs text-soft">
-            {g.equipos.length} registros lo comparten: {g.equipos.map((e) => e.codigo).join(", ")}
+            {g.campo === "sin_serie"
+              ? `Traen exactamente los mismos datos: ${g.equipos.map((e) => e.codigo).join(", ")}`
+              : `${g.equipos.length} registros lo comparten: ${g.equipos.map((e) => e.codigo).join(", ")}`}
             {revisado && g.nota ? ` · Nota: ${g.nota}` : ""}
           </p>
+          {g.campo === "sin_serie" && !revisado ? (
+            <p className="mt-1 max-w-2xl text-xs text-soft">
+              Sin serie no hay cómo distinguirlos, así que volver a subir el Excel los dio de alta otra vez. Revisa a
+              quién está asignado cada uno antes de quitar el que sobra: el que ya tiene dueño o responsiva es el
+              bueno.
+            </p>
+          ) : null}
         </div>
         {revisado ? (
           <button className={btnGhost} onClick={reabrir} disabled={pendiente}>

@@ -9,14 +9,8 @@ import { db } from "./db";
  * (SEISCIENTOS 00/100) PESOS."— y así sale palabra por palabra igual.
  */
 
-export type ConceptoVale = {
-  id: number;
-  concepto: string;
-  monto: number;
-  /** El precio como se escribe en el vale. Vacío = se arma del número. */
-  texto: string | null;
-  activo: number;
-};
+export * from "./vales-comun";
+import type { ConceptoVale } from "./vales-comun";
 
 export function conceptosVale(soloActivos = true): ConceptoVale[] {
   return db

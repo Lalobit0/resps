@@ -7,7 +7,15 @@
  * ignoran para no marcar como duplicado lo que en realidad está vacío.
  */
 
-export type CampoDuplicable = "serie" | "imei" | "linea" | "activo" | "nombre_computadora";
+export type CampoDuplicable =
+  | "serie"
+  | "imei"
+  | "linea"
+  | "activo"
+  | "nombre_computadora"
+  /** No comparten ningún dato único porque no tienen ninguno: son dos altas
+   *  del mismo renglón de Excel, sin serie con qué reconocerse. */
+  | "sin_serie";
 
 export type Conflicto = {
   campo: CampoDuplicable;
@@ -19,6 +27,9 @@ export type Conflicto = {
 export type EquipoRevisable = {
   id: number;
   codigo: string;
+  tipo: string;
+  marca: string;
+  modelo: string;
   numero_serie: string | null;
   detalles: string | null;
 };
@@ -29,6 +40,7 @@ export const ETIQUETA_CAMPO_DUP: Record<CampoDuplicable, string> = {
   linea: "número de línea",
   activo: "no. de activo",
   nombre_computadora: "nombre de la computadora",
+  sin_serie: "equipos sin serie, idénticos entre sí",
 };
 
 /** Repetir estos datos es un error de captura: no se permite guardar. */
@@ -145,6 +157,30 @@ export function agruparDuplicados(equipos: EquipoRevisable[]): GrupoDuplicado[] 
     }
   }
 
+  // Segundo pase: los que no traen ningún dato único. Antes se colaban en
+  // cada importación y el inventario se llenaba de copias en silencio, sin que
+  // el detector las viera —no comparten nada porque no tienen nada—. Se
+  // agrupan por lo único que queda: ser exactamente iguales.
+  const porHuella = new Map<string, number[]>();
+  for (const e of equipos) {
+    if (valoresComparables(e.numero_serie, parseDetalles(e.detalles)).length) continue;
+    const d = parseDetalles(e.detalles);
+    const huella = [
+      e.tipo,
+      normalizar(e.marca ?? ""),
+      normalizar(e.modelo ?? ""),
+      Object.keys(d)
+        .sort()
+        .map((k) => `${k}=${normalizar(d[k])}`)
+        .join(","),
+    ].join("|");
+    porHuella.set(huella, [...(porHuella.get(huella) ?? []), e.id]);
+  }
+  for (const [huella, ids] of porHuella) {
+    if (ids.length < 2) continue;
+    indice.set(claveGrupo("sin_serie", huella), { campo: "sin_serie", valor: huella, ids });
+  }
+
   const grupos: GrupoDuplicado[] = [];
   for (const [clave, g] of indice) {
     if (g.ids.length < 2) continue;
@@ -159,7 +195,7 @@ export function agruparDuplicados(equipos: EquipoRevisable[]): GrupoDuplicado[] 
   }
 
   // Primero lo que impide guardar, y dentro de eso los grupos más grandes.
-  const orden: CampoDuplicable[] = ["serie", "imei", "linea", "activo", "nombre_computadora"];
+  const orden: CampoDuplicable[] = ["serie", "imei", "linea", "activo", "nombre_computadora", "sin_serie"];
   grupos.sort(
     (a, b) =>
       Number(b.bloqueante) - Number(a.bloqueante) ||

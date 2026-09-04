@@ -56,20 +56,36 @@ export function categorias(): { id: number; nombre: string; descripcion: string 
 
 // ------------------------------------------------------------------ la matriz
 
-export function reglasMatriz(): (ReglaMatriz & { tipo_nombre: string; tipo_codigo: string; tipo_grupo: string | null })[] {
+export type ReglaEnLista = ReglaMatriz & {
+  tipo_nombre: string;
+  tipo_codigo: string;
+  tipo_grupo: string | null;
+  /** Solo en las reglas de una persona: de quién es y qué hace. */
+  persona: string | null;
+  persona_puesto: string | null;
+  persona_departamento: string | null;
+};
+
+export function reglasMatriz(): ReglaEnLista[] {
+  // Una regla dirigida a una persona guarda su número; el nombre y el puesto
+  // se traen aquí para que la pantalla no diga "EMPLEADO: 1239" a secas.
   return db
     .prepare(
-      `SELECT m.*, t.nombre AS tipo_nombre, t.codigo AS tipo_codigo, t.grupo_equivalencia AS tipo_grupo
-       FROM matriz_reglas m JOIN doc_tipos t ON t.id = m.doc_tipo_id
+      `SELECT m.*, t.nombre AS tipo_nombre, t.codigo AS tipo_codigo, t.grupo_equivalencia AS tipo_grupo,
+              em.nombre AS persona, em.puesto AS persona_puesto, em.departamento AS persona_departamento
+       FROM matriz_reglas m
+       JOIN doc_tipos t ON t.id = m.doc_tipo_id
+       LEFT JOIN empleados em ON m.campo = 'EMPLEADO' AND em.numero_empleado = m.valor
        ORDER BY CASE m.campo WHEN 'TODOS' THEN 0 ELSE 1 END, m.campo, m.valor, t.nombre`
     )
-    .all() as (ReglaMatriz & { tipo_nombre: string; tipo_codigo: string; tipo_grupo: string | null })[];
+    .all() as ReglaEnLista[];
 }
 
 const normaliza = (v: string | null | undefined) => (v ?? "").trim().toUpperCase();
 
 export type EmpleadoParaMatriz = {
   id: number;
+  numero_empleado: string | null;
   departamento: string | null;
   area: string | null;
   puesto: string | null;
@@ -98,6 +114,9 @@ export function requisitosSegunMatriz(emp: EmpleadoParaMatriz): Map<number, { ob
     AREA: normaliza(emp.area),
     PUESTO: normaliza(emp.puesto),
     CLASE: normaliza(emp.clase),
+    // La regla se guarda con el número de empleado, no con el id: así se
+    // entiende de un vistazo y sigue diciendo lo mismo si la base se rehace.
+    EMPLEADO: normaliza(emp.numero_empleado),
   };
 
   const salida = new Map<number, { obligatorio: number }>();
@@ -172,7 +191,7 @@ export type ResultadoSincronizacion = { agregados: number; yaNoAplican: number; 
  */
 export function sincronizarRequisitos(empleadoId: number): ResultadoSincronizacion {
   const emp = db
-    .prepare("SELECT id, departamento, area, puesto, clase FROM empleados WHERE id = ?")
+    .prepare("SELECT id, numero_empleado, departamento, area, puesto, clase FROM empleados WHERE id = ?")
     .get(empleadoId) as EmpleadoParaMatriz | undefined;
   if (!emp) return { agregados: 0, yaNoAplican: 0, retirados: 0 };
 

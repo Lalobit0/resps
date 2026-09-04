@@ -462,7 +462,8 @@ export type MovimientoExpediente = {
 export type ReglaMatriz = {
   id: number;
   doc_tipo_id: number;
-  campo: "TODOS" | "DEPARTAMENTO" | "AREA" | "PUESTO" | "CLASE";
+  campo: "TODOS" | "DEPARTAMENTO" | "AREA" | "PUESTO" | "CLASE" | "EMPLEADO";
+  /** El grupo al que aplica; con EMPLEADO, el número de la persona. */
   valor: string | null;
   obligatorio: number | null;
   nota: string | null;
@@ -475,4 +476,10 @@ export const CAMPOS_MATRIZ = [
   { clave: "AREA", etiqueta: "Área" },
   { clave: "PUESTO", etiqueta: "Puesto" },
   { clave: "CLASE", etiqueta: "Clase de empleado" },
+  // Para lo que no cabe en un grupo: al chofer que sí maneja el tractocamión
+  // se le pide la licencia federal, aunque su puesto diga lo mismo que el de
+  // los demás choferes.
+  { clave: "EMPLEADO", etiqueta: "Personas en particular" },
 ] as const;
+
+export const CAMPOS_MATRIZ_VALIDOS = CAMPOS_MATRIZ.map((c) => c.clave) as readonly string[];

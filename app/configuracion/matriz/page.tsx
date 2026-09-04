@@ -3,6 +3,7 @@ import { exigirPagina } from "../../../lib/guardia";
 import { db } from "../../../lib/db";
 import { reglasMatriz, tiposDocumento } from "../../../lib/expedientes";
 import MatrizClient from "../../../components/MatrizClient";
+import type { PersonaOpcion } from "../../../components/SelectorPersonas";
 import { PageHeader } from "../../../components/ui";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,16 @@ export default async function PaginaMatriz() {
     CLASE: valoresDe("clase"),
   };
 
+  // Para las reglas dirigidas a una persona en particular. Va el puesto, que
+  // es lo que confirma que se le está pidiendo al que se quería.
+  const personas = db
+    .prepare(
+      `SELECT numero_empleado, nombre, puesto, departamento FROM empleados
+       WHERE activo = 1 AND numero_empleado IS NOT NULL AND TRIM(numero_empleado) != ''
+       ORDER BY nombre`
+    )
+    .all() as PersonaOpcion[];
+
   const plantilla = (db.prepare("SELECT COUNT(*) AS c FROM empleados WHERE activo = 1").get() as { c: number }).c;
 
   return (
@@ -54,7 +65,7 @@ export default async function PaginaMatriz() {
         </p>
       </div>
 
-      <MatrizClient reglas={reglas} tipos={tipos} opciones={opciones} />
+      <MatrizClient reglas={reglas} tipos={tipos} opciones={opciones} personas={personas} />
     </>
   );
 }

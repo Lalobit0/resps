@@ -539,6 +539,18 @@ CLAÚSULA:
 Cantidad que me será descontada vía nómina en caso de robo o extravío. Estoy de acuerdo que, en caso de terminación de la relación laboral, dicho monto será descontado de mi finiquito.
 Se omitirá el descuento en caso de entregar el equipo.`;
 
+/**
+ * El mismo vale, para lo que no se devuelve.
+ *
+ * Un radio se entrega y el descuento se cancela; una playera o unas botas ya
+ * no se pueden recibir de vuelta, así que la cláusula dice otra cosa. Es el
+ * único renglón que cambia entre los dos formatos.
+ */
+const PLANTILLA_VALE_CONSUMIBLE = PLANTILLA_VALE.replace(
+  "Se omitirá el descuento en caso de entregar el equipo.",
+  "Por sanidad no se recibe a devolución y su costo debe ser descontado de su último recibo de nómina, a excepción de que ya haya cumplido sus 6 meses de vida."
+);
+
 // Las dos formas anteriores de la plantilla. Se usan para reconocerlas y
 // actualizarlas sin pisar la que el usuario haya editado a mano.
 const PLANTILLAS_VALE_ANTERIORES = [
@@ -613,7 +625,8 @@ const PLANTILLAS_SEED: [string, string, string][] = [
   ["carta_celular", "Carta responsiva — Equipo celular", PLANTILLA_CELULAR],
   ["carta_otros", "Carta responsiva — Otros equipos", PLANTILLA_OTROS],
   ["carta_wifi", "Carta responsiva — Uso de red Wi-Fi", PLANTILLA_WIFI],
-  ["vale_descuento", "Vale de descuento de nómina", PLANTILLA_VALE],
+  ["vale_descuento", "Vale de descuento — equipo que se devuelve", PLANTILLA_VALE],
+  ["vale_descuento_consumible", "Vale de descuento — uniforme y consumibles", PLANTILLA_VALE_CONSUMIBLE],
   ["responsiva_devolucion", "Carta de devolución de equipo", PLANTILLA_DEVOLUCION],
 ];
 
@@ -648,6 +661,10 @@ function migrar(db: Database.Database) {
   agregarColumna(db, "responsivas", "firma_empleado", "TEXT");
   agregarColumna(db, "responsivas", "concepto", "TEXT");
   agregarColumna(db, "responsivas", "monto", "REAL");
+  // Cuál de las dos cláusulas llevó el vale. Se guarda para que al rehacer el
+  // PDF salga el mismo papel que se firmó, aunque el concepto se reclasifique
+  // después.
+  agregarColumna(db, "responsivas", "vale_clausula", "TEXT");
   // Quién firmó del lado de la empresa (y si lo hizo por ausencia del titular).
   agregarColumna(db, "responsivas", "firma_autoridad_nombre", "TEXT");
   agregarColumna(db, "responsivas", "firma_autoridad_puesto", "TEXT");
@@ -684,6 +701,9 @@ function migrar(db: Database.Database) {
   // Documentos que valen uno por otro: con el pasaporte, la INE deja de hacer
   // falta. El grupo se edita por tipo desde Configuración.
   agregarColumna(db, "doc_tipos", "grupo_equivalencia", "TEXT");
+  // Qué cláusula le toca al vale de este concepto. Vacío = la de equipo, que
+  // es la del formato que trae RH en papel.
+  agregarColumna(db, "conceptos_vale", "clausula", "TEXT");
   // Qué carga de Excel trajo (o tocó por última vez) este equipo.
   agregarColumna(db, "equipos", "importacion_id", "INTEGER");
   // Deriva el tipo de los equipos capturados antes de la migración
@@ -694,6 +714,39 @@ function migrar(db: Database.Database) {
              departamento = COALESCE(departamento, (SELECT em.departamento FROM empleados em WHERE em.id = equipos.asignado_a)),
              area = COALESCE(area, (SELECT em.area FROM empleados em WHERE em.id = equipos.asignado_a))
            WHERE asignado_a IS NOT NULL AND (departamento IS NULL OR area IS NULL)`);
+}
+
+/**
+ * Qué cláusula le toca a cada concepto del tarifario.
+ *
+ * Lo que se puede devolver —un radio, una navaja, una calculadora— lleva la
+ * cláusula que perdona el descuento al entregarlo; la ropa no se recibe de
+ * vuelta y lleva la otra. Se clasifica una sola vez por palabras del nombre y
+ * a partir de ahí lo decide Recursos Humanos desde el catálogo, concepto por
+ * concepto.
+ */
+function clasificarConceptosVale(db: Database.Database) {
+  const bandera = db.prepare("SELECT valor FROM config WHERE clave = 'vale_clausulas'").get() as
+    | { valor: string }
+    | undefined;
+  if (bandera) return;
+
+  const ROPA = [
+    "PLAYERA",
+    "CAMISA",
+    "PANTALON",
+    "POLO",
+    "CHALECO",
+    "SUDADERA",
+    "CHAMARRA",
+    "GORRA",
+    "BOTAS",
+    "GUANTES",
+  ];
+  const marcar = db.prepare("UPDATE conceptos_vale SET clausula = 'CONSUMIBLE' WHERE UPPER(concepto) LIKE ?");
+  for (const palabra of ROPA) marcar.run(`%${palabra}%`);
+
+  db.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('vale_clausulas', '1')").run();
 }
 
 function seed(db: Database.Database) {
@@ -712,8 +765,16 @@ function seed(db: Database.Database) {
   const actVale = db.prepare("UPDATE plantillas SET contenido = ? WHERE clave = 'vale_descuento' AND contenido = ?");
   for (const anterior of PLANTILLAS_VALE_ANTERIORES) actVale.run(PLANTILLA_VALE, anterior);
 
+  // El nombre de la plantilla del vale cambió cuando aparecieron las dos
+  // variantes: antes era la única y no hacía falta distinguirla.
+  db.prepare(
+    "UPDATE plantillas SET nombre = ? WHERE clave = 'vale_descuento' AND nombre = 'Vale de descuento de nómina'"
+  ).run("Vale de descuento — equipo que se devuelve");
+
   const insCon = db.prepare("INSERT OR IGNORE INTO conceptos_vale (concepto, monto, texto) VALUES (?, ?, ?)");
   for (const [concepto, monto, texto] of CONCEPTOS_VALE_SEED) insCon.run(concepto, monto, texto);
+
+  clasificarConceptosVale(db);
 
   const insConf = db.prepare("INSERT OR IGNORE INTO config (clave, valor) VALUES (?, ?)");
   insConf.run("empresa", "Sultana Packaging");

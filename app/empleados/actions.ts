@@ -9,6 +9,7 @@ import { sincronizarRequisitos } from "../../lib/expedientes";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
 import { exigir, usuarioActual } from "../../lib/auth";
 import { ausentesDe } from "../../lib/bajas";
+import { marcarGafetesPorRecoger } from "../../lib/gafetes";
 import { cerrarImportacion, registrarImportacion } from "../../lib/importaciones";
 
 function revalidar() {
@@ -488,6 +489,11 @@ export async function darDeBajaEmpleado(datos: {
     });
     aplicar();
 
+    // Su gafete no se cancela solo: queda "por recoger", que es lo que de
+    // verdad pasa —la tarjeta sigue abriendo hasta que alguien la quite del
+    // lector—, y así no se pierde de vista que falta recuperarla.
+    const gafetesMarcados = marcarGafetesPorRecoger(datos.id, fecha);
+
     // El histórico se anota fuera de la transacción: que falle una nota no
     // debe deshacer la baja.
     for (const eq of devueltos) {
@@ -530,7 +536,10 @@ export async function darDeBajaEmpleado(datos: {
               .join(", ")}. `
           : "No traía equipos que recibir. ") +
         (pendientes.length
-          ? `⚠️ Siguen a su nombre ${pendientes.length}: ${pendientes.map((e) => e.codigo).join(", ")}.`
+          ? `⚠️ Siguen a su nombre ${pendientes.length}: ${pendientes.map((e) => e.codigo).join(", ")}. `
+          : "") +
+        (gafetesMarcados
+          ? `⚠️ ${gafetesMarcados} gafete(s) quedaron por recoger: la tarjeta sigue abriendo hasta que se quite del lector.`
           : ""),
     };
   } catch (e) {

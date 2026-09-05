@@ -20,6 +20,8 @@ export const PERMISOS = [
   // --- Personal (la tabla de empleados es compartida por TI y RH) ---
   { clave: "empleados.ver", grupo: "Personal", nombre: "Ver el directorio de personal", ayuda: "Consultar la lista de empleados y su ficha." },
   { clave: "empleados.editar", grupo: "Personal", nombre: "Dar de alta, editar y dar de baja personal", ayuda: "Modificar la ficha del empleado y registrar su baja." },
+  { clave: "gafetes.ver", grupo: "Personal", nombre: "Ver la matriz de gafetes", ayuda: "Consultar quién tiene qué gafete y qué puertas abre." },
+  { clave: "gafetes.editar", grupo: "Personal", nombre: "Asignar gafetes y accesos", ayuda: "Dar de alta gafetes, cambiar su perfil y configurar puertas y perfiles." },
 
   // --- Inventario y responsivas (lo que ya existía) ---
   { clave: "ti.ver", grupo: "Tecnología", nombre: "Ver inventario y responsivas", ayuda: "Consultar equipos, líneas, cartas responsivas y mantenimientos." },
@@ -101,7 +103,7 @@ export const ROLES_SEMILLA: RolSemilla[] = [
     clave: "ADMIN_RH",
     nombre: "Administrador de RH",
     descripcion: "Manda en Recursos Humanos: configura el catálogo documental, valida, corrige y ve todo el expediente.",
-    permisos: [...TODOS_EXP, "empleados.ver", "empleados.editar", "auditoria.ver"],
+    permisos: [...TODOS_EXP, "empleados.ver", "empleados.editar", "gafetes.ver", "gafetes.editar", "auditoria.ver"],
   },
   {
     clave: "ANALISTA_RH",
@@ -117,24 +119,51 @@ export const ROLES_SEMILLA: RolSemilla[] = [
       "exp.tablero",
       "exp.exportar",
       "empleados.ver",
+      "gafetes.ver",
+      "gafetes.editar",
     ],
   },
   {
     clave: "VALIDADOR_RH",
     nombre: "Validador de RH",
     descripcion: "Revisa lo que se cargó y decide si pasa o se rechaza. No carga ni corrige.",
-    permisos: ["exp.ver", "exp.ver_documentos", "exp.validar", "exp.rechazar", "exp.comentar", "exp.tablero", "empleados.ver"],
+    permisos: [
+      "exp.ver",
+      "exp.ver_documentos",
+      "exp.validar",
+      "exp.rechazar",
+      "exp.comentar",
+      "exp.tablero",
+      "empleados.ver",
+      "gafetes.ver",
+    ],
   },
   {
     clave: "AUDITOR",
     nombre: "Auditor",
     descripcion: "Solo lectura. Ve el cumplimiento y la bitácora, no toca nada.",
-    permisos: ["exp.ver", "exp.ver_documentos", "exp.tablero", "exp.exportar", "auditoria.ver", "empleados.ver"],
+    permisos: [
+      "exp.ver",
+      "exp.ver_documentos",
+      "exp.tablero",
+      "exp.exportar",
+      "auditoria.ver",
+      "empleados.ver",
+      "gafetes.ver",
+    ],
   },
   {
     clave: "SISTEMAS",
     nombre: "Sistemas / TI",
     descripcion: "Inventario, responsivas, líneas y mantenimientos. No entra a los expedientes de RH.",
-    permisos: ["ti.ver", "ti.editar", "empleados.ver", "empleados.editar", "config.administrar", "auditoria.ver"],
+    permisos: [
+      "ti.ver",
+      "ti.editar",
+      "empleados.ver",
+      "empleados.editar",
+      "gafetes.ver",
+      "config.administrar",
+      "auditoria.ver",
+    ],
   },
 ];

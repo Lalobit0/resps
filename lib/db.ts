@@ -192,6 +192,70 @@ CREATE TABLE IF NOT EXISTS importaciones (
 );
 
 -- ======================================================================
+-- Matriz de gafetes de acceso (FRH-14). Quién puede entrar por qué puerta.
+-- El control de accesos vive en la consola del lector de tarjetas, que no
+-- habla con nadie: la matriz en Excel era la única constancia de a quién se
+-- le dio qué, y no se cruzaba con la plantilla ni con las bajas.
+-- ======================================================================
+
+CREATE TABLE IF NOT EXISTS puertas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- El número con el que la conoce todo mundo: "la (7)".
+  numero INTEGER NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  activo INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS gafete_perfiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- La letra del formato: A, B, C…
+  clave TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  activo INTEGER NOT NULL DEFAULT 1
+);
+
+-- Qué puertas abre cada perfil.
+CREATE TABLE IF NOT EXISTS perfil_puertas (
+  perfil_id INTEGER NOT NULL REFERENCES gafete_perfiles(id) ON DELETE CASCADE,
+  puerta_id INTEGER NOT NULL REFERENCES puertas(id) ON DELETE CASCADE,
+  PRIMARY KEY (perfil_id, puerta_id)
+);
+
+CREATE TABLE IF NOT EXISTS gafetes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  -- Lo que trae impreso la tarjeta. Puede venir doble ("...995 - - ...319")
+  -- cuando el gafete se repuso, así que se guarda como texto.
+  numero TEXT NOT NULL,
+  empleado_id INTEGER REFERENCES empleados(id) ON DELETE SET NULL,
+  -- ACTIVO | POR_RECOGER | RECOGIDO | EXTRAVIADO | CANCELADO
+  estado TEXT NOT NULL DEFAULT 'ACTIVO',
+  fecha_alta TEXT,
+  fecha_baja TEXT,
+  notas TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_gafetes_empleado ON gafetes (empleado_id);
+
+-- Los perfiles que se le dieron. Son varios: en el formato aparecen como
+-- "C y D" o "C,D y F", que es la misma idea escrita de seis maneras.
+CREATE TABLE IF NOT EXISTS gafete_perfil (
+  gafete_id INTEGER NOT NULL REFERENCES gafetes(id) ON DELETE CASCADE,
+  perfil_id INTEGER NOT NULL REFERENCES gafete_perfiles(id) ON DELETE CASCADE,
+  PRIMARY KEY (gafete_id, perfil_id)
+);
+
+-- Las puertas que de verdad abre. Salen de sumar sus perfiles, pero se
+-- guardan aparte porque en el formato hay casos que no cuadran con la suma
+-- —a alguien se le abrió una puerta de más— y eso hay que poder verlo.
+CREATE TABLE IF NOT EXISTS gafete_puertas (
+  gafete_id INTEGER NOT NULL REFERENCES gafetes(id) ON DELETE CASCADE,
+  puerta_id INTEGER NOT NULL REFERENCES puertas(id) ON DELETE CASCADE,
+  PRIMARY KEY (gafete_id, puerta_id)
+);
+
+-- ======================================================================
 -- Identidad. Hasta ahora el sistema no sabía quién lo estaba usando; con
 -- expedientes de personal eso deja de ser aceptable: hay que poder contestar
 -- quién validó, quién descargó y quién cambió un permiso.
@@ -753,6 +817,60 @@ function clasificarConceptosVale(db: Database.Database) {
   db.prepare("INSERT OR REPLACE INTO config (clave, valor) VALUES ('vale_clausulas', '1')").run();
 }
 
+/**
+ * Las puertas y los perfiles del formato FRH-14, tal como están en el papel.
+ *
+ * Se siembran una sola vez: a partir de ahí se administran desde la pantalla,
+ * porque las puertas cambian —se pone un lector nuevo, se cierra un pasillo—
+ * y los perfiles con ellas.
+ */
+const PUERTAS_SEED: [number, string][] = [
+  [1, "Entrada Principal"],
+  [2, "Recepción"],
+  [3, "Pasillo"],
+  [4, "Salas de Juntas"],
+  [5, "Admin 2do Piso"],
+  [6, "Contabilidad"],
+  [7, "Producción p/Alta"],
+  [8, "Solo Embarques"],
+  [9, "Pasillo Embarques"],
+];
+
+const PERFILES_SEED: [string, string, string, number[]][] = [
+  ["A", "TODO ACCESO", "Acceso de la Puerta (1) a la (8)", [1, 2, 3, 4, 5, 6, 7, 8]],
+  ["B", "NORMAL_NOCONTAB", "Acceso de Puerta (3), (4), (5) y (7)", [3, 4, 5, 7]],
+  ["C", "CONTABILIDAD_LIMITADO", "Acceso de Puerta (3), (4), (5), (6) y (7)", [3, 4, 5, 6, 7]],
+  ["D", "EMBARQUES ONLY", "Acceso de Puerta (8)", [8]],
+  ["E", "PUERTA PRINCIPAL", "Acceso de Puerta (1)", [1]],
+  ["F", "PASILLO EMBARQUES", "Acceso de Puerta (9)", [9]],
+];
+
+function sembrarGafetes(db: Database.Database) {
+  const insPuerta = db.prepare("INSERT OR IGNORE INTO puertas (numero, nombre) VALUES (?, ?)");
+  for (const [numero, nombre] of PUERTAS_SEED) insPuerta.run(numero, nombre);
+
+  const insPerfil = db.prepare("INSERT OR IGNORE INTO gafete_perfiles (clave, nombre, descripcion) VALUES (?, ?, ?)");
+  const buscarPerfil = db.prepare("SELECT id FROM gafete_perfiles WHERE clave = ?");
+  const buscarPuerta = db.prepare("SELECT id FROM puertas WHERE numero = ?");
+  const insLiga = db.prepare("INSERT OR IGNORE INTO perfil_puertas (perfil_id, puerta_id) VALUES (?, ?)");
+
+  for (const [clave, nombre, descripcion, puertas] of PERFILES_SEED) {
+    insPerfil.run(clave, nombre, descripcion);
+    const perfil = buscarPerfil.get(clave) as { id: number } | undefined;
+    if (!perfil) continue;
+    // Solo se arman las puertas de un perfil recién sembrado: si alguien ya
+    // las ajustó, no se le vuelven a poner las de fábrica.
+    const yaTiene = db.prepare("SELECT COUNT(*) AS c FROM perfil_puertas WHERE perfil_id = ?").get(perfil.id) as {
+      c: number;
+    };
+    if (yaTiene.c > 0) continue;
+    for (const n of puertas) {
+      const pu = buscarPuerta.get(n) as { id: number } | undefined;
+      if (pu) insLiga.run(perfil.id, pu.id);
+    }
+  }
+}
+
 function seed(db: Database.Database) {
   const insPl = db.prepare("INSERT OR IGNORE INTO plantillas (clave, nombre, contenido) VALUES (?, ?, ?)");
   for (const [clave, nombre, contenido] of PLANTILLAS_SEED) insPl.run(clave, nombre, contenido);
@@ -798,6 +916,7 @@ function seed(db: Database.Database) {
   insConf.run("app_nombre", "Control Sultana");
 
   sembrarRoles(db);
+  sembrarGafetes(db);
   sembrarCatalogoDocumental(db);
 }
 

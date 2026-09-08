@@ -45,6 +45,7 @@ export default function BajasClient({
 
   const conEquipo = useMemo(() => pendientes.filter((a) => a.equipos.length).length, [pendientes]);
   const conVale = useMemo(() => pendientes.filter((a) => a.vales.length).length, [pendientes]);
+  const conGafete = useMemo(() => pendientes.filter((a) => a.gafetes.length).length, [pendientes]);
 
   const alternar = (id: number) =>
     setElegidos((s) => {
@@ -69,12 +70,16 @@ export default function BajasClient({
     const equipos = lista.reduce((n, a) => n + (entregados[a.id]?.size ?? 0), 0);
     const quedan = lista.reduce((n, a) => n + a.equipos.length - (entregados[a.id]?.size ?? 0), 0);
     const vales = lista.reduce((n, a) => n + a.vales.length, 0);
+    const gafetes = lista.reduce((n, a) => n + a.gafetes.length, 0);
     if (
       !confirm(
         `Se va a dar de baja a ${lista.length} ${lista.length === 1 ? "persona" : "personas"}.\n\n` +
           (equipos ? `${equipos} equipo(s) vuelven al inventario como disponibles.\n` : "") +
           (quedan ? `⚠️ ${quedan} equipo(s) se quedan a nombre de quien se fue: falta recuperarlos.\n` : "") +
           (vales ? `⚠️ Hay ${vales} vale(s) de descuento vigentes. La baja no los cancela.\n` : "") +
+          (gafetes
+            ? `⚠️ ${gafetes} gafete(s) quedan por recoger: siguen abriendo hasta que se quiten del lector.\n`
+            : "") +
           `\n¿Continuar?`
       )
     )
@@ -132,6 +137,7 @@ export default function BajasClient({
             por una.
             {conEquipo ? ` ${conEquipo} ${conEquipo === 1 ? "trae equipo" : "traen equipo"} a su nombre.` : ""}
             {conVale ? ` ${conVale} ${conVale === 1 ? "tiene un vale" : "tienen vales"} de descuento vigente.` : ""}
+            {conGafete ? ` ${conGafete} ${conGafete === 1 ? "trae gafete" : "traen gafete"} de acceso.` : ""}
           </p>
 
           <div className="mt-4 space-y-3">
@@ -162,6 +168,11 @@ export default function BajasClient({
                         )}
                         {a.cartas.length ? <Badge tono="petrol">{a.cartas.length} carta(s) vigente(s)</Badge> : null}
                         {a.vales.length ? <Badge tono="rojo">{a.vales.length} vale(s) de descuento</Badge> : null}
+                        {a.gafetes.length ? (
+                          <Badge tono="ambar">
+                            {a.gafetes.length} gafete{a.gafetes.length === 1 ? "" : "s"}
+                          </Badge>
+                        ) : null}
                         {a.mantenimientos ? <Badge tono="gris">{a.mantenimientos} mantenimiento(s)</Badge> : null}
                         {a.documentos ? <Badge tono="gris">{a.documentos} documento(s)</Badge> : null}
                       </span>
@@ -199,6 +210,15 @@ export default function BajasClient({
                         ))}
                       </ul>
                     </div>
+                  ) : null}
+
+                  {marcado && a.gafetes.length ? (
+                    <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      Trae {a.gafetes.length === 1 ? "el gafete" : "los gafetes"}{" "}
+                      {a.gafetes.map((g) => `${g.numero}${g.perfiles ? ` (perfil ${g.perfiles})` : ""}`).join(", ")}. Al
+                      darla de baja {a.gafetes.length === 1 ? "queda" : "quedan"} por recoger — la tarjeta sigue
+                      abriendo hasta que alguien la quite del lector.
+                    </p>
                   ) : null}
 
                   {marcado && a.vales.length ? (
@@ -291,6 +311,9 @@ export default function BajasClient({
                       )}
                       {b.cartas_vigentes ? <Badge tono="ambar">{b.cartas_vigentes} carta(s) sin cerrar</Badge> : null}
                       {b.vales_vigentes ? <Badge tono="ambar">{b.vales_vigentes} vale(s) vigente(s)</Badge> : null}
+                      {b.gafetes_sin_recoger ? (
+                        <Badge tono="rojo">Gafete sin recoger: {b.gafetes_sin_recoger}</Badge>
+                      ) : null}
                     </div>
                   </td>
                   <td className={tdCls}>

@@ -42,24 +42,46 @@ export default function GafetesClient({
   const [form, setForm] = useState<Gafete | "nuevo" | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState("");
+  const [depto, setDepto] = useState("");
+  const [perfil, setPerfil] = useState("");
+  const [puerta, setPuerta] = useState("");
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [pendiente, iniciar] = useTransition();
   const archivo = useRef<HTMLInputElement>(null);
 
+  // Las áreas que de verdad aparecen, para no ofrecer un filtro vacío.
+  const departamentos = useMemo(
+    () => [...new Set(lista.map((g) => g.departamento).filter((d): d is string => !!d))].sort(),
+    [lista]
+  );
+
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
+    const nPuerta = Number(puerta);
     return lista.filter((g) => {
       if (filtro === "activos" && g.estado !== "ACTIVO") return false;
       if (filtro === "por_recoger" && g.estado !== "POR_RECOGER") return false;
       if (filtro === "sin_dueno" && g.empleado_id) return false;
       if (filtro === "de_bajas" && !(g.estado === "ACTIVO" && g.empleado_activo === 0)) return false;
       if (filtro === "difieren" && !hayDiferencia(g)) return false;
+      if (depto && g.departamento !== depto) return false;
+      if (perfil === "__sin__" ? g.perfiles.length > 0 : perfil && !g.perfiles.includes(perfil)) return false;
+      if (nPuerta && !g.puertas.includes(nPuerta)) return false;
       if (!q) return true;
       return `${g.numero} ${g.nombre ?? ""} ${g.numero_empleado ?? ""} ${g.puesto ?? ""} ${g.departamento ?? ""} ${g.perfiles.join("")}`
         .toLowerCase()
         .includes(q);
     });
-  }, [lista, busqueda, filtro]);
+  }, [lista, busqueda, filtro, depto, perfil, puerta]);
+
+  const hayFiltro = !!(busqueda.trim() || filtro || depto || perfil || puerta);
+  const limpiar = () => {
+    setBusqueda("");
+    setFiltro("");
+    setDepto("");
+    setPerfil("");
+    setPuerta("");
+  };
 
   function hayDiferencia(g: Gafete) {
     const d = difiereDelPerfil(g, perfiles);
@@ -122,14 +144,44 @@ export default function GafetesClient({
           placeholder="🔍 Gafete, nombre, número, puesto o perfil…"
           className={`${inputCls} max-w-xs`}
         />
+        <select className={`${inputCls} max-w-[210px]`} value={depto} onChange={(e) => setDepto(e.target.value)}>
+          <option value="">Todas las áreas</option>
+          {departamentos.map((d) => (
+            <option key={d} value={d}>
+              {d}
+            </option>
+          ))}
+        </select>
+        <select className={`${inputCls} max-w-[230px]`} value={perfil} onChange={(e) => setPerfil(e.target.value)}>
+          <option value="">Todos los perfiles</option>
+          {perfiles.map((p) => (
+            <option key={p.id} value={p.clave}>
+              {p.clave} · {p.nombre}
+            </option>
+          ))}
+          <option value="__sin__">Sin perfil</option>
+        </select>
+        <select className={`${inputCls} max-w-[210px]`} value={puerta} onChange={(e) => setPuerta(e.target.value)}>
+          <option value="">Cualquier puerta</option>
+          {puertas.map((p) => (
+            <option key={p.id} value={p.numero}>
+              Abre la ({p.numero}) {p.nombre}
+            </option>
+          ))}
+        </select>
         <select className={`${inputCls} max-w-[220px]`} value={filtro} onChange={(e) => setFiltro(e.target.value)}>
-          <option value="">Todos los gafetes</option>
+          <option value="">Cualquier situación</option>
           <option value="activos">Solo activos</option>
           <option value="por_recoger">Por recoger</option>
           <option value="sin_dueno">Sin asignar</option>
           <option value="de_bajas">De gente que ya no está</option>
           <option value="difieren">No cuadran con su perfil</option>
         </select>
+        {hayFiltro ? (
+          <button className={btnGhost} onClick={limpiar}>
+            ✕ Quitar filtros
+          </button>
+        ) : null}
         <input ref={archivo} type="file" accept=".xlsx,.xls" className="hidden" onChange={subir} />
         <button className={btnGhost} disabled={pendiente} onClick={() => archivo.current?.click()}>
           {pendiente ? "Procesando…" : "↥ Importar matriz"}
@@ -154,8 +206,25 @@ export default function GafetesClient({
         />
       ) : null}
 
+      {/* --- Qué es cada columna --- */}
+      <Card className="mb-3 py-3">
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-soft">
+          Las puertas, por número
+        </p>
+        <ul className="flex flex-wrap gap-x-5 gap-y-1.5">
+          {puertas.map((p) => (
+            <li key={p.id} className={`text-sm ${p.activo ? "text-ink" : "text-soft line-through"}`}>
+              <span className="font-bold text-kraft-dark">({p.numero})</span> {p.nombre}
+            </li>
+          ))}
+        </ul>
+      </Card>
+
       <p className="mb-2 text-xs text-soft">
         {visibles.length} de {lista.length} gafetes
+        {puerta
+          ? ` · quiénes abren la (${puerta}) ${puertas.find((p) => String(p.numero) === puerta)?.nombre ?? ""}`
+          : ""}
       </p>
 
       {visibles.length === 0 ? (
@@ -170,11 +239,19 @@ export default function GafetesClient({
             <thead className="border-b border-line bg-paper/60">
               <tr>
                 <th className={thCls}>Gafete</th>
-                <th className={thCls}>Quién lo trae</th>
+                <th className={`${thCls} min-w-[15rem]`}>Quién lo trae</th>
                 <th className={thCls}>Perfil</th>
                 {puertas.map((p) => (
-                  <th key={p.id} className={`${thCls} text-center`} title={p.nombre}>
-                    ({p.numero})
+                  <th key={p.id} className={`${thCls} px-1 text-center align-bottom`} title={p.nombre}>
+                    <span className="block text-sm text-ink">({p.numero})</span>
+                    {/* El nombre completo cabe de lado: nueve columnas no dan
+                        para escribirlo horizontal sin partir la tabla. */}
+                    <span
+                      className="mx-auto mt-1 block whitespace-nowrap text-[10px] font-medium normal-case text-soft"
+                      style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", height: "6.5rem" }}
+                    >
+                      {p.nombre}
+                    </span>
                   </th>
                 ))}
                 <th className={thCls}>Estado</th>
@@ -234,8 +311,10 @@ export default function GafetesClient({
                         {ETIQUETA_ESTADO_GAFETE[g.estado] ?? g.estado}
                       </Badge>
                     </td>
-                    <td className={tdCls}>
-                      <div className="flex flex-wrap gap-1.5">
+                    <td className={`${tdCls} whitespace-nowrap`}>
+                      {/* Nueve columnas de puertas dejan poco ancho: las
+                          acciones van en una sola línea y compactas. */}
+                      <div className="flex items-center gap-1">
                         <button className={btnGhost} onClick={() => setForm(g)}>
                           Editar
                         </button>
@@ -243,20 +322,22 @@ export default function GafetesClient({
                           <button
                             className={btnGhost}
                             disabled={pendiente}
+                            title="Marcar que la tarjeta ya se recuperó"
                             onClick={() => ejecutar(() => cambiarEstadoGafete(g.id, "RECOGIDO"))}
                           >
-                            Ya se recogió
+                            Recogido
                           </button>
                         ) : null}
                         <button
                           className={btnDanger}
                           disabled={pendiente}
+                          title={`Borrar el gafete ${g.numero}`}
                           onClick={() => {
                             if (!confirm(`Se va a borrar el gafete ${g.numero} del sistema.\n\n¿Continuar?`)) return;
                             ejecutar(() => eliminarGafete(g.id));
                           }}
                         >
-                          Quitar
+                          ✕
                         </button>
                       </div>
                     </td>

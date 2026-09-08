@@ -27,6 +27,8 @@ export type LigadoAlEmpleado = {
   cartas: { folio: string; clase: string }[];
   /** Vales de descuento vigentes. No se cierran solos: son dinero. */
   vales: { folio: string; concepto: string | null; monto: number | null }[];
+  /** Gafetes vivos: la tarjeta sigue abriendo hasta que se recoja. */
+  gafetes: { numero: string; estado: string; perfiles: string | null }[];
   /** Mantenimientos programados de sus equipos. */
   mantenimientos: number;
   /** Documentos del expediente que ya tiene cargados. */
@@ -70,6 +72,19 @@ export function ligadoA(empleadoId: number): LigadoAlEmpleado {
     )
     .all(empleadoId) as LigadoAlEmpleado["vales"];
 
+  // El gafete no se cancela al dar la baja: queda por recoger, porque la
+  // tarjeta sigue abriendo hasta que alguien la quite del lector.
+  const gafetes = db
+    .prepare(
+      `SELECT g.numero, g.estado,
+              (SELECT GROUP_CONCAT(p.clave, ', ') FROM gafete_perfil gp
+                JOIN gafete_perfiles p ON p.id = gp.perfil_id WHERE gp.gafete_id = g.id) AS perfiles
+       FROM gafetes g
+       WHERE g.empleado_id = ? AND g.estado IN ('ACTIVO', 'POR_RECOGER', 'EXTRAVIADO')
+       ORDER BY g.numero`
+    )
+    .all(empleadoId) as LigadoAlEmpleado["gafetes"];
+
   const mantenimientos = (
     db
       .prepare(
@@ -87,7 +102,7 @@ export function ligadoA(empleadoId: number): LigadoAlEmpleado {
       .get(empleadoId) as { c: number }
   ).c;
 
-  return { equipos, cartas, vales, mantenimientos, documentos };
+  return { equipos, cartas, vales, gafetes, mantenimientos, documentos };
 }
 
 /**
@@ -148,6 +163,8 @@ export type EmpleadoDeBaja = {
   pendientes: string | null;
   cartas_vigentes: number;
   vales_vigentes: number;
+  /** Tarjetas que siguen sin recogerse. */
+  gafetes_sin_recoger: string | null;
 };
 
 /** Los que ya no trabajan aquí, con lo que quedó sin resolver. */
@@ -161,7 +178,10 @@ export function bajas(limite = 300): EmpleadoDeBaja[] {
                 WHERE r.empleado_id = e.id AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE' AND r.clase != 'VALE')
                 AS cartas_vigentes,
               (SELECT COUNT(*) FROM responsivas r
-                WHERE r.empleado_id = e.id AND r.clase = 'VALE' AND r.estado = 'VIGENTE') AS vales_vigentes
+                WHERE r.empleado_id = e.id AND r.clase = 'VALE' AND r.estado = 'VIGENTE') AS vales_vigentes,
+              (SELECT GROUP_CONCAT(g.numero, ', ') FROM gafetes g
+                WHERE g.empleado_id = e.id AND g.estado IN ('ACTIVO', 'POR_RECOGER', 'EXTRAVIADO'))
+                AS gafetes_sin_recoger
        FROM empleados e
        WHERE e.activo = 0
        ORDER BY COALESCE(e.fecha_baja, '') DESC, e.nombre

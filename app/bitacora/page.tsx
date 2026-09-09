@@ -1,7 +1,7 @@
 import { db } from "../../lib/db";
 import type { Bitacora } from "../../lib/types";
-import { Badge, Card, Empty, PageHeader, tdCls, thCls } from "../../components/ui";
-import RevertirBtn from "../../components/RevertirBtn";
+import { PageHeader } from "../../components/ui";
+import BitacoraClient from "../../components/BitacoraClient";
 import BitacoraFiltros from "../../components/BitacoraFiltros";
 import { exigirPagina } from "../../lib/guardia";
 
@@ -46,16 +46,6 @@ const ETIQUETA_ACCION: Record<string, string> = {
   MATRIZ_BAJA: "Regla eliminada",
   MATRIZ_PAQUETE: "Paquete básico aplicado",
 };
-
-function responsivaDe(b: Bitacora): number | null {
-  if (b.accion !== "ELIMINAR_RESPONSIVA" || !b.snapshot) return null;
-  try {
-    const s = JSON.parse(b.snapshot) as { responsivaId?: number };
-    return s.responsivaId ?? null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * La bitácora.
@@ -125,81 +115,7 @@ export default async function PaginaBitacora({
 
       <BitacoraFiltros entidades={entidades} q={q} entidad={entidad} denegados={soloDenegados} />
 
-      {entradas.length === 0 ? (
-        <Empty>No hay movimientos que coincidan con eso.</Empty>
-      ) : (
-        <Card className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead className="border-b border-line bg-paper/70">
-                <tr>
-                  <th className={thCls}>Fecha</th>
-                  <th className={thCls}>Quién</th>
-                  <th className={thCls}>Acción</th>
-                  <th className={thCls}>Detalle</th>
-                  <th className={thCls}>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entradas.map((b) => (
-                  <tr key={b.id} className="border-b border-line/60 last:border-0 align-top">
-                    <td className={`${tdCls} whitespace-nowrap text-xs text-soft`}>{b.fecha}</td>
-                    <td className={`${tdCls} text-xs`}>
-                      <span className="text-ink">{b.usuario ?? "—"}</span>
-                      {b.ip ? <div className="text-soft">{b.ip}</div> : null}
-                    </td>
-                    <td className={`${tdCls} text-xs`}>
-                      {ETIQUETA_ACCION[b.accion] ?? b.accion}
-                      {b.entidad ? <div className="text-soft">{b.entidad.toLowerCase()}</div> : null}
-                    </td>
-                    <td className={tdCls}>
-                      {b.descripcion}
-                      {b.antes || b.despues ? (
-                        <details className="mt-1">
-                          <summary className="cursor-pointer text-xs text-soft">Ver qué cambió</summary>
-                          <div className="mt-1 grid gap-2 md:grid-cols-2">
-                            {b.antes ? (
-                              <pre className="overflow-x-auto rounded bg-paper p-2 text-[11px] text-soft">
-                                antes: {b.antes}
-                              </pre>
-                            ) : null}
-                            {b.despues ? (
-                              <pre className="overflow-x-auto rounded bg-paper p-2 text-[11px] text-soft">
-                                después: {b.despues}
-                              </pre>
-                            ) : null}
-                          </div>
-                        </details>
-                      ) : null}
-                    </td>
-                    <td className={tdCls}>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {b.resultado === "DENEGADO" ? <Badge tono="rojo">Rechazado</Badge> : null}
-                        {responsivaDe(b) && !b.revertida ? (
-                          <a
-                            href={`/api/pdf/${responsivaDe(b)}`}
-                            target="_blank"
-                            className="rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper"
-                          >
-                            Ver PDF
-                          </a>
-                        ) : null}
-                        {b.revertible && !b.revertida ? (
-                          <RevertirBtn id={b.id} />
-                        ) : b.revertida ? (
-                          <Badge tono="gris">Revertida</Badge>
-                        ) : b.resultado === "DENEGADO" ? null : (
-                          <span className="text-soft">—</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
+      <BitacoraClient entradas={entradas} etiquetaAccion={ETIQUETA_ACCION} />
     </>
   );
 }

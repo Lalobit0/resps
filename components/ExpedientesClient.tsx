@@ -3,7 +3,25 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { ResumenExpediente } from "../lib/expedientes";
-import { Badge, Empty, Label, inputCls, tdCls, thCls } from "./ui";
+import { Badge, Empty, Label, inputCls, tdCls } from "./ui";
+import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
+
+/** Lo mismo que dicen las pastillas de "qué le pasa", para ordenar y filtrar. */
+function textoSituacion(c: ResumenExpediente["cumplimiento"]): string {
+  return [
+    c.nivel === "COMPLETO" && c.total > 0 ? "Completo" : "",
+    c.criticosPendientes ? `${c.criticosPendientes} críticos` : "",
+    c.vencidos ? `${c.vencidos} vencidos` : "",
+    c.rechazados ? `${c.rechazados} rechazados` : "",
+    c.faltantes ? `${c.faltantes} faltantes` : "",
+    c.porVencer ? `${c.porVencer} por vencer` : "",
+    c.porValidar ? `${c.porValidar} por validar` : "",
+    c.noAplica ? `${c.noAplica} no aplican` : "",
+    c.total === 0 ? "Sin requisitos" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 /**
  * Barra de cumplimiento.
@@ -97,6 +115,96 @@ export default function ExpedientesClient({
     });
   }, [filas, busqueda, departamento, nivel, problema, orden]);
 
+  const columnas = useMemo<Columna<ResumenExpediente>[]>(
+    () => [
+      {
+        clave: "empleado",
+        titulo: "Empleado",
+        ancho: "22%",
+        valor: (f) => f.nombre,
+        claseCelda: tdCls,
+        celda: (f) => (
+          <>
+            <Link href={`/expedientes/${f.empleado_id}`} className="font-medium text-ink hover:underline">
+              {f.nombre}
+            </Link>
+            <div className="font-mono text-[11px] text-soft">{f.numero_empleado}</div>
+          </>
+        ),
+      },
+      {
+        clave: "departamento",
+        titulo: "Departamento",
+        ancho: "14%",
+        valor: (f) => f.departamento,
+        claseCelda: tdCls,
+        celda: (f) => (
+          <>
+            {f.departamento}
+            {f.area ? <div className="text-xs text-soft">{f.area}</div> : null}
+          </>
+        ),
+      },
+      { clave: "puesto", titulo: "Puesto", ancho: "16%", valor: (f) => f.puesto, claseCelda: `${tdCls} text-soft` },
+      {
+        clave: "cumplimiento",
+        titulo: "Cumplimiento",
+        ancho: "18%",
+        valor: (f) => f.cumplimiento.porcentaje,
+        claseCelda: tdCls,
+        celda: (f) => (
+          <>
+            <Barra porcentaje={f.cumplimiento.porcentaje} nivel={f.cumplimiento.nivel} />
+            <div className="mt-1 text-xs text-soft">
+              {f.cumplimiento.obligatoriosCubiertos} de {f.cumplimiento.obligatorios} obligatorios
+            </div>
+          </>
+        ),
+      },
+      {
+        clave: "situacion",
+        titulo: "Qué le pasa",
+        ancho: "22%",
+        valor: (f) => textoSituacion(f.cumplimiento),
+        claseCelda: tdCls,
+        celda: (f) => {
+          const c = f.cumplimiento;
+          return (
+            <div className="flex flex-wrap gap-1">
+              {/* "Completo" solo dice algo cuando de verdad se le pidió algo. */}
+              {c.nivel === "COMPLETO" && c.total > 0 ? <Badge tono="verde">Completo</Badge> : null}
+              {c.criticosPendientes ? <Badge tono="rojo">{c.criticosPendientes} críticos</Badge> : null}
+              {c.vencidos ? <Badge tono="rojo">{c.vencidos} vencidos</Badge> : null}
+              {c.rechazados ? <Badge tono="rojo">{c.rechazados} rechazados</Badge> : null}
+              {c.faltantes ? <Badge tono="ambar">{c.faltantes} faltantes</Badge> : null}
+              {c.porVencer ? <Badge tono="ambar">{c.porVencer} por vencer</Badge> : null}
+              {c.porValidar ? <Badge tono="ambar">{c.porValidar} por validar</Badge> : null}
+              {c.noAplica ? <Badge tono="gris">{c.noAplica} no aplican</Badge> : null}
+              {c.total === 0 ? <Badge tono="gris">Sin requisitos</Badge> : null}
+            </div>
+          );
+        },
+      },
+      {
+        clave: "abrir",
+        titulo: "",
+        ancho: "8%",
+        claseCelda: tdCls,
+        celda: (f) => (
+          <Link
+            href={`/expedientes/${f.empleado_id}`}
+            className="inline-flex rounded-md border border-line bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper"
+          >
+            Abrir
+          </Link>
+        ),
+      },
+    ],
+    []
+  );
+
+  const tabla = useTabla({ id: "expedientes", columnas, filas: visibles });
+
   if (sinMatriz) {
     return (
       <div className="rounded-lg border border-amber-300 bg-amber-50 p-6">
@@ -189,76 +297,21 @@ export default function ExpedientesClient({
           </select>
         </div>
         <p className="pb-2 text-sm text-soft">
-          {visibles.length} de {filas.length}
+          {tabla.filas.length} de {filas.length}
         </p>
       </div>
 
-      {visibles.length === 0 ? (
-        <Empty>Nadie coincide con eso. Prueba quitando algún filtro.</Empty>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-line bg-card">
-          <table className="w-full">
-            <thead className="border-b border-line bg-paper/60">
-              <tr>
-                <th className={thCls}>Empleado</th>
-                <th className={thCls}>Departamento</th>
-                <th className={thCls}>Puesto</th>
-                <th className={thCls}>Cumplimiento</th>
-                <th className={thCls}>Qué le pasa</th>
-                <th className={thCls}></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {visibles.map((f) => {
-                const c = f.cumplimiento;
-                return (
-                  <tr key={f.empleado_id} className="hover:bg-paper/40">
-                    <td className={tdCls}>
-                      <Link href={`/expedientes/${f.empleado_id}`} className="font-medium text-ink hover:underline">
-                        {f.nombre}
-                      </Link>
-                      <div className="font-mono text-[11px] text-soft">{f.numero_empleado}</div>
-                    </td>
-                    <td className={tdCls}>
-                      {f.departamento}
-                      {f.area ? <div className="text-xs text-soft">{f.area}</div> : null}
-                    </td>
-                    <td className={`${tdCls} text-soft`}>{f.puesto}</td>
-                    <td className={tdCls}>
-                      <Barra porcentaje={c.porcentaje} nivel={c.nivel} />
-                      <div className="mt-1 text-xs text-soft">
-                        {c.obligatoriosCubiertos} de {c.obligatorios} obligatorios
-                      </div>
-                    </td>
-                    <td className={tdCls}>
-                      <div className="flex flex-wrap gap-1">
-                        {/* "Completo" solo dice algo cuando de verdad se le pidió algo. */}
-                        {c.nivel === "COMPLETO" && c.total > 0 ? <Badge tono="verde">Completo</Badge> : null}
-                        {c.criticosPendientes ? <Badge tono="rojo">{c.criticosPendientes} críticos</Badge> : null}
-                        {c.vencidos ? <Badge tono="rojo">{c.vencidos} vencidos</Badge> : null}
-                        {c.rechazados ? <Badge tono="rojo">{c.rechazados} rechazados</Badge> : null}
-                        {c.faltantes ? <Badge tono="ambar">{c.faltantes} faltantes</Badge> : null}
-                        {c.porVencer ? <Badge tono="ambar">{c.porVencer} por vencer</Badge> : null}
-                        {c.porValidar ? <Badge tono="ambar">{c.porValidar} por validar</Badge> : null}
-                        {c.noAplica ? <Badge tono="gris">{c.noAplica} no aplican</Badge> : null}
-                        {c.total === 0 ? <Badge tono="gris">Sin requisitos</Badge> : null}
-                      </div>
-                    </td>
-                    <td className={tdCls}>
-                      <Link
-                        href={`/expedientes/${f.empleado_id}`}
-                        className="inline-flex rounded-md border border-line bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper"
-                      >
-                        Abrir
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="mb-2 flex justify-end">
+        <AvisoTabla estado={tabla} />
+      </div>
+      <div className="rounded-lg border border-line bg-card">
+        <Tabla
+          estado={tabla}
+          claveFila={(f) => f.empleado_id}
+          minAncho={900}
+          vacio={<Empty>Nadie coincide con eso. Prueba quitando algún filtro.</Empty>}
+        />
+      </div>
 
       <p className="mt-4 text-xs text-soft">
         {totales.completos} de {filas.length} expedientes completos · {ETIQUETA_NIVEL.CRITICO}: {totales.criticos}

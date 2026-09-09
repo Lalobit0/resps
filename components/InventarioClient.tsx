@@ -12,45 +12,7 @@ import FusionarEquipoBtn from "./FusionarEquipoBtn";
 import SelectConOtro from "./SelectConOtro";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
-import { EncabezadoTabla, ordenarFilas, useTabla, type ColumnaTabla } from "./tabla";
-
-/** Las columnas del inventario, con su ancho inicial y cómo ordenan. */
-const COLUMNAS: ColumnaTabla[] = [
-  { clave: "codigo", etiqueta: "Código", ancho: 6 },
-  // El área y la persona van al principio: el inventario se revisa por
-  // departamento, así que es lo primero que se busca en el renglón.
-  { clave: "area", etiqueta: "Área", ancho: 8 },
-  { clave: "asignado", etiqueta: "Asignado a", ancho: 10 },
-  { clave: "tipo", etiqueta: "Tipo", ancho: 5, valores: ["COMPUTO", "CELULAR", "RADIO", "OTRO"] },
-  // Cómo está clasificado el aparato, que no es lo mismo que qué aparato es.
-  { clave: "clasificacion", etiqueta: "Clasificación", ancho: 8, valores: ["ADMINISTRATIVO", "PRODUCCION", "SALA", "GERENCIAL", "COMPARTIDO"] },
-  { clave: "equipo", etiqueta: "Equipo", ancho: 10 },
-  // El nombre de la computadora va pegado a la serie: son los dos datos con
-  // los que se reconoce la máquina cuando se tiene enfrente.
-  { clave: "nombre", etiqueta: "Nombre del equipo", ancho: 8 },
-  { clave: "serie", etiqueta: "Serie", ancho: 7 },
-  {
-    clave: "estado",
-    etiqueta: "Estado",
-    ancho: 7,
-    valores: ["ASIGNADO", "DISPONIBLE", "SIN RESPONSIVA", "MANTENIMIENTO", "BAJA"],
-  },
-  { clave: "responsivas", etiqueta: "Responsivas", ancho: 8, valores: ["CON", "SIN"] },
-  { clave: "compra", etiqueta: "Compra", ancho: 5, fin: true },
-  { clave: "acciones", etiqueta: "Acciones", ancho: 18, ordenable: false },
-];
-
-/**
- * Dentro de una sección todos los equipos son del mismo tipo, así que esa
- * columna no dice nada: se quita y su espacio se lo queda la del equipo.
- */
-function columnasPara(seccion: string): ColumnaTabla[] {
-  if (!seccion) return COLUMNAS;
-  const tipo = COLUMNAS.find((c) => c.clave === "tipo");
-  return COLUMNAS.filter((c) => c.clave !== "tipo").map((c) =>
-    c.clave === "equipo" ? { ...c, ancho: c.ancho + (tipo?.ancho ?? 0) } : c
-  );
-}
+import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
 
 /** Nombre corto del tipo: en la columna no cabe "Teléfono / Celular". */
 const TIPO_CORTO: Record<string, string> = { COMPUTO: "Cómputo", CELULAR: "Celular", RADIO: "Radio", OTRO: "Otro" };
@@ -183,48 +145,6 @@ export default function InventarioClient({
     }
     return [...vistos].sort((a, b) => a.localeCompare(b)).map((d) => ({ valor: d, etiqueta: d }));
   }, [departamentos, equipos]);
-  const columnas = columnasPara(seccion);
-  // Cada juego de columnas recuerda sus anchos por separado.
-  const { anchos, orden, empezarArrastre, alternarOrden } = useTabla(
-    seccion ? "inventario-seccion" : "inventario",
-    columnas
-  );
-
-  /**
-   * Lo que se compara en cada columna al ordenar. "Sin responsiva" cuenta como
-   * un estado más: es como se busca en la práctica.
-   */
-  const valorColumna = (e: EquipoConAsignado, clave: string): string | number | null => {
-    switch (clave) {
-      case "codigo":
-        return e.codigo;
-      case "tipo":
-        return e.tipo;
-      case "equipo":
-        return `${e.marca} ${e.modelo}`;
-      case "nombre":
-        return parseDetalles(e.detalles).nombre_computadora ?? "";
-      case "serie":
-        return e.numero_serie ?? "";
-      case "area":
-        return e.asignado_area || e.asignado_departamento || e.area || e.departamento || "";
-      case "clasificacion":
-        return e.clasificacion || "";
-      case "estado":
-        return faltaResponsiva.has(e.id) ? "SIN RESPONSIVA" : e.estado;
-      case "asignado":
-        return e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : "";
-      case "responsivas":
-        return (responsivas[e.id]?.length ?? 0) > 0 ? "CON" : "SIN";
-      case "compra":
-        return e.fecha_compra ?? "";
-      default:
-        return "";
-    }
-  };
-
-  const ordenados = ordenarFilas(equipos, orden, columnas, valorColumna);
-
   // Con ?editar=<id> el formulario se abre solo: así se puede editar un equipo
   // desde la ficha del empleado sin tener que buscarlo aquí.
   const [form, setForm] = useState<Formulario | null>(() => {
@@ -239,6 +159,289 @@ export default function InventarioClient({
   const fileRef = useRef<HTMLInputElement>(null);
   const escaneoRef = useRef<HTMLInputElement>(null);
   const tipoImport = useRef<TipoEquipo>("COMPUTO");
+
+  /**
+   * Las columnas del inventario. El área y la persona van al principio: el
+   * inventario se revisa por departamento, así que es lo primero que se busca
+   * en el renglón. Dentro de una sección todos los equipos son del mismo tipo,
+   * así que esa columna no dice nada y se quita.
+   */
+  const columnas = useMemo<Columna<EquipoConAsignado>[]>(() => {
+    const todas: Columna<EquipoConAsignado>[] = [
+      {
+        clave: "codigo",
+        titulo: "Código",
+        ancho: "6%",
+        valor: (e) => e.codigo,
+        claseCelda: `${tdc} text-xs font-semibold`,
+        celda: (e) => (
+          <div className="flex items-center gap-1">
+            <span className="mono truncate" title={e.codigo}>
+              {e.codigo}
+            </span>
+            {duplicados[e.id] ? (
+              <Link
+                href="/inventario/duplicados"
+                className="shrink-0 text-amber-600 hover:text-amber-800"
+                title={`${textoConflictos(duplicados[e.id])}\n\nPúlsalo para revisarlo y unirlo.`}
+                aria-label="Datos repetidos: ir a la revisión"
+              >
+                ⚠️
+              </Link>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        clave: "area",
+        titulo: "Área",
+        ancho: "8%",
+        valor: (e) => e.asignado_area || e.asignado_departamento || e.area || e.departamento || "",
+        claseCelda: `${tdc} truncate text-xs`,
+        celda: (e) => (
+          <span
+            title={[
+              e.asignado_area || e.area || "",
+              (e.asignado_departamento || e.departamento) &&
+              (e.asignado_departamento || e.departamento) !== (e.asignado_area || e.area)
+                ? `Departamento: ${e.asignado_departamento || e.departamento}`
+                : "",
+              // El área del equipo se queda aunque su dueño se haya ido.
+              !e.asignado_a && (e.area || e.departamento) ? "Área del equipo: sigue disponible aquí" : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          >
+            {e.asignado_area || e.asignado_departamento ? (
+              e.asignado_area || e.asignado_departamento
+            ) : e.area || e.departamento ? (
+              <span className="italic text-soft">{e.area || e.departamento}</span>
+            ) : (
+              <span className="text-soft">—</span>
+            )}
+          </span>
+        ),
+      },
+      {
+        clave: "asignado",
+        titulo: "Asignado a",
+        ancho: "10%",
+        valor: (e) => (e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : ""),
+        claseCelda: `${tdc} truncate text-xs`,
+        celda: (e) =>
+          e.asignado_nombre && e.asignado_a ? (
+            <Link
+              href={`/empleados/${e.asignado_a}`}
+              className="hover:text-kraft hover:underline"
+              title={`${e.asignado_numero} ${e.asignado_nombre} · ver su histórico`}
+            >
+              <span className="mono text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
+            </Link>
+          ) : (
+            <span className="text-soft">—</span>
+          ),
+      },
+      {
+        clave: "tipo",
+        titulo: "Tipo",
+        ancho: "5%",
+        valor: (e) => TIPO_CORTO[e.tipo] ?? ETIQUETA_TIPO[e.tipo] ?? e.tipo,
+        claseCelda: `${tdc} truncate text-xs`,
+        celda: (e) => (
+          <span title={ETIQUETA_TIPO[e.tipo] ?? e.tipo}>{TIPO_CORTO[e.tipo] ?? ETIQUETA_TIPO[e.tipo] ?? e.tipo}</span>
+        ),
+      },
+      {
+        clave: "clasificacion",
+        titulo: "Clasificación",
+        ancho: "8%",
+        valor: (e) => (e.clasificacion ? (ETIQUETA_CLASIFICACION[e.clasificacion] ?? e.clasificacion) : ""),
+        claseCelda: `${tdc} truncate text-xs`,
+        celda: (e) =>
+          e.clasificacion ? (
+            <span title={ETIQUETA_CLASIFICACION[e.clasificacion] ?? e.clasificacion}>
+              {ETIQUETA_CLASIFICACION[e.clasificacion] ?? e.clasificacion}
+            </span>
+          ) : (
+            <span className="text-soft">—</span>
+          ),
+      },
+      {
+        clave: "equipo",
+        titulo: "Equipo",
+        ancho: "10%",
+        valor: (e) => `${e.marca} ${e.modelo}`,
+        claseCelda: `${tdc} truncate`,
+        celda: (e) => (
+          <div title={`${e.marca} ${e.modelo}${e.specs ? " · " + e.specs : ""}`}>
+            <div className="truncate font-medium">
+              {e.marca} {e.modelo}
+            </div>
+            {e.specs ? <div className="truncate text-xs text-soft">{e.specs}</div> : null}
+          </div>
+        ),
+      },
+      {
+        // El nombre de la computadora va pegado a la serie: son los dos datos
+        // con los que se reconoce la máquina cuando se tiene enfrente.
+        clave: "nombre",
+        titulo: "Nombre del equipo",
+        ancho: "8%",
+        valor: (e) => parseDetalles(e.detalles).nombre_computadora ?? "",
+        claseCelda: `${tdc} mono truncate text-xs`,
+        celda: (e) => {
+          const n = parseDetalles(e.detalles).nombre_computadora;
+          return n ? <span title={n}>{n}</span> : <span className="text-soft">—</span>;
+        },
+      },
+      {
+        clave: "serie",
+        titulo: "Serie",
+        ancho: "7%",
+        valor: (e) => e.numero_serie ?? "",
+        claseCelda: `${tdc} mono truncate text-xs`,
+        celda: (e) => <span title={e.numero_serie ?? ""}>{e.numero_serie ?? "—"}</span>,
+      },
+      {
+        // "Sin responsiva" cuenta como un estado más: es como se busca aquí.
+        clave: "estado",
+        titulo: "Estado",
+        ancho: "7%",
+        valor: (e) =>
+          faltaResponsiva.has(e.id) ? "Sin responsiva" : (ETIQUETA_ESTADO[e.estado] ?? e.estado),
+        claseCelda: tdc,
+        celda: (e) => (
+          <>
+            <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>
+            {faltaResponsiva.has(e.id) ? (
+              <div className="mt-1">
+                <Badge tono="petrol">Sin responsiva</Badge>
+              </div>
+            ) : null}
+          </>
+        ),
+      },
+      {
+        clave: "responsivas",
+        titulo: "Responsivas",
+        ancho: "8%",
+        valor: (e) => (responsivas[e.id] ?? []).map((r) => r.folio).join(" "),
+        claseCelda: tdc,
+        celda: (e) =>
+          (responsivas[e.id] ?? []).length ? (
+            <div className="flex flex-wrap gap-1">
+              {(responsivas[e.id] ?? []).map((r) =>
+                r.pdf_path ? (
+                  <a
+                    key={r.id}
+                    href={`/api/pdf/${r.id}`}
+                    target="_blank"
+                    className="mono rounded border border-line bg-white px-1.5 py-0.5 text-[11px] text-kraft-dark hover:bg-paper"
+                    title={`${r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} · ${fechaCorta(r.fecha)} · abrir PDF`}
+                  >
+                    {r.folio}
+                  </a>
+                ) : (
+                  <span key={r.id} className="mono text-[11px] text-soft" title="Sin archivo PDF">
+                    {r.folio}
+                  </span>
+                )
+              )}
+            </div>
+          ) : (
+            <span className="text-xs text-soft">—</span>
+          ),
+      },
+      {
+        clave: "compra",
+        titulo: "Compra",
+        ancho: "5%",
+        valor: (e) => e.fecha_compra ?? "",
+        claseCelda: `${tdc} whitespace-nowrap text-xs text-soft`,
+        celda: (e) => (
+          <>
+            {fechaCorta(e.fecha_compra)}
+            {e.costo !== null ? <div>{dinero(e.costo)}</div> : null}
+          </>
+        ),
+      },
+      {
+        clave: "acciones",
+        titulo: "Acciones",
+        ancho: "18%",
+        claseCelda: tdc,
+        celda: (e) => (
+          <div className="flex flex-wrap items-center gap-1">
+            <button className={mini} onClick={() => setVerEq(e)}>
+              Ver
+            </button>
+            <button className={mini} onClick={() => setForm(formDeEquipo(e))}>
+              Editar
+            </button>
+            {faltaResponsiva.has(e.id) ? (
+              <Link
+                className="rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                href={`/responsivas/nueva?equipo=${e.id}`}
+                title="Generar la carta responsiva para que el empleado la firme"
+              >
+                + Responsiva
+              </Link>
+            ) : null}
+            {porLigar[e.id] ? (
+              <button
+                className="rounded border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-800 hover:bg-violet-100"
+                disabled={pendiente}
+                title={`Su responsiva ${porLigar[e.id].folio} está a nombre de ${porLigar[e.id].empleado_numero} ${porLigar[e.id].empleado_nombre}`}
+                onClick={() => {
+                  setError("");
+                  setMensaje("");
+                  iniciar(async () => {
+                    const res = await ligarConSuResponsiva(e.id);
+                    if (res.ok) setMensaje(res.mensaje ?? "Equipo ligado.");
+                    else setError(res.error ?? "No se pudo ligar.");
+                  });
+                }}
+              >
+                🔗 Ligar a {porLigar[e.id].empleado_numero}
+              </button>
+            ) : null}
+            <Link
+              className={mini}
+              href={`/inventario/${e.id}`}
+              title="Por quién ha pasado, sus cartas y sus mantenimientos"
+            >
+              Historial
+            </Link>
+            <FusionarEquipoBtn equipoId={e.id} codigo={e.codigo} className={mini} etiqueta="Fusionar" />
+            <button
+              className={miniDanger}
+              disabled={pendiente}
+              onClick={() => {
+                if (confirm(`¿Eliminar el equipo ${e.codigo}?`)) {
+                  setError("");
+                  iniciar(async () => {
+                    const res = await eliminarEquipo(e.id);
+                    if (!res.ok) setError(res.error ?? "Error desconocido.");
+                  });
+                }
+              }}
+            >
+              Eliminar
+            </button>
+          </div>
+        ),
+      },
+    ];
+    if (!seccion) return todas;
+    const tipo = todas.find((c) => c.clave === "tipo");
+    return todas
+      .filter((c) => c.clave !== "tipo")
+      .map((c) => (c.clave === "equipo" ? { ...c, ancho: `${10 + Number((tipo?.ancho ?? "0%").replace("%", ""))}%` } : c));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seccion, duplicados, responsivas, faltaResponsiva, porLigar, pendiente]);
+
+  // Cada juego de columnas recuerda sus anchos por separado.
+  const tabla = useTabla({ id: seccion ? "inventario-seccion" : "inventario", columnas, filas: equipos });
 
   const setC = (campo: keyof Formulario) => (ev: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => (f ? { ...f, [campo]: ev.target.value } : f));
@@ -502,200 +705,23 @@ export default function InventarioClient({
         </div>
       ) : null}
 
-      {equipos.length === 0 ? (
-        <Empty>No hay equipos con estos filtros. Registra uno nuevo o importa tu Excel.</Empty>
-      ) : (
-        <Card className="p-0">
-          <table className="w-full table-fixed border-collapse" data-tabla="inventario">
-            <EncabezadoTabla
-              columnas={columnas}
-              anchos={anchos}
-              orden={orden}
-              onOrdenar={alternarOrden}
-              onArrastrar={empezarArrastre}
-            />
-            <tbody>
-              {ordenados.map((e) => {
-                const det = parseDetalles(e.detalles);
-                return (
-                <tr key={e.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
-                  <td className={`${tdc} text-xs font-semibold`}>
-                    <div className="flex items-center gap-1">
-                      <span className="mono truncate" title={e.codigo}>
-                        {e.codigo}
-                      </span>
-                      {duplicados[e.id] ? (
-                        <Link
-                          href="/inventario/duplicados"
-                          className="shrink-0 text-amber-600 hover:text-amber-800"
-                          title={`${textoConflictos(duplicados[e.id])}\n\nPúlsalo para revisarlo y unirlo.`}
-                          aria-label="Datos repetidos: ir a la revisión"
-                        >
-                          ⚠️
-                        </Link>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td
-                    className={`${tdc} truncate text-xs`}
-                    title={
-                      [
-                        e.asignado_area || e.area || "",
-                        (e.asignado_departamento || e.departamento) &&
-                        (e.asignado_departamento || e.departamento) !== (e.asignado_area || e.area)
-                          ? `Departamento: ${e.asignado_departamento || e.departamento}`
-                          : "",
-                        // El área del equipo se queda aunque su dueño se haya ido.
-                        !e.asignado_a && (e.area || e.departamento) ? "Área del equipo: sigue disponible aquí" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")
-                    }
-                  >
-                    {e.asignado_area || e.asignado_departamento ? (
-                      e.asignado_area || e.asignado_departamento
-                    ) : e.area || e.departamento ? (
-                      <span className="italic text-soft">{e.area || e.departamento}</span>
-                    ) : (
-                      <span className="text-soft">—</span>
-                    )}
-                  </td>
-                  <td className={`${tdc} truncate text-xs`} title={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre} · ver su histórico` : ""}>
-                    {e.asignado_nombre && e.asignado_a ? (
-                      <Link href={`/empleados/${e.asignado_a}`} className="hover:text-kraft hover:underline">
-                        <span className="mono text-kraft-dark">{e.asignado_numero}</span> {e.asignado_nombre}
-                      </Link>
-                    ) : (
-                      <span className="text-soft">—</span>
-                    )}
-                  </td>
-                  {seccion ? null : (
-                    <td className={`${tdc} truncate text-xs`} title={ETIQUETA_TIPO[e.tipo] ?? e.tipo}>
-                      {TIPO_CORTO[e.tipo] ?? ETIQUETA_TIPO[e.tipo] ?? e.tipo}
-                    </td>
-                  )}
-                  <td className={`${tdc} truncate text-xs`} title={ETIQUETA_CLASIFICACION[e.clasificacion ?? ""] ?? e.clasificacion ?? ""}>
-                    {e.clasificacion ? (
-                      ETIQUETA_CLASIFICACION[e.clasificacion] ?? e.clasificacion
-                    ) : (
-                      <span className="text-soft">—</span>
-                    )}
-                  </td>
-                  <td className={`${tdc} truncate`} title={`${e.marca} ${e.modelo}${e.specs ? " · " + e.specs : ""}`}>
-                    <div className="truncate font-medium">
-                      {e.marca} {e.modelo}
-                    </div>
-                    {e.specs ? <div className="truncate text-xs text-soft">{e.specs}</div> : null}
-                  </td>
-                  <td className={`${tdc} mono truncate text-xs`} title={det.nombre_computadora ?? ""}>
-                    {det.nombre_computadora || <span className="text-soft">—</span>}
-                  </td>
-                  <td className={`${tdc} mono truncate text-xs`} title={e.numero_serie ?? ""}>{e.numero_serie ?? "—"}</td>
-                  <td className={tdc}>
-                    <Badge tono={tonoEstadoEquipo(e.estado)}>{ETIQUETA_ESTADO[e.estado] ?? e.estado}</Badge>
-                    {faltaResponsiva.has(e.id) ? (
-                      <div className="mt-1">
-                        <Badge tono="petrol">Sin responsiva</Badge>
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className={tdc}>
-                    {(responsivas[e.id] ?? []).length ? (
-                      <div className="flex flex-wrap gap-1">
-                        {(responsivas[e.id] ?? []).map((r) =>
-                          r.pdf_path ? (
-                            <a
-                              key={r.id}
-                              href={`/api/pdf/${r.id}`}
-                              target="_blank"
-                              className="mono rounded border border-line bg-white px-1.5 py-0.5 text-[11px] text-kraft-dark hover:bg-paper"
-                              title={`${r.tipo === "ASIGNACION" ? "Asignación" : "Devolución"} · ${fechaCorta(r.fecha)} · abrir PDF`}
-                            >
-                              {r.folio}
-                            </a>
-                          ) : (
-                            <span key={r.id} className="mono text-[11px] text-soft" title="Sin archivo PDF">
-                              {r.folio}
-                            </span>
-                          )
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-soft">—</span>
-                    )}
-                  </td>
-                  <td className={`${tdc} whitespace-nowrap text-xs text-soft`}>
-                    {fechaCorta(e.fecha_compra)}
-                    {e.costo !== null ? <div>{dinero(e.costo)}</div> : null}
-                  </td>
-                  <td className={tdc}>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <button className={mini} onClick={() => setVerEq(e)}>
-                        Ver
-                      </button>
-                      <button
-                        className={mini}
-                        onClick={() =>
-                          setForm(formDeEquipo(e))
-                        }
-                      >
-                        Editar
-                      </button>
-                      {faltaResponsiva.has(e.id) ? (
-                        <Link
-                          className="rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
-                          href={`/responsivas/nueva?equipo=${e.id}`}
-                          title="Generar la carta responsiva para que el empleado la firme"
-                        >
-                          + Responsiva
-                        </Link>
-                      ) : null}
-                      {porLigar[e.id] ? (
-                        <button
-                          className="rounded border border-violet-300 bg-violet-50 px-2 py-0.5 text-xs font-semibold text-violet-800 hover:bg-violet-100"
-                          disabled={pendiente}
-                          title={`Su responsiva ${porLigar[e.id].folio} está a nombre de ${porLigar[e.id].empleado_numero} ${porLigar[e.id].empleado_nombre}`}
-                          onClick={() => {
-                            setError("");
-                            setMensaje("");
-                            iniciar(async () => {
-                              const res = await ligarConSuResponsiva(e.id);
-                              if (res.ok) setMensaje(res.mensaje ?? "Equipo ligado.");
-                              else setError(res.error ?? "No se pudo ligar.");
-                            });
-                          }}
-                        >
-                          🔗 Ligar a {porLigar[e.id].empleado_numero}
-                        </button>
-                      ) : null}
-                      <Link className={mini} href={`/inventario/${e.id}`} title="Por quién ha pasado, sus cartas y sus mantenimientos">
-                        Historial
-                      </Link>
-                      <FusionarEquipoBtn equipoId={e.id} codigo={e.codigo} className={mini} etiqueta="Fusionar" />
-                      <button
-                        className={miniDanger}
-                        disabled={pendiente}
-                        onClick={() => {
-                          if (confirm(`¿Eliminar el equipo ${e.codigo}?`)) {
-                            setError("");
-                            iniciar(async () => {
-                              const res = await eliminarEquipo(e.id);
-                              if (!res.ok) setError(res.error ?? "Error desconocido.");
-                            });
-                          }
-                        }}
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-soft">
+          {tabla.filas.length} de {equipos.length} equipos · haz clic en el título de una columna para ordenarla y
+          filtrarla, o jala su borde para ensancharla.
+        </p>
+        <AvisoTabla estado={tabla} />
+      </div>
+
+      <Card className="p-0">
+        <Tabla
+          estado={tabla}
+          claveFila={(e) => e.id}
+          minAncho={1400}
+          vacio={<Empty>No hay equipos con estos filtros. Registra uno nuevo o importa tu Excel.</Empty>}
+        />
+      </Card>
+
 
       {verEq ? (
         <DetalleEquipo

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Empleado } from "../lib/types";
 import { camposDe, type CampoExtra, type TipoRevision } from "../lib/formatos/tipos";
@@ -14,7 +14,8 @@ import {
 } from "../app/revisiones/actions";
 import { fechaCorta } from "../lib/helpers";
 import BuscadorEmpleado from "./BuscadorEmpleado";
-import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
+import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tdCls } from "./ui";
+import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
 
 /**
  * Revisiones-IT: se captura lo que se revisó y el documento del sistema de
@@ -162,6 +163,66 @@ export default function RevisionesClient({
   });
 
   const nombreTipo = (clave: string) => tipos.find((t) => t.clave === clave)?.nombre ?? clave;
+
+  const columnas = useMemo<Columna<Revision>[]>(
+    () => [
+      { clave: "folio", titulo: "Folio", ancho: "12%", valor: (r) => r.folio, claseCelda: `${tdCls} mono text-xs font-semibold` },
+      { clave: "documento", titulo: "Documento", ancho: "20%", valor: (r) => nombreTipo(r.tipo), claseCelda: `${tdCls} text-xs` },
+      {
+        clave: "empleado",
+        titulo: "Empleado",
+        ancho: "22%",
+        valor: (r) => `${r.empleado_numero} ${r.empleado_nombre}`,
+        claseCelda: `${tdCls} text-xs`,
+      },
+      {
+        clave: "equipo",
+        titulo: "Equipo",
+        ancho: "12%",
+        valor: (r) => r.equipo_codigo ?? "",
+        claseCelda: `${tdCls} mono text-xs`,
+        celda: (r) => r.equipo_codigo ?? "—",
+      },
+      { clave: "fecha", titulo: "Fecha", ancho: "10%", valor: (r) => r.fecha, claseCelda: tdCls, celda: (r) => fechaCorta(r.fecha) },
+      {
+        clave: "resultado",
+        titulo: "Resultado",
+        ancho: "10%",
+        valor: (r) => (r.resultado === "CON_HALLAZGOS" ? "Con hallazgos" : "Sin hallazgos"),
+        claseCelda: tdCls,
+        celda: (r) =>
+          r.resultado === "CON_HALLAZGOS" ? (
+            <Badge tono="rojo">Con hallazgos</Badge>
+          ) : (
+            <Badge tono="verde">Sin hallazgos</Badge>
+          ),
+      },
+      {
+        clave: "acciones",
+        titulo: "Acciones",
+        ancho: "14%",
+        claseCelda: tdCls,
+        celda: (r) => (
+          <div className="flex flex-wrap gap-1.5">
+            <a href={`/api/revision/${r.id}`} target="_blank" rel="noreferrer" className={btnGhost}>
+              Ver PDF
+            </a>
+            <button
+              className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+              onClick={() => borrar(r)}
+              disabled={pendiente}
+            >
+              Eliminar
+            </button>
+          </div>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tipos, pendiente]
+  );
+
+  const tabla = useTabla({ id: "revisiones", columnas, filas: visibles });
 
   return (
     <div className="space-y-5">
@@ -403,59 +464,15 @@ export default function RevisionesClient({
           </div>
         </div>
 
-        {!visibles.length ? (
-          <Empty>Todavía no hay revisiones registradas. Empieza con una de las tarjetas de arriba.</Empty>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px]">
-              <thead className="bg-paper/70">
-                <tr>
-                  <th className={thCls}>Folio</th>
-                  <th className={thCls}>Documento</th>
-                  <th className={thCls}>Empleado</th>
-                  <th className={thCls}>Equipo</th>
-                  <th className={thCls}>Fecha</th>
-                  <th className={thCls}>Resultado</th>
-                  <th className={thCls}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {visibles.map((r) => (
-                  <tr key={r.id}>
-                    <td className={`${tdCls} mono text-xs font-semibold`}>{r.folio}</td>
-                    <td className={`${tdCls} text-xs`}>{nombreTipo(r.tipo)}</td>
-                    <td className={`${tdCls} text-xs`}>
-                      {r.empleado_numero} {r.empleado_nombre}
-                    </td>
-                    <td className={`${tdCls} mono text-xs`}>{r.equipo_codigo ?? "—"}</td>
-                    <td className={tdCls}>{fechaCorta(r.fecha)}</td>
-                    <td className={tdCls}>
-                      {r.resultado === "CON_HALLAZGOS" ? (
-                        <Badge tono="rojo">Con hallazgos</Badge>
-                      ) : (
-                        <Badge tono="verde">Sin hallazgos</Badge>
-                      )}
-                    </td>
-                    <td className={tdCls}>
-                      <div className="flex flex-wrap gap-1.5">
-                        <a href={`/api/revision/${r.id}`} target="_blank" rel="noreferrer" className={btnGhost}>
-                          Ver PDF
-                        </a>
-                        <button
-                          className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
-                          onClick={() => borrar(r)}
-                          disabled={pendiente}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <div className="mb-2 flex justify-end">
+          <AvisoTabla estado={tabla} />
+        </div>
+        <Tabla
+          estado={tabla}
+          claveFila={(r) => r.id}
+          minAncho={820}
+          vacio={<Empty>Todavía no hay revisiones registradas. Empieza con una de las tarjetas de arriba.</Empty>}
+        />
       </Card>
     </div>
   );

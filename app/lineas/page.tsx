@@ -1,34 +1,15 @@
 import Link from "next/link";
 import { db } from "../../lib/db";
 import { dinero } from "../../lib/helpers";
-import { Badge, Card, Empty, PageHeader, tdCls, thCls, tonoEstadoEquipo } from "../../components/ui";
+import { Card, PageHeader } from "../../components/ui";
+import LineasClient, { type Linea } from "../../components/LineasClient";
 import ExportarBotones from "../../components/ExportarBotones";
 import FiltrosAuto from "../../components/FiltrosAuto";
 import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
 import { revisarCelulares } from "../../lib/celulares";
-import { ETIQUETA_ESTADO } from "../../lib/constants";
 import { exigirPagina } from "../../lib/guardia";
 
 export const dynamic = "force-dynamic";
-
-type Linea = {
-  id: number;
-  codigo: string;
-  estado: string;
-  numero: string | null;
-  plan: string | null;
-  precio: string | null;
-  imei: string | null;
-  condicion: string | null;
-  marca: string;
-  modelo: string;
-  numero_serie: string | null;
-  asignado_id: number | null;
-  asignado_nombre: string | null;
-  asignado_numero: string | null;
-  asignado_departamento: string | null;
-  asignado_area: string | null;
-};
 
 function precioANumero(p: string | null): number {
   if (!p) return 0;
@@ -114,72 +95,7 @@ export default async function PaginaLineas({
         />
       </FiltrosAuto>
 
-      {lineas.length === 0 ? (
-        <Empty>No hay líneas registradas. Impórtalas o regístralas como equipo de tipo Teléfono / Celular.</Empty>
-      ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[1120px] border-collapse">
-            <thead className="border-b border-line bg-paper/70">
-              <tr>
-                <th className={thCls}>Código</th>
-                <th className={thCls}>No. empleado</th>
-                <th className={thCls}>Nombre</th>
-                <th className={thCls}>Departamento</th>
-                <th className={thCls}>Número</th>
-                <th className={thCls}>Plan</th>
-                <th className={thCls}>Renta</th>
-                <th className={thCls}>Teléfono</th>
-                <th className={thCls}>IMEI</th>
-                <th className={thCls}>Estado</th>
-                <th className={thCls}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lineas.map((l) => (
-                <tr key={l.id} className="border-b border-line/60 last:border-0 hover:bg-paper/40">
-                  <td className={`${tdCls} mono text-xs font-semibold`}>{l.codigo}</td>
-                  <td className={`${tdCls} mono text-xs`}>{l.asignado_numero ?? "—"}</td>
-                  <td className={`${tdCls} text-xs`}>
-                    {l.asignado_nombre ? (
-                      // Al nombre se le da clic para ir a su histórico.
-                      <Link href={`/empleados/${l.asignado_id}`} className="font-medium text-ink hover:text-kraft hover:underline" title="Ver su histórico">
-                        {l.asignado_nombre}
-                      </Link>
-                    ) : (
-                      <span className="text-soft">Sin asignar</span>
-                    )}
-                  </td>
-                  <td className={`${tdCls} text-xs text-soft`}>
-                    {[l.asignado_departamento, l.asignado_area].filter(Boolean).join(" · ") || "—"}
-                  </td>
-                  <td className={`${tdCls} mono text-xs`}>{l.numero ?? "—"}</td>
-                  <td className={`${tdCls} text-xs`}>{l.plan ?? "—"}</td>
-                  <td className={`${tdCls} text-xs`}>{l.precio ?? "—"}</td>
-                  <td className={`${tdCls} text-xs`}>
-                    <span className="font-medium">
-                      {l.marca} {l.modelo}
-                    </span>
-                    {l.numero_serie ? <span className="mono block text-[11px] text-soft">Serie {l.numero_serie}</span> : null}
-                  </td>
-                  <td className={`${tdCls} mono text-xs`}>{l.imei ?? "—"}</td>
-                  <td className={tdCls}>
-                    <Badge tono={tonoEstadoEquipo(l.estado)}>{ETIQUETA_ESTADO[l.estado] ?? l.estado}</Badge>
-                  </td>
-                  <td className={tdCls}>
-                    <Link
-                      href={`/inventario?editar=${l.id}`}
-                      className="rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper"
-                      title="Editar los datos del teléfono y de la línea"
-                    >
-                      Editar
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
+      <LineasClient lineas={lineas} />
       <p className="mt-3 text-xs text-soft">
         El costo mensual suma la renta capturada en cada línea. <Link href="/inventario?tipo=CELULAR" className="underline">Ver en inventario</Link>.
       </p>

@@ -10,6 +10,7 @@ import AsignarEquipoBtn from "../../../components/AsignarEquipoBtn";
 import type { ResponsivaDeEquipo } from "../../../components/InventarioClient";
 import { idsSinResponsiva, responsivasSinFirmaDe } from "../../../lib/pendientes";
 import SubirFirmadaBtn from "../../../components/SubirFirmadaBtn";
+import VerPdfBtn from "../../../components/VerPdfBtn";
 import EditarEmpleadoBtn from "../../../components/EditarEmpleadoBtn";
 import DarDeBajaBtn from "../../../components/DarDeBajaBtn";
 import { exigirPagina } from "../../../lib/guardia";
@@ -195,9 +196,25 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           </div>
           <div className="flex flex-wrap gap-2">
             {wifi ? (
-              <Link href={`/responsivas?q=${encodeURIComponent(wifi.folio)}`} className={btnGhost}>
-                Ver la carta
-              </Link>
+              <>
+                {wifi.pdf_path || wifi.pdf_firmado ? (
+                  <VerPdfBtn
+                    id={wifi.id}
+                    folio={wifi.folio}
+                    etiqueta="Ver la carta"
+                    className={btnGhost}
+                    subtitulo={`Uso de red Wi-Fi · ${fechaCorta(wifi.fecha)}`}
+                  />
+                ) : null}
+                {wifiFirmada ? null : (
+                  <>
+                    <a href={`/api/pdf/${wifi.id}?original=1`} target="_blank" className={btnGhost}>
+                      Imprimir
+                    </a>
+                    <SubirFirmadaBtn responsivaId={wifi.id} folio={wifi.folio} className={btnGhost} />
+                  </>
+                )}
+              </>
             ) : (
               <Link href={`/responsivas/nueva?empleado=${empleado.id}&clase=WIFI`} className={btnGhost}>
                 + Generar la de Wi-Fi

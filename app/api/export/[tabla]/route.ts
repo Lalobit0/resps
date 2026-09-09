@@ -3,6 +3,7 @@ import { construirPdf, construirXlsx, type Celda } from "../../../../lib/exporta
 import { ETIQUETA_CLASE, ETIQUETA_ESTADO, ETIQUETA_TIPO } from "../../../../lib/constants";
 import { dinero, fechaCorta } from "../../../../lib/helpers";
 import { puedeApi } from "../../../../lib/apiGuardia";
+import { columnasDeCondiciones, condicionesASql } from "../../../../lib/filtros-empleados";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
   const estado = sp.get("estado") || "";
   const cond: string[] = [];
   const val: (string | number)[] = [];
+  // Las pastillas de la pantalla (cómputo, carta de Wi-Fi, vale vigente,
+  // mantenimiento programado…), para que el Excel baje justo lo que se ve.
+  cond.push(...condicionesASql(sp.get("cond") || ""));
   if (estado === "activos") cond.push("e.activo = 1");
   if (estado === "inactivos") cond.push("e.activo = 0");
   if (depto) {
@@ -46,15 +50,16 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
               (SELECT COUNT(*) FROM equipos qc WHERE qc.asignado_a = e.id AND qc.tipo = 'COMPUTO') AS computo,
               (SELECT COUNT(*) FROM equipos qt WHERE qt.asignado_a = e.id AND qt.tipo = 'CELULAR') AS celular,
               (SELECT COUNT(*) FROM equipos qr WHERE qr.asignado_a = e.id AND qr.tipo = 'RADIO') AS radio,
-              (SELECT COUNT(*) FROM equipos qo WHERE qo.asignado_a = e.id AND qo.tipo NOT IN ('COMPUTO','CELULAR','RADIO')) AS otro
+              (SELECT COUNT(*) FROM equipos qo WHERE qo.asignado_a = e.id AND qo.tipo NOT IN ('COMPUTO','CELULAR','RADIO')) AS otro,
+              ${columnasDeCondiciones()}
        FROM empleados e ${where}
        ORDER BY CAST(e.numero_empleado AS INTEGER) ASC, e.numero_empleado ASC`
     )
     .all(...val) as Record<string, unknown>[];
   return {
     titulo: "Empleados",
-    columnas: ["No.", "Nombre", "Clase", "Puesto", "Departamento", "Área", "Jefe directo", "Alta", "Correo", "Teléfono", "Equipos", "Estado"],
-    pesos: [5, 15, 8, 11, 10, 8, 11, 7, 12, 8, 10, 6],
+    columnas: ["No.", "Nombre", "Clase", "Puesto", "Departamento", "Área", "Jefe directo", "Alta", "Correo", "Teléfono", "Equipos", "Cartas y pendientes", "Estado"],
+    pesos: [5, 13, 7, 10, 9, 7, 10, 6, 11, 7, 9, 12, 5],
     filas: rows.map((e) => [
       e.numero_empleado as string,
       e.nombre as string,
@@ -72,6 +77,17 @@ function reporteEmpleados(sp: URLSearchParams): Reporte {
         (e.celular as number) > 0 ? `CEL ${e.celular as number}` : "",
         (e.radio as number) > 0 ? `RADIO ${e.radio as number}` : "",
         (e.otro as number) > 0 ? `OTRO ${e.otro as number}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      // Lo mismo que la columna "Cartas y pendientes" de la pantalla.
+      [
+        (e.c_wifi as number) > 0 ? "WI-FI" : "",
+        (e.c_vale as number) > 0 ? `VALE ${e.c_vale as number}` : "",
+        (e.c_mantenimiento as number) > 0 ? `MANTTO ${e.c_mantenimiento as number}` : "",
+        (e.c_gafete as number) > 0 ? "GAFETE" : "",
+        (e.c_sin_responsiva as number) > 0 ? `SIN CARTA ${e.c_sin_responsiva as number}` : "",
+        (e.c_sin_firma as number) > 0 ? `SIN FIRMA ${e.c_sin_firma as number}` : "",
       ]
         .filter(Boolean)
         .join(" · "),

@@ -26,6 +26,12 @@ export interface EmpleadoConEquipos extends Empleado {
   otro?: number;
   /** Equipos entregados a este empleado que no tienen carta responsiva vigente. */
   sin_responsiva?: number;
+  /**
+   * Una columna `c_<clave>` por cada condición del catálogo de filtros
+   * (`lib/filtros-empleados`): cuántas cartas de Wi-Fi trae, cuántos vales
+   * vigentes, cuántos mantenimientos programados, etc.
+   */
+  [columna: `c_${string}`]: number | undefined;
 }
 
 export interface Equipo {

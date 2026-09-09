@@ -91,6 +91,13 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
   for (const { equipo_id, ...r } of filasResp) (responsivasPorEquipo[equipo_id] ??= []).push(r);
 
   const cuenta = (t: string) => equipos.filter((e) => e.tipo === t).length;
+
+  // La carta de Wi-Fi no cuelga de ningún equipo, así que entre las demás
+  // responsivas pasa desapercibida: aquí se contesta de un vistazo si ya la
+  // firmó, que es lo que se pregunta cuando alguien pide la clave de la red.
+  const wifi = responsivas.find((r) => r.clase === "WIFI" && r.estado !== "ELIMINADA");
+  const wifiFirmada = !!wifi && (!!wifi.pdf_firmado || wifi.origen === "CARGADA");
+
   const tiles = [
     { etiqueta: "Equipos asignados", valor: equipos.length },
     { etiqueta: "Cómputo", valor: cuenta("COMPUTO") },
@@ -161,6 +168,44 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           </Card>
         ))}
       </div>
+
+      <Card
+        className={`mt-4 ${
+          wifi ? (wifiFirmada ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50") : ""
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-soft">Carta de uso de red Wi-Fi</p>
+            {wifi ? (
+              <p className="mt-1 text-sm text-ink">
+                <span className="mono font-semibold text-kraft-dark">{wifi.folio}</span> · del{" "}
+                {fechaCorta(wifi.fecha)} ·{" "}
+                {wifiFirmada ? (
+                  <span className="font-semibold text-emerald-800">firmada</span>
+                ) : (
+                  <span className="font-semibold text-amber-800">sin firmar</span>
+                )}
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-soft">
+                No la ha firmado. Si usa la red de la empresa, hay que generársela.
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {wifi ? (
+              <Link href={`/responsivas?q=${encodeURIComponent(wifi.folio)}`} className={btnGhost}>
+                Ver la carta
+              </Link>
+            ) : (
+              <Link href={`/responsivas/nueva?empleado=${empleado.id}&clase=WIFI`} className={btnGhost}>
+                + Generar la de Wi-Fi
+              </Link>
+            )}
+          </div>
+        </div>
+      </Card>
 
       {faltantes.length > 0 ? (
         <Card className="mt-6 border-sky-200 bg-sky-50">

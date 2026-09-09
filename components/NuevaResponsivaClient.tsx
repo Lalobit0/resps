@@ -59,13 +59,15 @@ export default function NuevaResponsivaClient({
   firmas: FirmaGuardada[];
   /** Tarifario de RH, para el vale que acompaña al radio. */
   conceptos?: ConceptoVale[];
-  precargado?: { equipoId: number; empleadoId: number | null } | null;
+  precargado?: { equipoId: number | null; empleadoId: number | null; clase?: string } | null;
 }) {
   // Cuando se entra desde "+ Responsiva" del inventario, el equipo y el
   // empleado ya vienen dados: solo falta capturar las firmas.
-  const equipoPre = precargado ? equipos.find((e) => e.id === precargado.equipoId) : undefined;
+  const equipoPre = precargado?.equipoId ? equipos.find((e) => e.id === precargado.equipoId) : undefined;
   const router = useRouter();
-  const [clase, setClase] = useState<ClaseCarta>(equipoPre ? claseDeTipo(equipoPre.tipo) : "COMPUTO");
+  const [clase, setClase] = useState<ClaseCarta>(
+    equipoPre ? claseDeTipo(equipoPre.tipo) : ((precargado?.clase as ClaseCarta) ?? "COMPUTO")
+  );
   const [empleadoId, setEmpleadoId] = useState<number | null>(precargado?.empleadoId ?? null);
   const [equipoId, setEquipoId] = useState<number | null>(precargado?.equipoId ?? null);
   const [tipoFiltro, setTipoFiltro] = useState<TipoEquipo | "TODOS">(equipoPre ? (equipoPre.tipo as TipoEquipo) : "COMPUTO");

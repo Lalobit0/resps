@@ -11,7 +11,8 @@ import {
   eliminarMantenimiento,
   guardarMantenimiento,
 } from "../app/mantenimientos/actions";
-import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
+import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls } from "./ui";
+import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
 
 export type EquipoOpcion = {
   id: number;
@@ -116,6 +117,180 @@ export default function MantenimientosClient({
     if (dias <= 7) return <Badge tono="ambar">En {dias} día(s)</Badge>;
     return <Badge tono="petrol">Programado</Badge>;
   };
+
+  const columnas = useMemo<Columna<MantenimientoConEquipo>[]>(
+    () => [
+      {
+        clave: "equipo",
+        titulo: "Equipo",
+        ancho: "13%",
+        valor: (m) => `${m.equipo_codigo} ${m.equipo_desc}`,
+        claseCelda: tdCls,
+        celda: (m) => (
+          <>
+            <span className="mono text-xs font-semibold text-kraft-dark">{m.equipo_codigo}</span>
+            <div className="text-xs text-soft">{m.equipo_desc}</div>
+          </>
+        ),
+      },
+      {
+        clave: "tipo",
+        titulo: "Tipo",
+        ancho: "9%",
+        valor: (m) => ETIQUETA_MANTENIMIENTO[m.tipo] ?? m.tipo,
+        claseCelda: tdCls,
+      },
+      {
+        clave: "descripcion",
+        titulo: "Descripción",
+        ancho: "22%",
+        valor: (m) => m.descripcion,
+        claseCelda: tdCls,
+        celda: (m) => (
+          <>
+            {m.descripcion}
+            {m.tecnico ? <div className="text-xs text-soft">Técnico: {m.tecnico}</div> : null}
+            {m.notas ? <div className="text-xs text-soft">{m.notas}</div> : null}
+          </>
+        ),
+      },
+      {
+        clave: "programado",
+        titulo: "Programado",
+        ancho: "9%",
+        valor: (m) => m.fecha_programada,
+        claseCelda: tdCls,
+        celda: (m) => fechaCorta(m.fecha_programada),
+      },
+      {
+        clave: "realizado",
+        titulo: "Realizado",
+        ancho: "9%",
+        valor: (m) => m.fecha_realizada ?? "",
+        claseCelda: tdCls,
+        celda: (m) => fechaCorta(m.fecha_realizada),
+      },
+      {
+        clave: "estado",
+        titulo: "Estado",
+        ancho: "10%",
+        valor: (m) => ESTADOS_MANTENIMIENTO[m.estado] ?? m.estado,
+        claseCelda: tdCls,
+        celda: tonoEstado,
+      },
+      {
+        clave: "costo",
+        titulo: "Costo",
+        ancho: "8%",
+        valor: (m) => m.costo ?? "",
+        claseCelda: tdCls,
+        celda: (m) => dinero(m.costo),
+      },
+      {
+        clave: "acciones",
+        titulo: "Acciones",
+        ancho: "20%",
+        claseCelda: tdCls,
+        celda: (m) =>
+          completando === m.id ? (
+            <div className="w-56 space-y-2">
+              <input
+                className={inputCls}
+                type="date"
+                value={cierre.fecha_realizada}
+                onChange={(e) => setCierre((c) => ({ ...c, fecha_realizada: e.target.value }))}
+              />
+              <input
+                className={inputCls}
+                type="number"
+                step="0.01"
+                placeholder="Costo (opcional)"
+                value={cierre.costo}
+                onChange={(e) => setCierre((c) => ({ ...c, costo: e.target.value }))}
+              />
+              <input
+                className={inputCls}
+                placeholder="Notas del cierre (opcional)"
+                value={cierre.notas}
+                onChange={(e) => setCierre((c) => ({ ...c, notas: e.target.value }))}
+              />
+              <div className="flex gap-1.5">
+                <button
+                  className={btnPrimary}
+                  disabled={pendiente}
+                  onClick={() =>
+                    ejecutar(
+                      () => completarMantenimiento({ id: m.id, ...cierre }),
+                      () => setCompletando(null)
+                    )
+                  }
+                >
+                  Confirmar
+                </button>
+                <button className={btnGhost} onClick={() => setCompletando(null)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {m.estado === "PROGRAMADO" ? (
+                <>
+                  <button
+                    className={btnGhost}
+                    onClick={() => {
+                      setCompletando(m.id);
+                      setCierre({ fecha_realizada: hoyISO(), costo: "", notas: "" });
+                    }}
+                  >
+                    Completar
+                  </button>
+                  <button
+                    className={btnGhost}
+                    onClick={() =>
+                      setForm({
+                        id: m.id,
+                        equipo_id: String(m.equipo_id),
+                        tipo: m.tipo,
+                        descripcion: m.descripcion,
+                        fecha_programada: m.fecha_programada,
+                        tecnico: m.tecnico ?? "",
+                        notas: m.notas ?? "",
+                        ponerEnMantenimiento: false,
+                      })
+                    }
+                  >
+                    Editar
+                  </button>
+                  <button
+                    className={btnGhost}
+                    disabled={pendiente}
+                    onClick={() => ejecutar(() => cancelarMantenimiento(m.id))}
+                  >
+                    Cancelar
+                  </button>
+                </>
+              ) : null}
+              <button
+                className={btnDanger}
+                disabled={pendiente}
+                onClick={() => {
+                  if (confirm("¿Eliminar este registro de mantenimiento?")) {
+                    ejecutar(() => eliminarMantenimiento(m.id));
+                  }
+                }}
+              >
+                Eliminar
+              </button>
+            </div>
+          ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [completando, cierre, pendiente]
+  );
+
+  const tabla = useTabla({ id: "mantenimientos", columnas, filas: mantenimientos });
 
   return (
     <div className="space-y-5">
@@ -246,140 +421,23 @@ export default function MantenimientosClient({
         </Card>
       ) : null}
 
-      {mantenimientos.length === 0 ? (
-        <Empty>No hay mantenimientos registrados con estos filtros.</Empty>
-      ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[880px] border-collapse">
-            <thead className="border-b border-line bg-paper/70">
-              <tr>
-                <th className={thCls}>Equipo</th>
-                <th className={thCls}>Tipo</th>
-                <th className={thCls}>Descripción</th>
-                <th className={thCls}>Programado</th>
-                <th className={thCls}>Realizado</th>
-                <th className={thCls}>Estado</th>
-                <th className={thCls}>Costo</th>
-                <th className={thCls}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mantenimientos.map((m) => (
-                <tr key={m.id} className="border-b border-line/70 last:border-0 align-top hover:bg-paper/40">
-                  <td className={tdCls}>
-                    <span className="mono text-xs font-semibold text-kraft-dark">{m.equipo_codigo}</span>
-                    <div className="text-xs text-soft">{m.equipo_desc}</div>
-                  </td>
-                  <td className={tdCls}>{ETIQUETA_MANTENIMIENTO[m.tipo] ?? m.tipo}</td>
-                  <td className={tdCls}>
-                    {m.descripcion}
-                    {m.tecnico ? <div className="text-xs text-soft">Técnico: {m.tecnico}</div> : null}
-                    {m.notas ? <div className="text-xs text-soft">{m.notas}</div> : null}
-                  </td>
-                  <td className={tdCls}>{fechaCorta(m.fecha_programada)}</td>
-                  <td className={tdCls}>{fechaCorta(m.fecha_realizada)}</td>
-                  <td className={tdCls}>{tonoEstado(m)}</td>
-                  <td className={tdCls}>{dinero(m.costo)}</td>
-                  <td className={tdCls}>
-                    {completando === m.id ? (
-                      <div className="w-56 space-y-2">
-                        <input
-                          className={inputCls}
-                          type="date"
-                          value={cierre.fecha_realizada}
-                          onChange={(e) => setCierre((c) => ({ ...c, fecha_realizada: e.target.value }))}
-                        />
-                        <input
-                          className={inputCls}
-                          type="number"
-                          step="0.01"
-                          placeholder="Costo (opcional)"
-                          value={cierre.costo}
-                          onChange={(e) => setCierre((c) => ({ ...c, costo: e.target.value }))}
-                        />
-                        <input
-                          className={inputCls}
-                          placeholder="Notas del cierre (opcional)"
-                          value={cierre.notas}
-                          onChange={(e) => setCierre((c) => ({ ...c, notas: e.target.value }))}
-                        />
-                        <div className="flex gap-1.5">
-                          <button
-                            className={btnPrimary}
-                            disabled={pendiente}
-                            onClick={() =>
-                              ejecutar(
-                                () => completarMantenimiento({ id: m.id, ...cierre }),
-                                () => setCompletando(null)
-                              )
-                            }
-                          >
-                            Confirmar
-                          </button>
-                          <button className={btnGhost} onClick={() => setCompletando(null)}>
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {m.estado === "PROGRAMADO" ? (
-                          <>
-                            <button
-                              className={btnGhost}
-                              onClick={() => {
-                                setCompletando(m.id);
-                                setCierre({ fecha_realizada: hoyISO(), costo: "", notas: "" });
-                              }}
-                            >
-                              Completar
-                            </button>
-                            <button
-                              className={btnGhost}
-                              onClick={() =>
-                                setForm({
-                                  id: m.id,
-                                  equipo_id: String(m.equipo_id),
-                                  tipo: m.tipo,
-                                  descripcion: m.descripcion,
-                                  fecha_programada: m.fecha_programada,
-                                  tecnico: m.tecnico ?? "",
-                                  notas: m.notas ?? "",
-                                  ponerEnMantenimiento: false,
-                                })
-                              }
-                            >
-                              Editar
-                            </button>
-                            <button
-                              className={btnGhost}
-                              disabled={pendiente}
-                              onClick={() => ejecutar(() => cancelarMantenimiento(m.id))}
-                            >
-                              Cancelar
-                            </button>
-                          </>
-                        ) : null}
-                        <button
-                          className={btnDanger}
-                          disabled={pendiente}
-                          onClick={() => {
-                            if (confirm("¿Eliminar este registro de mantenimiento?")) {
-                              ejecutar(() => eliminarMantenimiento(m.id));
-                            }
-                          }}
-                        >
-                          Eliminar
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-soft">
+          {tabla.filas.length} de {mantenimientos.length} mantenimientos · haz clic en el título de una columna para
+          ordenarla y filtrarla.
+        </p>
+        <AvisoTabla estado={tabla} />
+      </div>
+
+      <Card className="p-0">
+        <Tabla
+          estado={tabla}
+          claveFila={(m) => m.id}
+          minAncho={880}
+          claseFila={() => "align-top"}
+          vacio={<Empty>No hay mantenimientos registrados con estos filtros.</Empty>}
+        />
+      </Card>
       <p className="text-xs text-soft">
         Estados: {Object.values(ESTADOS_MANTENIMIENTO).join(" · ")}. Al completar un mantenimiento, el equipo regresa
         solo a “Disponible” o “Asignado” según corresponda.

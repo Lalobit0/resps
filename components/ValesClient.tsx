@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { archivarConceptoVale, crearVale, guardarConceptoVale } from "../app/responsivas/actions";
 import type { Empleado } from "../lib/types";
 import { CLAUSULAS_VALE, type ConceptoVale } from "../lib/vales-comun";
@@ -12,6 +12,10 @@ import BuscadorEmpleado from "./BuscadorEmpleado";
 import VerPdfBtn from "./VerPdfBtn";
 import SubirFirmadaBtn from "./SubirFirmadaBtn";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
+import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
+
+/** El vale se firma en papel: cuenta como firmado si llegó el escaneo. */
+const valeFirmado = (v: ValeEnLista) => v.origen === "CARGADA" || !!v.pdf_firmado;
 
 export type ValeEnLista = {
   id: number;
@@ -70,6 +74,101 @@ export default function ValesClient({
   const [mensaje, setMensaje] = useState("");
   const [verCatalogo, setVerCatalogo] = useState(false);
   const [pendiente, iniciar] = useTransition();
+
+  const columnas = useMemo<Columna<ValeEnLista>[]>(
+    () => [
+      {
+        clave: "folio",
+        titulo: "Folio",
+        ancho: "11%",
+        valor: (v) => v.folio,
+        claseCelda: `${tdCls} mono text-xs font-semibold`,
+        celda: (v) => (
+          <>
+            {v.folio}
+            {v.origen_folio ? <div className="mt-0.5 text-[11px] font-normal text-soft">de {v.origen_folio}</div> : null}
+          </>
+        ),
+      },
+      { clave: "numero", titulo: "No.", ancho: "6%", valor: (v) => v.numero_empleado, claseCelda: `${tdCls} mono text-xs` },
+      {
+        clave: "empleado",
+        titulo: "Empleado",
+        ancho: "20%",
+        valor: (v) => v.nombre,
+        claseCelda: `${tdCls} font-medium`,
+        celda: (v) => (
+          <>
+            <Link href={`/empleados/${v.empleado_id}`} className="text-ink hover:text-kraft hover:underline">
+              {v.nombre}
+            </Link>
+            <div className="text-[11px] text-soft">{v.departamento}</div>
+          </>
+        ),
+      },
+      {
+        clave: "departamento",
+        titulo: "Departamento",
+        ancho: "12%",
+        valor: (v) => v.departamento ?? "",
+        claseCelda: `${tdCls} truncate text-xs`,
+      },
+      {
+        clave: "concepto",
+        titulo: "Concepto",
+        ancho: "16%",
+        valor: (v) => v.concepto ?? "",
+        claseCelda: `${tdCls} text-xs`,
+        celda: (v) => v.concepto ?? "—",
+      },
+      {
+        clave: "valor",
+        titulo: "Valor",
+        ancho: "8%",
+        valor: (v) => v.monto ?? "",
+        claseCelda: `${tdCls} text-sm font-semibold`,
+        celda: (v) => dinero(v.monto),
+      },
+      { clave: "fecha", titulo: "Fecha", ancho: "8%", valor: (v) => v.fecha, claseCelda: tdCls, celda: (v) => fechaCorta(v.fecha) },
+      {
+        clave: "firma",
+        titulo: "Firma",
+        ancho: "8%",
+        valor: (v) => (valeFirmado(v) ? "Firmado" : "Sin firmar"),
+        claseCelda: tdCls,
+        celda: (v) => (valeFirmado(v) ? <Badge tono="verde">Firmado</Badge> : <Badge tono="rojo">Sin firmar</Badge>),
+      },
+      {
+        clave: "acciones",
+        titulo: "Acciones",
+        ancho: "16%",
+        claseCelda: tdCls,
+        celda: (v) => (
+          <div className="flex flex-wrap gap-1.5">
+            {v.pdf_path || v.pdf_firmado ? (
+              <VerPdfBtn
+                id={v.id}
+                folio={v.folio}
+                className={btnGhost}
+                subtitulo={`${v.numero_empleado} ${v.nombre} · ${fechaCorta(v.fecha)}`}
+              />
+            ) : null}
+            {!valeFirmado(v) ? (
+              <>
+                <a href={`/api/pdf/${v.id}?original=1`} target="_blank" className={btnGhost}>
+                  Imprimir
+                </a>
+                <SubirFirmadaBtn responsivaId={v.id} folio={v.folio} className={btnGhost} />
+              </>
+            ) : null}
+          </div>
+        ),
+      },
+    ],
+    []
+  );
+
+  const tabla = useTabla({ id: "vales", columnas, filas: vales });
 
   const elegido = activos.find((c) => c.id === conceptoId);
 
@@ -222,74 +321,22 @@ export default function ValesClient({
 
       {verCatalogo ? <Catalogo conceptos={conceptos} /> : null}
 
-      {vales.length === 0 ? (
-        <Empty>Todavía no hay vales. Genera el primero con “Generar vale”.</Empty>
-      ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[900px] border-collapse">
-            <thead className="border-b border-line bg-paper/70">
-              <tr>
-                <th className={thCls}>Folio</th>
-                <th className={thCls}>No.</th>
-                <th className={thCls}>Empleado</th>
-                <th className={thCls}>Concepto</th>
-                <th className={thCls}>Valor</th>
-                <th className={thCls}>Fecha</th>
-                <th className={thCls}>Firma</th>
-                <th className={thCls}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vales.map((v) => {
-                const firmado = v.origen === "CARGADA" || !!v.pdf_firmado;
-                return (
-                  <tr key={v.id} className="border-b border-line/70 last:border-0 hover:bg-paper/40">
-                    <td className={`${tdCls} mono text-xs font-semibold`}>
-                      {v.folio}
-                      {v.origen_folio ? (
-                        <div className="mt-0.5 text-[11px] font-normal text-soft">de {v.origen_folio}</div>
-                      ) : null}
-                    </td>
-                    <td className={`${tdCls} mono text-xs`}>{v.numero_empleado}</td>
-                    <td className={`${tdCls} font-medium`}>
-                      <Link href={`/empleados/${v.empleado_id}`} className="text-ink hover:text-kraft hover:underline">
-                        {v.nombre}
-                      </Link>
-                      <div className="text-[11px] text-soft">{v.departamento}</div>
-                    </td>
-                    <td className={`${tdCls} text-xs`}>{v.concepto ?? "—"}</td>
-                    <td className={`${tdCls} text-sm font-semibold`}>{dinero(v.monto)}</td>
-                    <td className={tdCls}>{fechaCorta(v.fecha)}</td>
-                    <td className={tdCls}>
-                      {firmado ? <Badge tono="verde">Firmado</Badge> : <Badge tono="rojo">Sin firmar</Badge>}
-                    </td>
-                    <td className={tdCls}>
-                      <div className="flex flex-wrap gap-1.5">
-                        {v.pdf_path || v.pdf_firmado ? (
-                          <VerPdfBtn
-                            id={v.id}
-                            folio={v.folio}
-                            className={btnGhost}
-                            subtitulo={`${v.numero_empleado} ${v.nombre} · ${fechaCorta(v.fecha)}`}
-                          />
-                        ) : null}
-                        {!firmado ? (
-                          <>
-                            <a href={`/api/pdf/${v.id}?original=1`} target="_blank" className={btnGhost}>
-                              Imprimir
-                            </a>
-                            <SubirFirmadaBtn responsivaId={v.id} folio={v.folio} className={btnGhost} />
-                          </>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </Card>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-soft">
+          {tabla.filas.length} de {vales.length} vales · haz clic en el título de una columna para ordenarla y
+          filtrarla.
+        </p>
+        <AvisoTabla estado={tabla} />
+      </div>
+
+      <Card className="p-0">
+        <Tabla
+          estado={tabla}
+          claveFila={(v) => v.id}
+          minAncho={900}
+          vacio={<Empty>Todavía no hay vales. Genera el primero con “Generar vale”.</Empty>}
+        />
+      </Card>
     </div>
   );
 }

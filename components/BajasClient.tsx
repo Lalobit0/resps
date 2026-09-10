@@ -7,7 +7,19 @@ import { darDeBajaEnLote, reactivarEmpleado } from "../app/empleados/actions";
 import type { Ausente, EmpleadoDeBaja } from "../lib/bajas";
 import { ETIQUETA_TIPO } from "../lib/constants";
 import { dinero, fechaCorta, hoyISO } from "../lib/helpers";
-import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
+import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tdCls } from "./ui";
+import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
+
+/** Lo mismo que dicen las pastillas, para ordenar y filtrar por ello. */
+const textoPendiente = (b: EmpleadoDeBaja) =>
+  [
+    b.pendientes ? `Sigue con ${b.pendientes}` : "Entregó todo",
+    b.cartas_vigentes ? `${b.cartas_vigentes} carta(s) sin cerrar` : "",
+    b.vales_vigentes ? `${b.vales_vigentes} vale(s) vigente(s)` : "",
+    b.gafetes_sin_recoger ? `Gafete sin recoger: ${b.gafetes_sin_recoger}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
 /**
  * Las bajas de personal.
@@ -108,6 +120,83 @@ export default function BajasClient({
       if (res.ok) router.refresh();
     });
   };
+
+  const columnas = useMemo<Columna<EmpleadoDeBaja>[]>(
+    () => [
+      {
+        clave: "quien",
+        titulo: "Quién",
+        ancho: "26%",
+        valor: (b) => b.nombre,
+        claseCelda: tdCls,
+        celda: (b) => (
+          <>
+            <Link href={`/empleados/${b.id}`} className="font-medium text-ink underline decoration-line">
+              {b.nombre}
+            </Link>
+            <div className="text-xs text-soft">
+              {b.numero_empleado}
+              {b.puesto ? ` · ${b.puesto}` : ""}
+              {b.departamento ? ` · ${b.departamento}` : ""}
+            </div>
+          </>
+        ),
+      },
+      {
+        clave: "departamento",
+        titulo: "Departamento",
+        ancho: "12%",
+        valor: (b) => b.departamento ?? "",
+        claseCelda: `${tdCls} truncate text-xs`,
+      },
+      {
+        clave: "baja",
+        titulo: "Baja",
+        ancho: "9%",
+        valor: (b) => b.fecha_baja ?? "",
+        claseCelda: `${tdCls} whitespace-nowrap text-sm`,
+        celda: (b) => fechaCorta(b.fecha_baja),
+      },
+      {
+        clave: "motivo",
+        titulo: "Motivo",
+        ancho: "13%",
+        valor: (b) => b.motivo_baja ?? "",
+        claseCelda: `${tdCls} text-sm text-soft`,
+        celda: (b) => b.motivo_baja || "—",
+      },
+      {
+        clave: "pendiente",
+        titulo: "Qué quedó pendiente",
+        ancho: "30%",
+        valor: (b) => textoPendiente(b),
+        claseCelda: tdCls,
+        celda: (b) => (
+          <div className="flex flex-wrap gap-1.5">
+            {b.pendientes ? <Badge tono="rojo">Sigue con {b.pendientes}</Badge> : <Badge tono="verde">Entregó todo</Badge>}
+            {b.cartas_vigentes ? <Badge tono="ambar">{b.cartas_vigentes} carta(s) sin cerrar</Badge> : null}
+            {b.vales_vigentes ? <Badge tono="ambar">{b.vales_vigentes} vale(s) vigente(s)</Badge> : null}
+            {b.gafetes_sin_recoger ? <Badge tono="rojo">Gafete sin recoger: {b.gafetes_sin_recoger}</Badge> : null}
+          </div>
+        ),
+      },
+      {
+        clave: "acciones",
+        titulo: "",
+        ancho: "10%",
+        claseCelda: tdCls,
+        celda: (b) => (
+          <button className={btnGhost} onClick={() => revivir(b)} disabled={pendiente}>
+            Reactivar
+          </button>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pendiente]
+  );
+
+  const tabla = useTabla({ id: "bajas", columnas, filas: historial });
 
   return (
     <>
@@ -273,60 +362,21 @@ export default function BajasClient({
         </span>
       </h2>
 
-      {historial.length === 0 ? (
-        <Empty>Todavía no se ha dado de baja a nadie.</Empty>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-line bg-card">
-          <table className="w-full">
-            <thead className="border-b border-line bg-paper/60">
-              <tr>
-                <th className={thCls}>Quién</th>
-                <th className={thCls}>Baja</th>
-                <th className={thCls}>Motivo</th>
-                <th className={thCls}>Qué quedó pendiente</th>
-                <th className={thCls}></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {historial.map((b) => (
-                <tr key={b.id} className="hover:bg-paper/40">
-                  <td className={tdCls}>
-                    <Link href={`/empleados/${b.id}`} className="font-medium text-ink underline decoration-line">
-                      {b.nombre}
-                    </Link>
-                    <div className="text-xs text-soft">
-                      {b.numero_empleado}
-                      {b.puesto ? ` · ${b.puesto}` : ""}
-                      {b.departamento ? ` · ${b.departamento}` : ""}
-                    </div>
-                  </td>
-                  <td className={`${tdCls} whitespace-nowrap text-sm`}>{fechaCorta(b.fecha_baja)}</td>
-                  <td className={`${tdCls} text-sm text-soft`}>{b.motivo_baja || "—"}</td>
-                  <td className={tdCls}>
-                    <div className="flex flex-wrap gap-1.5">
-                      {b.pendientes ? (
-                        <Badge tono="rojo">Sigue con {b.pendientes}</Badge>
-                      ) : (
-                        <Badge tono="verde">Entregó todo</Badge>
-                      )}
-                      {b.cartas_vigentes ? <Badge tono="ambar">{b.cartas_vigentes} carta(s) sin cerrar</Badge> : null}
-                      {b.vales_vigentes ? <Badge tono="ambar">{b.vales_vigentes} vale(s) vigente(s)</Badge> : null}
-                      {b.gafetes_sin_recoger ? (
-                        <Badge tono="rojo">Gafete sin recoger: {b.gafetes_sin_recoger}</Badge>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className={tdCls}>
-                    <button className={btnGhost} onClick={() => revivir(b)} disabled={pendiente}>
-                      Reactivar
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-soft">
+          Haz clic en el título de una columna para ordenarla y filtrarla.
+        </p>
+        <AvisoTabla estado={tabla} />
+      </div>
+
+      <div className="rounded-lg border border-line bg-card">
+        <Tabla
+          estado={tabla}
+          claveFila={(b) => b.id}
+          minAncho={900}
+          vacio={<Empty>Todavía no se ha dado de baja a nadie.</Empty>}
+        />
+      </div>
     </>
   );
 }

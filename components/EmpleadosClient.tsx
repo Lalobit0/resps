@@ -15,15 +15,41 @@ import {
   serializarCondiciones,
   type Condiciones,
 } from "../lib/filtros-empleados";
+import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
 import { Badge, Card, Empty, btnGhost, btnPrimary, inputCls } from "./ui";
 
-const celda = "px-2 py-1 text-sm text-ink align-middle whitespace-nowrap";
-const thc = "px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-soft whitespace-nowrap";
 const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
 const miniDanger = "rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50";
 
 /** Cuántas veces se cumple una condición para este empleado. */
 const cuantos = (e: EmpleadoConEquipos, clave: string) => e[columnaDe(clave) as `c_${string}`] ?? 0;
+
+// El texto de las columnas de pastillas: lo mismo que se ve, para que ordenar
+// y filtrar desde el encabezado coincida con lo que está en pantalla.
+const textoDepto = (e: EmpleadoConEquipos) =>
+  `${e.departamento}${e.area && e.area !== e.departamento ? ` · ${e.area}` : ""}`;
+
+const textoEquipos = (e: EmpleadoConEquipos) =>
+  [
+    (e.computo ?? 0) > 0 ? `PC ${e.computo}` : "",
+    (e.celular ?? 0) > 0 ? `CEL ${e.celular}` : "",
+    (e.radio ?? 0) > 0 ? `RADIO ${e.radio}` : "",
+    (e.otro ?? 0) > 0 ? `OTRO ${e.otro}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+const textoCartas = (e: EmpleadoConEquipos) =>
+  [
+    cuantos(e, "wifi") > 0 ? "WI-FI" : "",
+    cuantos(e, "vale") > 0 ? `VALE ${cuantos(e, "vale")}` : "",
+    cuantos(e, "mantenimiento") > 0 ? `MANTTO ${cuantos(e, "mantenimiento")}` : "",
+    cuantos(e, "gafete") > 0 ? "GAFETE" : "",
+    (e.sin_responsiva ?? 0) > 0 ? `SIN CARTA ${e.sin_responsiva}` : "",
+    cuantos(e, "sin_firma") > 0 ? `SIN FIRMA ${cuantos(e, "sin_firma")}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
 export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConEquipos[] }) {
   const [form, setForm] = useState<DatosEmpleado | null>(null);
@@ -101,6 +127,142 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       else delete siguiente[clave];
       return siguiente;
     });
+
+  const columnas = useMemo<Columna<EmpleadoConEquipos>[]>(
+    () => [
+      { clave: "no", titulo: "No.", ancho: "5%", valor: (e) => e.numero_empleado, claseCelda: "mono text-xs" },
+      {
+        clave: "nombre",
+        titulo: "Nombre",
+        ancho: "14%",
+        valor: (e) => e.nombre,
+        claseCelda: "truncate",
+        celda: (e) => (
+          <Link
+            href={`/empleados/${e.id}`}
+            className="block truncate font-medium text-ink hover:text-kraft hover:underline"
+            title={`${e.nombre} · ver histórico`}
+          >
+            {e.nombre}
+          </Link>
+        ),
+      },
+      {
+        clave: "clase",
+        titulo: "Clase",
+        ancho: "7%",
+        valor: (e) => e.clase ?? "",
+        claseCelda: "truncate text-xs",
+        celda: (e) => <span title={e.clase ?? ""}>{e.clase || <span className="text-soft">—</span>}</span>,
+      },
+      {
+        clave: "puesto",
+        titulo: "Puesto",
+        ancho: "10%",
+        valor: (e) => e.puesto,
+        claseCelda: "truncate text-xs",
+        celda: (e) => <span title={e.puesto}>{e.puesto}</span>,
+      },
+      {
+        clave: "depto",
+        titulo: "Depto / Área",
+        ancho: "10%",
+        valor: (e) => textoDepto(e),
+        claseCelda: "truncate text-xs",
+        celda: (e) => (
+          <span title={textoDepto(e)}>
+            {e.departamento}
+            {e.area && e.area !== e.departamento ? <span className="text-soft"> · {e.area}</span> : null}
+          </span>
+        ),
+      },
+      {
+        clave: "jefe",
+        titulo: "Jefe directo",
+        ancho: "8%",
+        valor: (e) => e.supervisor ?? "",
+        claseCelda: "truncate text-xs text-soft",
+        celda: (e) => <span title={e.supervisor ?? ""}>{e.supervisor ?? "—"}</span>,
+      },
+      {
+        clave: "equipos",
+        titulo: "Equipos",
+        ancho: "12%",
+        ayuda: "Equipos asignados por tipo",
+        valor: (e) => textoEquipos(e),
+        celda: (e) => (
+          <Link href={`/empleados/${e.id}`} className="flex flex-wrap items-center gap-1" title="Ver su histórico">
+            {(e.computo ?? 0) > 0 ? <Badge tono="verde">PC {e.computo}</Badge> : null}
+            {(e.celular ?? 0) > 0 ? <Badge tono="petrol">CEL {e.celular}</Badge> : null}
+            {(e.radio ?? 0) > 0 ? <Badge tono="ambar">RADIO {e.radio}</Badge> : null}
+            {(e.otro ?? 0) > 0 ? <Badge tono="gris">OTRO {e.otro}</Badge> : null}
+            {/* Sin nada entregado la celda quedaría vacía y parecería un error. */}
+            {!textoEquipos(e) ? <span className="text-xs text-soft">—</span> : null}
+          </Link>
+        ),
+      },
+      {
+        clave: "cartas",
+        titulo: "Cartas y pendientes",
+        ancho: "13%",
+        ayuda: "Cartas que tiene y lo que le falta",
+        valor: (e) => textoCartas(e),
+        celda: (e) => (
+          <Link href={`/empleados/${e.id}`} className="flex flex-wrap items-center gap-1" title="Ver su histórico">
+            {cuantos(e, "wifi") > 0 ? <Badge tono="verde">WI-FI</Badge> : null}
+            {cuantos(e, "vale") > 0 ? <Badge tono="ambar">VALE {cuantos(e, "vale")}</Badge> : null}
+            {cuantos(e, "mantenimiento") > 0 ? <Badge tono="petrol">MANTTO {cuantos(e, "mantenimiento")}</Badge> : null}
+            {cuantos(e, "gafete") > 0 ? <Badge tono="kraft">GAFETE</Badge> : null}
+            {(e.sin_responsiva ?? 0) > 0 ? <Badge tono="rojo">SIN CARTA {e.sin_responsiva}</Badge> : null}
+            {cuantos(e, "sin_firma") > 0 ? <Badge tono="rojo">SIN FIRMA {cuantos(e, "sin_firma")}</Badge> : null}
+            {!textoCartas(e) ? <span className="text-xs text-soft">—</span> : null}
+          </Link>
+        ),
+      },
+      {
+        clave: "estado",
+        titulo: "Estado",
+        ancho: "8%",
+        valor: (e) => (e.activo ? "Activo" : "Inactivo"),
+        celda: (e) => (e.activo ? <Badge tono="verde">Activo</Badge> : <Badge tono="gris">Inactivo</Badge>),
+      },
+      {
+        clave: "acciones",
+        titulo: "Acciones",
+        ancho: "13%",
+        celda: (e) => (
+          <div className="flex flex-wrap items-center gap-1">
+            <button className={mini} onClick={() => setForm(empleadoAFormulario(e))}>
+              Editar
+            </button>
+            {e.activo ? (
+              <DarDeBajaBtn empleadoId={e.id} nombre={e.nombre} className={mini} />
+            ) : (
+              <button className={mini} disabled={pendiente} onClick={() => reactivar(e)}>
+                Reactivar
+              </button>
+            )}
+            <button
+              className={miniDanger}
+              disabled={pendiente}
+              onClick={() => {
+                if (confirm(`¿Eliminar a ${e.nombre}? Esta acción no se puede deshacer.`)) {
+                  ejecutar(() => eliminarEmpleado(e.id));
+                }
+              }}
+            >
+              Eliminar
+            </button>
+          </div>
+        ),
+      },
+    ],
+    // `pendiente` cambia los botones; lo demás son funciones estables.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pendiente]
+  );
+
+  const tabla = useTabla({ id: "empleados", columnas, filas: filtrados });
 
   const enviar = () => {
     if (!form) return;
@@ -252,8 +414,12 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
       </Card>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-soft">
-          {filtrados.length} de {empleados.length} empleados · haz clic en un nombre para ver su histórico.
+        <p className="flex flex-wrap items-center gap-2 text-xs text-soft">
+          <span>
+            {tabla.filas.length} de {empleados.length} empleados · haz clic en un nombre para ver su histórico, o en
+            el título de una columna para ordenarla y filtrarla.
+          </span>
+          <AvisoTabla estado={tabla} />
         </p>
         <ExportarBotones
           tabla="empleados"
@@ -288,133 +454,14 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
         </div>
       ) : null}
 
-      {filtrados.length === 0 ? (
-        <Empty>No hay empleados que coincidan. Ajusta el filtro, registra uno o importa tu Excel.</Empty>
-      ) : (
-        <Card className="p-0">
-          <table className="w-full table-fixed border-collapse">
-            <colgroup>
-              <col className="w-[4%]" />
-              <col className="w-[14%]" />
-              <col className="w-[7%]" />
-              <col className="w-[10%]" />
-              <col className="w-[10%]" />
-              <col className="w-[9%]" />
-              <col className="w-[12%]" />
-              <col className="w-[13%]" />
-              <col className="w-[5%]" />
-              <col className="w-[16%]" />
-            </colgroup>
-            <thead className="border-b border-line bg-paper/70">
-              <tr>
-                <th className={thc}>No.</th>
-                <th className={thc}>Nombre</th>
-                <th className={thc}>Clase</th>
-                <th className={thc}>Puesto</th>
-                <th className={thc}>Depto / Área</th>
-                <th className={thc}>Jefe directo</th>
-                <th className={thc} title="Equipos asignados por tipo">Equipos</th>
-                <th className={thc} title="Cartas que tiene y lo que le falta">Cartas y pendientes</th>
-                <th className={thc}>Estado</th>
-                <th className={thc}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtrados.map((e) => (
-                <tr key={e.id} className="border-b border-line/60 last:border-0 hover:bg-paper/40">
-                  <td className={`${celda} mono text-xs`}>{e.numero_empleado}</td>
-                  <td className={`${celda} truncate`} title={`${e.nombre} · ver histórico`}>
-                    <Link href={`/empleados/${e.id}`} className="font-medium text-ink hover:text-kraft hover:underline">
-                      {e.nombre}
-                    </Link>
-                  </td>
-                  <td className={`${celda} truncate text-xs`} title={e.clase ?? ""}>
-                    {e.clase ? <span className="text-ink">{e.clase}</span> : <span className="text-soft">—</span>}
-                  </td>
-                  <td className={`${celda} truncate text-xs`} title={e.puesto}>
-                    {e.puesto}
-                  </td>
-                  <td className={`${celda} truncate text-xs`} title={`${e.departamento}${e.area && e.area !== e.departamento ? " · " + e.area : ""}`}>
-                    {e.departamento}
-                    {e.area && e.area !== e.departamento ? <span className="text-soft"> · {e.area}</span> : null}
-                  </td>
-                  <td className={`${celda} truncate text-xs text-soft`} title={e.supervisor ?? ""}>
-                    {e.supervisor ?? "—"}
-                  </td>
-                  <td className={celda}>
-                    <Link href={`/empleados/${e.id}`} className="flex flex-wrap items-center gap-1" title="Ver su histórico">
-                      {(e.computo ?? 0) > 0 ? <Badge tono="verde">PC {e.computo}</Badge> : null}
-                      {(e.celular ?? 0) > 0 ? <Badge tono="petrol">CEL {e.celular}</Badge> : null}
-                      {(e.radio ?? 0) > 0 ? <Badge tono="ambar">RADIO {e.radio}</Badge> : null}
-                      {(e.otro ?? 0) > 0 ? <Badge tono="gris">OTRO {e.otro}</Badge> : null}
-                      {/* Sin nada entregado la celda quedaría vacía y parecería un error. */}
-                      {!(e.computo ?? 0) && !(e.celular ?? 0) && !(e.radio ?? 0) && !(e.otro ?? 0) ? (
-                        <span className="text-xs text-soft">—</span>
-                      ) : null}
-                    </Link>
-                  </td>
-                  <td className="px-2 py-1 align-middle">
-                    <Link href={`/empleados/${e.id}`} className="flex flex-wrap items-center gap-1" title="Ver su histórico">
-                      {cuantos(e, "wifi") > 0 ? <Badge tono="verde">WI-FI</Badge> : null}
-                      {cuantos(e, "vale") > 0 ? <Badge tono="ambar">VALE {cuantos(e, "vale")}</Badge> : null}
-                      {cuantos(e, "mantenimiento") > 0 ? (
-                        <Badge tono="petrol">MANTTO {cuantos(e, "mantenimiento")}</Badge>
-                      ) : null}
-                      {cuantos(e, "gafete") > 0 ? <Badge tono="kraft">GAFETE</Badge> : null}
-                      {(e.sin_responsiva ?? 0) > 0 ? (
-                        <Badge tono="rojo">SIN CARTA {e.sin_responsiva}</Badge>
-                      ) : null}
-                      {cuantos(e, "sin_firma") > 0 ? (
-                        <Badge tono="rojo">SIN FIRMA {cuantos(e, "sin_firma")}</Badge>
-                      ) : null}
-                      {!cuantos(e, "wifi") &&
-                      !cuantos(e, "vale") &&
-                      !cuantos(e, "mantenimiento") &&
-                      !cuantos(e, "gafete") &&
-                      !(e.sin_responsiva ?? 0) &&
-                      !cuantos(e, "sin_firma") ? (
-                        <span className="text-xs text-soft">—</span>
-                      ) : null}
-                    </Link>
-                  </td>
-                  <td className={celda}>
-                    {e.activo ? <Badge tono="verde">Activo</Badge> : <Badge tono="gris">Inactivo</Badge>}
-                  </td>
-                  <td className={celda}>
-                    <div className="flex flex-wrap items-center gap-1">
-                      <button
-                        className={mini}
-                        onClick={() => setForm(empleadoAFormulario(e))}
-                      >
-                        Editar
-                      </button>
-                      {e.activo ? (
-                        <DarDeBajaBtn empleadoId={e.id} nombre={e.nombre} className={mini} />
-                      ) : (
-                        <button className={mini} disabled={pendiente} onClick={() => reactivar(e)}>
-                          Reactivar
-                        </button>
-                      )}
-                      <button
-                        className={miniDanger}
-                        disabled={pendiente}
-                        onClick={() => {
-                          if (confirm(`¿Eliminar a ${e.nombre}? Esta acción no se puede deshacer.`)) {
-                            ejecutar(() => eliminarEmpleado(e.id));
-                          }
-                        }}
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
+      <Card className="p-0">
+        <Tabla
+          estado={tabla}
+          claveFila={(e) => e.id}
+          minAncho={1180}
+          vacio={<Empty>No hay empleados que coincidan. Ajusta el filtro, registra uno o importa tu Excel.</Empty>}
+        />
+      </Card>
     </div>
   );
 }

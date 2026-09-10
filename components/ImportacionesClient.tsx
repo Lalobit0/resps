@@ -13,7 +13,8 @@ import {
 } from "../lib/importaciones-comun";
 import { ETIQUETA_TIPO } from "../lib/constants";
 import type { EquipoConAsignado } from "../lib/types";
-import { Badge, Card, Empty, Label, inputCls, tdCls, thCls } from "./ui";
+import { Badge, Card, Empty, Label, inputCls, tdCls } from "./ui";
+import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
 
 /**
  * La revisión de una carga de Excel.
@@ -57,6 +58,95 @@ export default function ImportacionesClient({
         .includes(q);
     });
   }, [equipos, hueco, busqueda]);
+
+  const columnas = useMemo<Columna<EquipoConAsignado>[]>(
+    () => [
+      {
+        clave: "codigo",
+        titulo: "Código",
+        ancho: "12%",
+        valor: (e) => e.codigo,
+        claseCelda: `${tdCls} whitespace-nowrap font-mono text-xs`,
+      },
+      {
+        clave: "equipo",
+        titulo: "Equipo",
+        ancho: "22%",
+        valor: (e) => [e.marca, e.modelo].filter(Boolean).join(" "),
+        claseCelda: tdCls,
+        celda: (e) => (
+          <>
+            <span className="font-medium">{[e.marca, e.modelo].filter(Boolean).join(" ") || "—"}</span>
+            <div className="text-xs text-soft">{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</div>
+          </>
+        ),
+      },
+      {
+        clave: "serie",
+        titulo: "Serie",
+        ancho: "14%",
+        valor: (e) => e.numero_serie ?? "",
+        claseCelda: `${tdCls} font-mono text-xs`,
+        celda: (e) => e.numero_serie || "—",
+      },
+      {
+        clave: "asignado",
+        titulo: "Asignado a",
+        ancho: "20%",
+        valor: (e) => e.asignado_nombre ?? "",
+        claseCelda: tdCls,
+        celda: (e) =>
+          e.asignado_nombre ? (
+            <>
+              {e.asignado_nombre}
+              <div className="text-xs text-soft">
+                {e.asignado_numero} · {e.asignado_departamento ?? "—"}
+              </div>
+            </>
+          ) : (
+            <span className="text-soft">—</span>
+          ),
+      },
+      {
+        clave: "falta",
+        titulo: "Qué le falta",
+        ancho: "22%",
+        valor: (e) => huecosDe(e).map((h) => h.etiqueta).join(" · ") || "Completo",
+        claseCelda: tdCls,
+        celda: (e) => {
+          const faltan = huecosDe(e);
+          return faltan.length === 0 ? (
+            <Badge tono="verde">Completo</Badge>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {faltan.map((h) => (
+                <Badge key={h.clave} tono="ambar">
+                  {h.etiqueta}
+                </Badge>
+              ))}
+            </div>
+          );
+        },
+      },
+      {
+        clave: "completar",
+        titulo: "",
+        ancho: "10%",
+        claseCelda: tdCls,
+        celda: (e) => (
+          <Link
+            href={`/inventario/${e.id}`}
+            className="inline-flex whitespace-nowrap rounded-md border border-line bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper"
+          >
+            Completar
+          </Link>
+        ),
+      },
+    ],
+    []
+  );
+
+  const tabla = useTabla({ id: "importaciones", columnas, filas: visibles });
 
   const pastillas = [
     { clave: "", etiqueta: "Todos", valor: equipos.length, tono: "" },
@@ -188,80 +278,31 @@ export default function ImportacionesClient({
             />
           </div>
           <p className="pb-2 text-sm text-soft">
-            {visibles.length} de {equipos.length}
+            {tabla.filas.length} de {equipos.length}
           </p>
         </div>
       )}
 
-      {relevada ? null : equipos.length === 0 ? (
-        <Empty>Esta carga no dejó ningún equipo en el inventario.</Empty>
-      ) : visibles.length === 0 ? (
-        <Empty>Ningún equipo de esta carga coincide con eso.</Empty>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-line bg-card">
-          <table className="w-full">
-            <thead className="border-b border-line bg-paper/60">
-              <tr>
-                <th className={thCls}>Código</th>
-                <th className={thCls}>Equipo</th>
-                <th className={thCls}>Serie</th>
-                <th className={thCls}>Asignado a</th>
-                <th className={thCls}>Qué le falta</th>
-                <th className={thCls}></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {visibles.map((e) => {
-                const faltan = huecosDe(e);
-                return (
-                  <tr key={e.id} className="hover:bg-paper/40">
-                    <td className={`${tdCls} whitespace-nowrap font-mono text-xs`}>{e.codigo}</td>
-                    <td className={tdCls}>
-                      <span className="font-medium">
-                        {[e.marca, e.modelo].filter(Boolean).join(" ") || "—"}
-                      </span>
-                      <div className="text-xs text-soft">{ETIQUETA_TIPO[e.tipo] ?? e.tipo}</div>
-                    </td>
-                    <td className={`${tdCls} font-mono text-xs`}>{e.numero_serie || "—"}</td>
-                    <td className={tdCls}>
-                      {e.asignado_nombre ? (
-                        <>
-                          {e.asignado_nombre}
-                          <div className="text-xs text-soft">
-                            {e.asignado_numero} · {e.asignado_departamento ?? "—"}
-                          </div>
-                        </>
-                      ) : (
-                        <span className="text-soft">—</span>
-                      )}
-                    </td>
-                    <td className={tdCls}>
-                      {faltan.length === 0 ? (
-                        <Badge tono="verde">Completo</Badge>
-                      ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {faltan.map((h) => (
-                            <Badge key={h.clave} tono="ambar">
-                              {h.etiqueta}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td className={tdCls}>
-                      <Link
-                        href={`/inventario/${e.id}`}
-                        className="inline-flex whitespace-nowrap rounded-md border border-line bg-white px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper"
-                      >
-                        Completar
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {relevada ? null : (
+        <>
+          <div className="mb-2 flex justify-end">
+            <AvisoTabla estado={tabla} />
+          </div>
+          <div className="rounded-lg border border-line bg-card">
+            <Tabla
+              estado={tabla}
+              claveFila={(e) => e.id}
+              minAncho={900}
+              vacio={
+                <Empty>
+                  {equipos.length === 0
+                    ? "Esta carga no dejó ningún equipo en el inventario."
+                    : "Ningún equipo de esta carga coincide con eso."}
+                </Empty>
+              }
+            />
+          </div>
+        </>
       )}
     </>
   );

@@ -24,11 +24,14 @@ export const PREFIJO_CATEGORIA: Record<string, string> = {
   Otro: "OTR",
 };
 
-export const ESTADOS_EQUIPO = ["DISPONIBLE", "ASIGNADO", "MANTENIMIENTO", "BAJA"] as const;
+export const ESTADOS_EQUIPO = ["DISPONIBLE", "ASIGNADO", "PRESTADO", "MANTENIMIENTO", "BAJA"] as const;
 
 export const ETIQUETA_ESTADO: Record<string, string> = {
   DISPONIBLE: "Disponible",
   ASIGNADO: "Asignado",
+  // Prestado no es asignado: sigue siendo del anaquel, solo que ahorita no
+  // está ahí. Por eso es su propio estado y no un empleado en `asignado_a`.
+  PRESTADO: "Prestado",
   MANTENIMIENTO: "En mantenimiento",
   BAJA: "Baja",
 };

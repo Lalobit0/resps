@@ -256,6 +256,51 @@ CREATE TABLE IF NOT EXISTS gafete_puertas (
 );
 
 -- ======================================================================
+-- Pases de préstamo.
+--
+-- Prestar no es entregar. Una responsiva dice "esto es tuyo mientras
+-- trabajes aquí"; un préstamo dice "te lo llevas y lo traes el viernes".
+-- Mezclarlos era lo que pasaba antes: o se asignaba el equipo —y quedaba a
+-- nombre de alguien que solo lo iba a tener dos días— o no se anotaba nada
+-- y el equipo simplemente desaparecía del anaquel.
+-- ======================================================================
+
+CREATE TABLE IF NOT EXISTS prestamos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  folio TEXT NOT NULL UNIQUE,
+  -- Quien se lo lleva y firma. Su área sale de la plantilla.
+  empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+  -- El equipo del inventario, cuando lo hay. Un préstamo puede ser de algo
+  -- que no está dado de alta —un cable, un proyector prestado por otra
+  -- planta—, y eso se escribe a mano en la descripción.
+  equipo_id INTEGER REFERENCES equipos(id) ON DELETE SET NULL,
+  descripcion TEXT NOT NULL,
+  cantidad INTEGER NOT NULL DEFAULT 1,
+  motivo TEXT,
+  fecha_prestamo TEXT NOT NULL,
+  -- Para cuándo quedó de traerlo. Es lo que vuelve vencido a un préstamo.
+  fecha_compromiso TEXT,
+  fecha_devolucion TEXT,
+  -- PRESTADO | DEVUELTO | CANCELADO
+  estado TEXT NOT NULL DEFAULT 'PRESTADO',
+  condicion_entrega TEXT,
+  condicion_regreso TEXT,
+  entregado_por TEXT,
+  recibido_por TEXT,
+  firma_empleado TEXT,
+  firma_autoridad TEXT,
+  pdf_path TEXT,
+  pdf_firmado TEXT,
+  fecha_firma TEXT,
+  notas TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_prestamos_empleado ON prestamos (empleado_id);
+CREATE INDEX IF NOT EXISTS idx_prestamos_equipo ON prestamos (equipo_id);
+CREATE INDEX IF NOT EXISTS idx_prestamos_estado ON prestamos (estado);
+
+-- ======================================================================
 -- Identidad. Hasta ahora el sistema no sabía quién lo estaba usando; con
 -- expedientes de personal eso deja de ser aceptable: hay que poder contestar
 -- quién validó, quién descargó y quién cambió un permiso.
@@ -642,6 +687,25 @@ Con la firma de la presente, el departamento de TI da por recibido el equipo en 
 
 {{observaciones}}`;
 
+/**
+ * El pase de préstamo.
+ *
+ * A diferencia de la responsiva, aquí lo que se dice es que el equipo NO
+ * cambia de dueño: sale del anaquel, tiene fecha de regreso y quien lo firma
+ * responde por él mientras lo trae.
+ */
+const PLANTILLA_PRESTAMO = `En {{ciudad}}, a {{fecha}}, el (la) que suscribe {{nombre_empleado}}, con número de empleado {{numero_empleado}}, quien desempeña el puesto de {{puesto}} en el área de {{departamento}} de {{empresa}}, hace constar que recibe en calidad de PRÉSTAMO el material o equipo que se describe a continuación:
+
+{{tabla_equipo}}
+
+Motivo del préstamo: {{motivo}}
+
+Me comprometo a devolverlo a más tardar el {{fecha_compromiso}}, en las mismas condiciones en que lo recibí, salvo el desgaste normal por su uso. Entiendo que este documento NO transfiere la propiedad ni la asignación del equipo: sigue siendo propiedad de {{empresa}} y forma parte de su inventario.
+
+Durante el tiempo que lo tenga en mi poder soy responsable de su cuidado, resguardo y buen uso, y me obligo a informar de inmediato al departamento de TI en caso de falla, pérdida, robo o daño. En caso de pérdida o daño por descuido, acepto que se me descuente el valor de reposición conforme a las políticas de la empresa.
+
+{{observaciones}}`;
+
 // El tarifario que RH trae en su formato de vale. Se siembra una sola vez: a
 // partir de ahí se administra desde la pantalla de vales.
 const CONCEPTOS_VALE_SEED: [string, number, string][] = [
@@ -692,6 +756,7 @@ const PLANTILLAS_SEED: [string, string, string][] = [
   ["vale_descuento", "Vale de descuento — equipo que se devuelve", PLANTILLA_VALE],
   ["vale_descuento_consumible", "Vale de descuento — uniforme y consumibles", PLANTILLA_VALE_CONSUMIBLE],
   ["responsiva_devolucion", "Carta de devolución de equipo", PLANTILLA_DEVOLUCION],
+  ["pase_prestamo", "Pase de préstamo de equipo o material", PLANTILLA_PRESTAMO],
 ];
 
 function columnas(db: Database.Database, tabla: string): string[] {

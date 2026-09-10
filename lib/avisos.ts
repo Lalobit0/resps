@@ -2,6 +2,7 @@ import { db } from "./db";
 import { detectarDuplicados, type EquipoRevisable } from "./duplicados";
 import { revisarCelulares } from "./celulares";
 import { equiposPorLigar, paresPartidos, totalSinFirma, totalSinResponsiva } from "./pendientes";
+import { prestamosVencidos, queSePresto } from "./prestamos";
 
 /**
  * Todo lo que el sistema quiere avisar, en un solo lugar. Antes cada pantalla
@@ -111,6 +112,23 @@ export function recolectarAvisos(): Aviso[] {
       href: "/inventario/duplicados",
       etiquetaAccion: "Revisarlos y unirlos",
       tono: "ambar",
+    });
+  }
+
+  // 7. Préstamos que ya se pasaron de la fecha de regreso.
+  const vencidos = prestamosVencidos();
+  if (vencidos.length) {
+    avisos.push({
+      clave: "prestamos-vencidos",
+      total: vencidos.length,
+      titulo: `${vencidos.length} préstamo(s) vencidos`,
+      detalle: `Quedaron de traerlos y ya se pasó la fecha: ${vencidos
+        .slice(0, 3)
+        .map((p) => `${queSePresto(p)} (${p.nombre})`)
+        .join(", ")}${vencidos.length > 3 ? "…" : "."}`,
+      href: "/prestamos",
+      etiquetaAccion: "Ver los pases",
+      tono: "rojo",
     });
   }
 

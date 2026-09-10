@@ -62,7 +62,6 @@ export default function GafetesClient({
       if (filtro === "activos" && g.estado !== "ACTIVO") return false;
       if (filtro === "por_recoger" && g.estado !== "POR_RECOGER") return false;
       if (filtro === "sin_dueno" && g.empleado_id) return false;
-      if (filtro === "de_bajas" && !(g.estado === "ACTIVO" && g.empleado_activo === 0)) return false;
       if (filtro === "difieren" && !hayDiferencia(g)) return false;
       if (depto && g.departamento !== depto) return false;
       if (perfil === "__sin__" ? g.perfiles.length > 0 : perfil && !g.perfiles.includes(perfil)) return false;
@@ -87,6 +86,28 @@ export default function GafetesClient({
     const d = difiereDelPerfil(g, perfiles);
     return d.demas.length > 0 || d.faltan.length > 0;
   }
+
+  /**
+   * La matriz es de quien trabaja aquí. Quien ya se fue estorba en ella —son
+   * renglones que nadie va a volver a tocar— pero no se puede simplemente
+   * esconder: su tarjeta sigue existiendo. Así que se va a su propia lista,
+   * abajo, donde lo que importa es si todavía abre.
+   */
+  const salio = (g: Gafete) => g.empleado_activo === 0;
+
+  const enPlantilla = useMemo(() => visibles.filter((g) => !salio(g)), [visibles]);
+
+  const deSalidos = useMemo(
+    () =>
+      // Primero los que siguen abriendo, que son los que hay que ir a recoger.
+      [...visibles.filter(salio)].sort(
+        (a, b) => Number(b.estado === "ACTIVO") - Number(a.estado === "ACTIVO") || a.numero.localeCompare(b.numero)
+      ),
+    [visibles]
+  );
+
+  const totalPlantilla = useMemo(() => lista.filter((g) => !salio(g)).length, [lista]);
+  const totalSalidos = lista.length - totalPlantilla;
 
   const deBajas = useMemo(() => lista.filter((g) => g.estado === "ACTIVO" && g.empleado_activo === 0), [lista]);
 
@@ -131,9 +152,9 @@ export default function GafetesClient({
           <p className="mt-1 max-w-3xl text-sm text-red-900">
             La tarjeta sigue abriendo hasta que alguien la quite del lector: {deBajas.map((g) => g.numero).join(", ")}.
           </p>
-          <button className={`${btnGhost} mt-3`} onClick={() => setFiltro("de_bajas")}>
-            Ver solo esos
-          </button>
+          <a href="#salidos" className={`${btnGhost} mt-3 inline-flex`}>
+            Ver la lista de abajo ↓
+          </a>
         </Card>
       ) : null}
 
@@ -174,7 +195,6 @@ export default function GafetesClient({
           <option value="activos">Solo activos</option>
           <option value="por_recoger">Por recoger</option>
           <option value="sin_dueno">Sin asignar</option>
-          <option value="de_bajas">De gente que ya no está</option>
           <option value="difieren">No cuadran con su perfil</option>
         </select>
         {hayFiltro ? (
@@ -221,134 +241,203 @@ export default function GafetesClient({
       </Card>
 
       <p className="mb-2 text-xs text-soft">
-        {visibles.length} de {lista.length} gafetes
+        {enPlantilla.length} de {totalPlantilla} gafetes de quien trabaja aquí
         {puerta
           ? ` · quiénes abren la (${puerta}) ${puertas.find((p) => String(p.numero) === puerta)?.nombre ?? ""}`
           : ""}
       </p>
 
-      {visibles.length === 0 ? (
+      {enPlantilla.length === 0 ? (
         <Empty>
           {lista.length === 0
             ? "Todavía no hay gafetes. Sube la matriz del formato FRH-14 o asigna el primero a mano."
-            : "Ningún gafete coincide con eso."}
+            : "Ningún gafete de la plantilla coincide con eso."}
         </Empty>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line bg-card">
-          <table className="w-full">
-            <thead className="border-b border-line bg-paper/60">
-              <tr>
-                <th className={thCls}>Gafete</th>
-                <th className={`${thCls} min-w-[15rem]`}>Quién lo trae</th>
-                <th className={thCls}>Perfil</th>
-                {puertas.map((p) => (
-                  <th key={p.id} className={`${thCls} px-1 text-center align-bottom`} title={p.nombre}>
-                    <span className="block text-sm text-ink">({p.numero})</span>
-                    {/* El nombre completo cabe de lado: nueve columnas no dan
-                        para escribirlo horizontal sin partir la tabla. */}
-                    <span
-                      className="mx-auto mt-1 block whitespace-nowrap text-[10px] font-medium normal-case text-soft"
-                      style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", height: "6.5rem" }}
-                    >
-                      {p.nombre}
-                    </span>
-                  </th>
-                ))}
-                <th className={thCls}>Estado</th>
-                <th className={thCls}></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {visibles.map((g) => {
-                const dif = difiereDelPerfil(g, perfiles);
-                const abre = new Set(g.puertas);
-                return (
-                  <tr key={g.id} className="hover:bg-paper/40">
-                    <td className={`${tdCls} whitespace-nowrap font-mono text-xs`}>{g.numero}</td>
-                    <td className={tdCls}>
-                      {g.nombre ? (
-                        <>
-                          <Link href={`/empleados/${g.empleado_id}`} className="font-medium underline decoration-line">
-                            {g.nombre}
-                          </Link>
-                          <div className="text-xs text-soft">
-                            {g.numero_empleado}
-                            {g.puesto ? ` · ${g.puesto}` : ""}
-                            {g.departamento ? ` · ${g.departamento}` : ""}
-                          </div>
-                          {g.empleado_activo === 0 ? <Badge tono="rojo">Ya no trabaja aquí</Badge> : null}
-                        </>
-                      ) : (
-                        <span className="text-soft">Sin asignar</span>
-                      )}
-                    </td>
-                    <td className={tdCls}>
-                      <span className="font-semibold text-ink">{textoPerfiles(g.perfiles)}</span>
-                      {dif.demas.length || dif.faltan.length ? (
-                        <div
-                          className="mt-0.5 text-xs text-amber-700"
-                          title="Lo que abre no es lo que dice su perfil"
-                        >
-                          {dif.demas.length ? `+${dif.demas.join(",")}` : ""}
-                          {dif.demas.length && dif.faltan.length ? " " : ""}
-                          {dif.faltan.length ? `−${dif.faltan.join(",")}` : ""}
-                        </div>
-                      ) : null}
-                    </td>
-                    {puertas.map((p) => (
-                      <td key={p.id} className="px-2 py-2.5 text-center">
-                        {abre.has(p.numero) ? (
-                          <span className="font-bold text-kraft-dark" title={p.nombre}>
-                            ✕
-                          </span>
-                        ) : (
-                          <span className="text-line">·</span>
-                        )}
-                      </td>
-                    ))}
-                    <td className={tdCls}>
-                      <Badge tono={(TONO_ESTADO_GAFETE[g.estado] ?? "gris") as never}>
-                        {ETIQUETA_ESTADO_GAFETE[g.estado] ?? g.estado}
-                      </Badge>
-                    </td>
-                    <td className={`${tdCls} whitespace-nowrap`}>
-                      {/* Nueve columnas de puertas dejan poco ancho: las
-                          acciones van en una sola línea y compactas. */}
-                      <div className="flex items-center gap-1">
-                        <button className={btnGhost} onClick={() => setForm(g)}>
-                          Editar
-                        </button>
-                        {g.estado === "POR_RECOGER" ? (
-                          <button
-                            className={btnGhost}
-                            disabled={pendiente}
-                            title="Marcar que la tarjeta ya se recuperó"
-                            onClick={() => ejecutar(() => cambiarEstadoGafete(g.id, "RECOGIDO"))}
-                          >
-                            Recogido
-                          </button>
-                        ) : null}
-                        <button
-                          className={btnDanger}
-                          disabled={pendiente}
-                          title={`Borrar el gafete ${g.numero}`}
-                          onClick={() => {
-                            if (!confirm(`Se va a borrar el gafete ${g.numero} del sistema.\n\n¿Continuar?`)) return;
-                            ejecutar(() => eliminarGafete(g.id));
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <TablaGafetes
+          filas={enPlantilla}
+          puertas={puertas}
+          perfiles={perfiles}
+          pendiente={pendiente}
+          onEditar={setForm}
+          onEstado={(id, estado) => ejecutar(() => cambiarEstadoGafete(id, estado))}
+          onBorrar={(id) => ejecutar(() => eliminarGafete(id))}
+        />
       )}
+
+      {/* --- Los que ya no trabajan aquí, aparte --- */}
+      {totalSalidos > 0 ? (
+        <section id="salidos" className="mt-8">
+          <h2 className="text-base font-bold text-ink">
+            Gafetes de quien ya no trabaja aquí
+            <span className="ml-2 rounded-full bg-paper px-2 py-0.5 text-[10px] font-semibold normal-case text-soft">
+              {hayFiltro ? `${deSalidos.length} de ${totalSalidos}` : totalSalidos}
+            </span>
+          </h2>
+          <p className="mb-2 mt-1 max-w-3xl text-xs text-soft">
+            Salen de la matriz de arriba porque ya no son plantilla, pero la tarjeta existe: mientras diga{" "}
+            <b>Activo</b> o <b>Por recoger</b> sigue abriendo, hasta que alguien la quite del lector. Con{" "}
+            <b>Recogido</b> se marca que ya se recuperó.
+          </p>
+          {deSalidos.length === 0 ? (
+            <Empty>Ninguno de ellos coincide con los filtros de arriba.</Empty>
+          ) : (
+            <TablaGafetes
+              filas={deSalidos}
+              puertas={puertas}
+              perfiles={perfiles}
+              pendiente={pendiente}
+              resaltarActivos
+              onEditar={setForm}
+              onEstado={(id, estado) => ejecutar(() => cambiarEstadoGafete(id, estado))}
+              onBorrar={(id) => ejecutar(() => eliminarGafete(id))}
+            />
+          )}
+        </section>
+      ) : null}
     </>
+  );
+}
+
+/**
+ * La cuadrícula del FRH-14: una línea por gafete y una columna por puerta.
+ *
+ * Se usa dos veces —la plantilla y los que ya se fueron— y son la misma tabla:
+ * lo único que cambia es que en la segunda un gafete todavía activo se pinta
+ * en rojo, porque ahí sí es un pendiente.
+ */
+function TablaGafetes({
+  filas,
+  puertas,
+  perfiles,
+  pendiente,
+  resaltarActivos = false,
+  onEditar,
+  onEstado,
+  onBorrar,
+}: {
+  filas: Gafete[];
+  puertas: Puerta[];
+  perfiles: PerfilGafete[];
+  pendiente: boolean;
+  resaltarActivos?: boolean;
+  onEditar: (g: Gafete) => void;
+  onEstado: (id: number, estado: string) => void;
+  onBorrar: (id: number) => void;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-line bg-card">
+      <table className="w-full">
+        <thead className="border-b border-line bg-paper/60">
+          <tr>
+            <th className={thCls}>Gafete</th>
+            <th className={`${thCls} min-w-[15rem]`}>Quién lo trae</th>
+            <th className={thCls}>Perfil</th>
+            {puertas.map((p) => (
+              <th key={p.id} className={`${thCls} px-1 text-center align-bottom`} title={p.nombre}>
+                <span className="block text-sm text-ink">({p.numero})</span>
+                {/* El nombre completo cabe de lado: nueve columnas no dan
+                    para escribirlo horizontal sin partir la tabla. */}
+                <span
+                  className="mx-auto mt-1 block whitespace-nowrap text-[10px] font-medium normal-case text-soft"
+                  style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", height: "6.5rem" }}
+                >
+                  {p.nombre}
+                </span>
+              </th>
+            ))}
+            <th className={thCls}>Estado</th>
+            <th className={thCls}></th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {filas.map((g) => {
+            const dif = difiereDelPerfil(g, perfiles);
+            const abre = new Set(g.puertas);
+            // En la lista de salidos, seguir abriendo es lo que hay que ver.
+            const pendienteDeRecoger = resaltarActivos && (g.estado === "ACTIVO" || g.estado === "POR_RECOGER");
+            return (
+              <tr key={g.id} className={pendienteDeRecoger ? "bg-red-50 hover:bg-red-100/60" : "hover:bg-paper/40"}>
+                <td className={`${tdCls} whitespace-nowrap font-mono text-xs`}>{g.numero}</td>
+                <td className={tdCls}>
+                  {g.nombre ? (
+                    <>
+                      <Link href={`/empleados/${g.empleado_id}`} className="font-medium underline decoration-line">
+                        {g.nombre}
+                      </Link>
+                      <div className="text-xs text-soft">
+                        {g.numero_empleado}
+                        {g.puesto ? ` · ${g.puesto}` : ""}
+                        {g.departamento ? ` · ${g.departamento}` : ""}
+                      </div>
+                      {g.empleado_activo === 0 ? <Badge tono="rojo">Ya no trabaja aquí</Badge> : null}
+                    </>
+                  ) : (
+                    <span className="text-soft">Sin asignar</span>
+                  )}
+                </td>
+                <td className={tdCls}>
+                  <span className="font-semibold text-ink">{textoPerfiles(g.perfiles)}</span>
+                  {dif.demas.length || dif.faltan.length ? (
+                    <div className="mt-0.5 text-xs text-amber-700" title="Lo que abre no es lo que dice su perfil">
+                      {dif.demas.length ? `+${dif.demas.join(",")}` : ""}
+                      {dif.demas.length && dif.faltan.length ? " " : ""}
+                      {dif.faltan.length ? `−${dif.faltan.join(",")}` : ""}
+                    </div>
+                  ) : null}
+                </td>
+                {puertas.map((p) => (
+                  <td key={p.id} className="px-2 py-2.5 text-center">
+                    {abre.has(p.numero) ? (
+                      <span className="font-bold text-kraft-dark" title={p.nombre}>
+                        ✕
+                      </span>
+                    ) : (
+                      <span className="text-line">·</span>
+                    )}
+                  </td>
+                ))}
+                <td className={tdCls}>
+                  <Badge tono={(TONO_ESTADO_GAFETE[g.estado] ?? "gris") as never}>
+                    {ETIQUETA_ESTADO_GAFETE[g.estado] ?? g.estado}
+                  </Badge>
+                </td>
+                <td className={`${tdCls} whitespace-nowrap`}>
+                  {/* Nueve columnas de puertas dejan poco ancho: las
+                      acciones van en una sola línea y compactas. */}
+                  <div className="flex items-center gap-1">
+                    <button className={btnGhost} onClick={() => onEditar(g)}>
+                      Editar
+                    </button>
+                    {g.estado === "ACTIVO" || g.estado === "POR_RECOGER" ? (
+                      <button
+                        className={btnGhost}
+                        disabled={pendiente}
+                        title="Marcar que la tarjeta ya se recuperó"
+                        onClick={() => onEstado(g.id, "RECOGIDO")}
+                      >
+                        Recogido
+                      </button>
+                    ) : null}
+                    <button
+                      className={btnDanger}
+                      disabled={pendiente}
+                      title={`Borrar el gafete ${g.numero}`}
+                      onClick={() => {
+                        if (!confirm(`Se va a borrar el gafete ${g.numero} del sistema.\n\n¿Continuar?`)) return;
+                        onBorrar(g.id);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

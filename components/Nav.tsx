@@ -30,6 +30,7 @@ const SECCIONES: Seccion[] = [
     titulo: "Tecnología",
     enlaces: [
       { href: "/inventario", etiqueta: "Inventario", permiso: "ti.ver" },
+      { href: "/prestamos", etiqueta: "Pases de préstamo", permiso: "ti.ver" },
       { href: "/lineas", etiqueta: "Líneas telefónicas", permiso: "ti.ver" },
       { href: "/responsivas", etiqueta: "Responsivas", permiso: "ti.ver" },
       { href: "/mantenimientos", etiqueta: "Mantenimientos", permiso: "ti.ver" },

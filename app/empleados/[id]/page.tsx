@@ -9,6 +9,7 @@ import EquiposEmpleado from "../../../components/EquiposEmpleado";
 import AsignarEquipoBtn from "../../../components/AsignarEquipoBtn";
 import type { ResponsivaDeEquipo } from "../../../components/InventarioClient";
 import { idsSinResponsiva, responsivasSinFirmaDe } from "../../../lib/pendientes";
+import { estaVencido, prestamosDe, queSePresto, sigueFuera, situacion } from "../../../lib/prestamos";
 import SubirFirmadaBtn from "../../../components/SubirFirmadaBtn";
 import VerPdfBtn from "../../../components/VerPdfBtn";
 import EditarEmpleadoBtn from "../../../components/EditarEmpleadoBtn";
@@ -98,6 +99,10 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
   // firmó, que es lo que se pregunta cuando alguien pide la clave de la red.
   const wifi = responsivas.find((r) => r.clase === "WIFI" && r.estado !== "ELIMINADA");
   const wifiFirmada = !!wifi && (!!wifi.pdf_firmado || wifi.origen === "CARGADA");
+
+  // Lo que trae prestado no aparece en "equipos asignados" —no es suyo— así
+  // que sin esto no se ve por ningún lado en su ficha.
+  const prestados = prestamosDe(empleado.id).filter(sigueFuera);
 
   const tiles = [
     { etiqueta: "Equipos asignados", valor: equipos.length },
@@ -223,6 +228,32 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           </div>
         </div>
       </Card>
+
+      {prestados.length > 0 ? (
+        <Card className={`mt-4 ${prestados.some((p) => estaVencido(p)) ? "border-red-300 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-soft">
+                Trae prestado ({prestados.length})
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {prestados.map((p) => {
+                  const s = situacion(p);
+                  return (
+                    <li key={p.id} className="text-sm text-ink">
+                      <span className="mono font-semibold text-kraft-dark">{p.folio}</span> · {queSePresto(p)} ·{" "}
+                      <Badge tono={s.tono as never}>{s.texto}</Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+            <Link href="/prestamos" className={btnGhost}>
+              Ver los pases
+            </Link>
+          </div>
+        </Card>
+      ) : null}
 
       {faltantes.length > 0 ? (
         <Card className="mt-6 border-sky-200 bg-sky-50">

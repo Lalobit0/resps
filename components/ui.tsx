@@ -65,6 +65,8 @@ export function tonoEstadoEquipo(estado: string): keyof typeof TONOS {
       return "verde";
     case "ASIGNADO":
       return "petrol";
+    case "PRESTADO":
+      return "kraft";
     case "MANTENIMIENTO":
       return "ambar";
     default:

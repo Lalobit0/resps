@@ -29,6 +29,8 @@ export type LigadoAlEmpleado = {
   vales: { folio: string; concepto: string | null; monto: number | null }[];
   /** Gafetes vivos: la tarjeta sigue abriendo hasta que se recoja. */
   gafetes: { numero: string; estado: string; perfiles: string | null }[];
+  /** Préstamos que no ha regresado: se va con ellos si nadie los pide. */
+  prestamos: { folio: string; descripcion: string; fecha_compromiso: string | null }[];
   /** Mantenimientos programados de sus equipos. */
   mantenimientos: number;
   /** Documentos del expediente que ya tiene cargados. */
@@ -85,6 +87,15 @@ export function ligadoA(empleadoId: number): LigadoAlEmpleado {
     )
     .all(empleadoId) as LigadoAlEmpleado["gafetes"];
 
+  // Un préstamo sin devolver no lo cierra la baja: alguien tiene que ir por
+  // el equipo, y si no se dice aquí se va con él sin que nadie lo note.
+  const prestamos = db
+    .prepare(
+      `SELECT folio, descripcion, fecha_compromiso FROM prestamos
+       WHERE empleado_id = ? AND estado = 'PRESTADO' ORDER BY COALESCE(fecha_compromiso, '9999-12-31')`
+    )
+    .all(empleadoId) as LigadoAlEmpleado["prestamos"];
+
   const mantenimientos = (
     db
       .prepare(
@@ -102,7 +113,7 @@ export function ligadoA(empleadoId: number): LigadoAlEmpleado {
       .get(empleadoId) as { c: number }
   ).c;
 
-  return { equipos, cartas, vales, gafetes, mantenimientos, documentos };
+  return { equipos, cartas, vales, gafetes, prestamos, mantenimientos, documentos };
 }
 
 /**
@@ -165,6 +176,8 @@ export type EmpleadoDeBaja = {
   vales_vigentes: number;
   /** Tarjetas que siguen sin recogerse. */
   gafetes_sin_recoger: string | null;
+  /** Pases de préstamo que nunca regresó. */
+  prestamos_sin_devolver: string | null;
 };
 
 /** Los que ya no trabajan aquí, con lo que quedó sin resolver. */
@@ -181,7 +194,9 @@ export function bajas(limite = 300): EmpleadoDeBaja[] {
                 WHERE r.empleado_id = e.id AND r.clase = 'VALE' AND r.estado = 'VIGENTE') AS vales_vigentes,
               (SELECT GROUP_CONCAT(g.numero, ', ') FROM gafetes g
                 WHERE g.empleado_id = e.id AND g.estado IN ('ACTIVO', 'POR_RECOGER', 'EXTRAVIADO'))
-                AS gafetes_sin_recoger
+                AS gafetes_sin_recoger,
+              (SELECT GROUP_CONCAT(pr.descripcion, ', ') FROM prestamos pr
+                WHERE pr.empleado_id = e.id AND pr.estado = 'PRESTADO') AS prestamos_sin_devolver
        FROM empleados e
        WHERE e.activo = 0
        ORDER BY COALESCE(e.fecha_baja, '') DESC, e.nombre

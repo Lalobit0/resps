@@ -17,6 +17,7 @@ const textoPendiente = (b: EmpleadoDeBaja) =>
     b.cartas_vigentes ? `${b.cartas_vigentes} carta(s) sin cerrar` : "",
     b.vales_vigentes ? `${b.vales_vigentes} vale(s) vigente(s)` : "",
     b.gafetes_sin_recoger ? `Gafete sin recoger: ${b.gafetes_sin_recoger}` : "",
+    b.prestamos_sin_devolver ? `No devolvió: ${b.prestamos_sin_devolver}` : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -58,6 +59,7 @@ export default function BajasClient({
   const conEquipo = useMemo(() => pendientes.filter((a) => a.equipos.length).length, [pendientes]);
   const conVale = useMemo(() => pendientes.filter((a) => a.vales.length).length, [pendientes]);
   const conGafete = useMemo(() => pendientes.filter((a) => a.gafetes.length).length, [pendientes]);
+  const conPrestamo = useMemo(() => pendientes.filter((a) => a.prestamos.length).length, [pendientes]);
 
   const alternar = (id: number) =>
     setElegidos((s) => {
@@ -83,6 +85,7 @@ export default function BajasClient({
     const quedan = lista.reduce((n, a) => n + a.equipos.length - (entregados[a.id]?.size ?? 0), 0);
     const vales = lista.reduce((n, a) => n + a.vales.length, 0);
     const gafetes = lista.reduce((n, a) => n + a.gafetes.length, 0);
+    const prestamos = lista.reduce((n, a) => n + a.prestamos.length, 0);
     if (
       !confirm(
         `Se va a dar de baja a ${lista.length} ${lista.length === 1 ? "persona" : "personas"}.\n\n` +
@@ -91,6 +94,9 @@ export default function BajasClient({
           (vales ? `⚠️ Hay ${vales} vale(s) de descuento vigentes. La baja no los cancela.\n` : "") +
           (gafetes
             ? `⚠️ ${gafetes} gafete(s) quedan por recoger: siguen abriendo hasta que se quiten del lector.\n`
+            : "") +
+          (prestamos
+            ? `⚠️ ${prestamos} préstamo(s) sin devolver. La baja no los cierra: hay que ir por el equipo.\n`
             : "") +
           `\n¿Continuar?`
       )
@@ -177,6 +183,7 @@ export default function BajasClient({
             {b.cartas_vigentes ? <Badge tono="ambar">{b.cartas_vigentes} carta(s) sin cerrar</Badge> : null}
             {b.vales_vigentes ? <Badge tono="ambar">{b.vales_vigentes} vale(s) vigente(s)</Badge> : null}
             {b.gafetes_sin_recoger ? <Badge tono="rojo">Gafete sin recoger: {b.gafetes_sin_recoger}</Badge> : null}
+            {b.prestamos_sin_devolver ? <Badge tono="rojo">No devolvió: {b.prestamos_sin_devolver}</Badge> : null}
           </div>
         ),
       },
@@ -227,6 +234,9 @@ export default function BajasClient({
             {conEquipo ? ` ${conEquipo} ${conEquipo === 1 ? "trae equipo" : "traen equipo"} a su nombre.` : ""}
             {conVale ? ` ${conVale} ${conVale === 1 ? "tiene un vale" : "tienen vales"} de descuento vigente.` : ""}
             {conGafete ? ` ${conGafete} ${conGafete === 1 ? "trae gafete" : "traen gafete"} de acceso.` : ""}
+            {conPrestamo
+              ? ` ${conPrestamo} ${conPrestamo === 1 ? "tiene un préstamo" : "tienen préstamos"} sin devolver.`
+              : ""}
           </p>
 
           <div className="mt-4 space-y-3">
@@ -260,6 +270,11 @@ export default function BajasClient({
                         {a.gafetes.length ? (
                           <Badge tono="ambar">
                             {a.gafetes.length} gafete{a.gafetes.length === 1 ? "" : "s"}
+                          </Badge>
+                        ) : null}
+                        {a.prestamos.length ? (
+                          <Badge tono="rojo">
+                            {a.prestamos.length} préstamo{a.prestamos.length === 1 ? "" : "s"} sin devolver
                           </Badge>
                         ) : null}
                         {a.mantenimientos ? <Badge tono="gris">{a.mantenimientos} mantenimiento(s)</Badge> : null}
@@ -307,6 +322,17 @@ export default function BajasClient({
                       {a.gafetes.map((g) => `${g.numero}${g.perfiles ? ` (perfil ${g.perfiles})` : ""}`).join(", ")}. Al
                       darla de baja {a.gafetes.length === 1 ? "queda" : "quedan"} por recoger — la tarjeta sigue
                       abriendo hasta que alguien la quite del lector.
+                    </p>
+                  ) : null}
+
+                  {marcado && a.prestamos.length ? (
+                    <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                      Se lleva {a.prestamos.length === 1 ? "un préstamo" : `${a.prestamos.length} préstamos`} sin
+                      devolver:{" "}
+                      {a.prestamos
+                        .map((pr) => `${pr.folio} · ${pr.descripcion}${pr.fecha_compromiso ? ` (quedó de traerlo el ${pr.fecha_compromiso})` : ""}`)
+                        .join(", ")}
+                      . La baja no los cierra: hay que ir por el equipo o darlo por perdido.
                     </p>
                   ) : null}
 

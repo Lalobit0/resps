@@ -87,6 +87,10 @@ export async function guardarEquipo(datos: {
   numero_serie: string;
   fecha_compra: string;
   costo: string;
+  /** Lo que costó en dólares, si vino de importación. */
+  costo_usd?: string;
+  /** Número del pedimento aduanal. */
+  pedimento?: string;
   estado: string;
   notas: string;
   detalles: Record<string, string>;
@@ -107,6 +111,11 @@ export async function guardarEquipo(datos: {
 
     const costo = datos.costo.trim() ? Number(datos.costo) : null;
     if (costo !== null && Number.isNaN(costo)) return { ok: false, error: "El costo debe ser un número." };
+
+    const costoUsd = (datos.costo_usd ?? "").trim() ? Number(datos.costo_usd) : null;
+    if (costoUsd !== null && Number.isNaN(costoUsd))
+      return { ok: false, error: "El valor en dólares debe ser un número." };
+    const pedimento = (datos.pedimento ?? "").trim() || null;
 
     const detalles = limpiarDetalles(tipo, datos.detalles || {});
     // Normaliza IMEI (sin espacios) para validar y comparar duplicados.
@@ -191,7 +200,7 @@ export async function guardarEquipo(datos: {
       if (dup) return { ok: false, error: `Ya existe un equipo con el código ${codigo}.` };
 
       db.prepare(
-        `UPDATE equipos SET codigo=?, tipo=?, categoria=?, marca=?, modelo=?, numero_serie=?, specs=?, detalles=?, fecha_compra=?, costo=?, estado=?, asignado_a=?, departamento=?, area=?, clasificacion=?, notas=? WHERE id=?`
+        `UPDATE equipos SET codigo=?, tipo=?, categoria=?, marca=?, modelo=?, numero_serie=?, specs=?, detalles=?, fecha_compra=?, costo=?, costo_usd=?, pedimento=?, estado=?, asignado_a=?, departamento=?, area=?, clasificacion=?, notas=? WHERE id=?`
       ).run(
         codigo,
         tipo,
@@ -203,6 +212,8 @@ export async function guardarEquipo(datos: {
         detallesJson,
         datos.fecha_compra || null,
         costo,
+        costoUsd,
+        pedimento,
         estadoFinal,
         asignadoFinal,
         (datos.departamento ?? actual.departamento ?? "").trim() || null,
@@ -223,7 +234,7 @@ export async function guardarEquipo(datos: {
       }
       const info = db
         .prepare(
-          "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, estado, notas, asignado_a, departamento, area, clasificacion) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+          "INSERT INTO equipos (codigo, tipo, categoria, marca, modelo, numero_serie, specs, detalles, fecha_compra, costo, costo_usd, pedimento, estado, notas, asignado_a, departamento, area, clasificacion) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         )
         .run(
           codigo,
@@ -236,6 +247,8 @@ export async function guardarEquipo(datos: {
           detallesJson,
           datos.fecha_compra || null,
           costo,
+          costoUsd,
+          pedimento,
           nuevoAsignado ? "ASIGNADO" : estadoLibre,
           datos.notas.trim() || null,
           nuevoAsignado,
@@ -958,6 +971,8 @@ const ETIQUETAS_EQUIPO: { clave: keyof Equipo; etiqueta: string }[] = [
   { clave: "specs", etiqueta: "Características" },
   { clave: "fecha_compra", etiqueta: "Fecha de compra" },
   { clave: "costo", etiqueta: "Costo" },
+  { clave: "costo_usd", etiqueta: "Valor en dólares" },
+  { clave: "pedimento", etiqueta: "Pedimento" },
   { clave: "estado", etiqueta: "Estado" },
   { clave: "notas", etiqueta: "Notas" },
 ];
@@ -1303,7 +1318,9 @@ export async function fusionarEquiposManual(datos: {
       }
       if (!permitidos.has(v.clave)) continue;
       sets.push(`${v.clave} = ?`);
-      params.push(v.clave === "costo" ? (valor ? Number(valor) : null) : valor || null);
+      // Los dos importes se guardan como número; lo demás va como texto.
+      const esImporte = v.clave === "costo" || v.clave === "costo_usd";
+      params.push(esImporte ? (valor ? Number(valor) : null) : valor || null);
     }
 
     const foliosMovidos: string[] = [];

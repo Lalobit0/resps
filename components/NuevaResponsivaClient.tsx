@@ -35,6 +35,9 @@ type NuevoEquipoForm = {
   numero_serie: string;
   fecha_compra: string;
   costo: string;
+  /** De importación: lo que costó en dólares y con qué pedimento entró. */
+  costo_usd: string;
+  pedimento: string;
   notas: string;
   detalles: Record<string, string>;
 };
@@ -156,6 +159,8 @@ export default function NuevaResponsivaClient({
       numero_serie: e.numero_serie ?? "",
       fecha_compra: e.fecha_compra ?? "",
       costo: e.costo !== null ? String(e.costo) : "",
+      costo_usd: e.costo_usd !== null ? String(e.costo_usd) : "",
+      pedimento: e.pedimento ?? "",
       notas: e.notas ?? "",
       detalles,
     });
@@ -170,6 +175,8 @@ export default function NuevaResponsivaClient({
       numero_serie: "",
       fecha_compra: "",
       costo: "",
+      costo_usd: "",
+      pedimento: "",
       notas: "",
       detalles: {},
     });
@@ -204,6 +211,8 @@ export default function NuevaResponsivaClient({
         numero_serie: formEquipo.numero_serie,
         fecha_compra: formEquipo.fecha_compra,
         costo: formEquipo.costo,
+        costo_usd: formEquipo.costo_usd,
+        pedimento: formEquipo.pedimento,
         estado: "DISPONIBLE",
         notas: formEquipo.notas,
         detalles: formEquipo.detalles,
@@ -620,6 +629,26 @@ export default function NuevaResponsivaClient({
               <div>
                 <Label>Costo (MXN)</Label>
                 <input className={inputCls} type="number" step="0.01" value={formEquipo.costo} onChange={setCE("costo")} />
+              </div>
+              <div>
+                <Label>Valor en dólares (USD)</Label>
+                <input
+                  className={inputCls}
+                  type="number"
+                  step="0.01"
+                  placeholder="Solo si vino de importación"
+                  value={formEquipo.costo_usd}
+                  onChange={setCE("costo_usd")}
+                />
+              </div>
+              <div>
+                <Label>Pedimento</Label>
+                <input
+                  className={`${inputCls} mono`}
+                  placeholder="3139-5002991"
+                  value={formEquipo.pedimento}
+                  onChange={setCE("pedimento")}
+                />
               </div>
               <div className="sm:col-span-2">
                 <Label>Notas</Label>

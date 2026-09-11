@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 import type { Empleado, EquipoConAsignado } from "../lib/types";
 import { CAMPOS_DETALLE, CLASIFICACIONES_EQUIPO, ETIQUETA_CLASIFICACION, ETIQUETA_ESTADO, ETIQUETA_TIPO, OPCIONES_MARCA_COMPUTO, PRECIO_POR_PLAN, TIPOS_EQUIPO, type TipoEquipo } from "../lib/constants";
-import { dinero, fechaCorta } from "../lib/helpers";
+import { dinero, dolares, fechaCorta } from "../lib/helpers";
 import type { Conflicto } from "../lib/duplicados";
 import { eliminarEquipo, guardarEquipo, importarEscaneoComputo, importarInventario, ligarConSuResponsiva, type ResultadoEscaneo as ResultadoEscaneoDatos } from "../app/inventario/actions";
 import ResultadoEscaneo from "./ResultadoEscaneo";
@@ -32,6 +32,9 @@ type Formulario = {
   numero_serie: string;
   fecha_compra: string;
   costo: string;
+  /** De importación: lo que costó en dólares y con qué pedimento entró. */
+  costo_usd: string;
+  pedimento: string;
   estado: string;
   /** Área del propio aparato: se queda con él aunque cambie de dueño. */
   departamento: string;
@@ -49,6 +52,8 @@ const FORM_VACIO: Formulario = {
   numero_serie: "",
   fecha_compra: "",
   costo: "",
+  costo_usd: "",
+  pedimento: "",
   estado: "DISPONIBLE",
   departamento: "",
   clasificacion: "",
@@ -99,6 +104,8 @@ function formDeEquipo(e: EquipoConAsignado): Formulario {
     numero_serie: e.numero_serie ?? "",
     fecha_compra: e.fecha_compra ?? "",
     costo: e.costo !== null ? String(e.costo) : "",
+    costo_usd: e.costo_usd !== null ? String(e.costo_usd) : "",
+    pedimento: e.pedimento ?? "",
     estado: e.estado,
     departamento: e.departamento ?? e.area ?? "",
     clasificacion: e.clasificacion ?? "",
@@ -660,6 +667,26 @@ export default function InventarioClient({
               <input className={inputCls} type="number" step="0.01" value={form.costo} onChange={setC("costo")} />
             </div>
             <div>
+              <Label>Valor en dólares (USD)</Label>
+              <input
+                className={inputCls}
+                type="number"
+                step="0.01"
+                placeholder="Solo si vino de importación"
+                value={form.costo_usd}
+                onChange={setC("costo_usd")}
+              />
+            </div>
+            <div>
+              <Label>Pedimento</Label>
+              <input
+                className={`${inputCls} mono`}
+                placeholder="3139-5002991"
+                value={form.pedimento}
+                onChange={setC("pedimento")}
+              />
+            </div>
+            <div>
               <Label>Área / Departamento del equipo</Label>
               <SelectConOtro
                 value={form.departamento}
@@ -814,6 +841,8 @@ function DetalleEquipo({
           )}
           {dato("Fecha de compra", e.fecha_compra ? fechaCorta(e.fecha_compra) : null)}
           {dato("Costo", e.costo !== null ? dinero(e.costo) : null)}
+          {dato("Valor en dólares", e.costo_usd !== null ? dolares(e.costo_usd) : null)}
+          {dato("Pedimento", e.pedimento)}
           {Object.entries(detalles)
             .filter(([, v]) => v && String(v).trim())
             .map(([clave, valor]) => dato(etiquetaDetalle(e.tipo, clave), String(valor)))}

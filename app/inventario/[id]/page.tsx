@@ -2,7 +2,7 @@ import Link from "next/link";
 import { db } from "../../../lib/db";
 import type { Equipo, MantenimientoConEquipo } from "../../../lib/types";
 import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENIMIENTO } from "../../../lib/constants";
-import { dinero, fechaCorta } from "../../../lib/helpers";
+import { dinero, dolares, fechaCorta } from "../../../lib/helpers";
 import { duenosDeEquipo, historialDeEquipo, type Movimiento } from "../../../lib/historial";
 import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "../../../components/ui";
 import VerPdfBtn from "../../../components/VerPdfBtn";
@@ -183,6 +183,8 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
           )}
           {dato("Fecha de compra", fechaCorta(equipo.fecha_compra))}
           {dato("Costo", equipo.costo !== null ? dinero(equipo.costo) : null)}
+          {dato("Valor en dólares", equipo.costo_usd !== null ? dolares(equipo.costo_usd) : null)}
+          {dato("Pedimento", equipo.pedimento)}
           {dato("Alta en el sistema", fechaCorta(equipo.created_at?.slice(0, 10) ?? ""))}
           {camposTipo.map((c) => dato(c.etiqueta, detalles[c.clave] ?? ""))}
           {equipo.specs ? dato("Características", equipo.specs) : null}

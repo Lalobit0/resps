@@ -26,6 +26,18 @@ export function dinero(n: number | null): string {
   return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n);
 }
 
+/**
+ * Lo que costó un equipo importado, en dólares.
+ *
+ * Va aparte del peso porque es otro número, no el mismo convertido: en la
+ * factura de importación viene en dólares y así se queda, sin tipo de cambio
+ * de por medio que envejezca.
+ */
+export function dolares(n: number | null): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "USD" }).format(n);
+}
+
 /** Días de diferencia entre hoy y una fecha ISO (negativo = ya pasó) */
 export function diasPara(iso: string): number {
   const [a, m, d] = iso.split("-").map(Number);

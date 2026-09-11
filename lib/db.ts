@@ -835,6 +835,12 @@ function migrar(db: Database.Database) {
   agregarColumna(db, "conceptos_vale", "clausula", "TEXT");
   // Qué carga de Excel trajo (o tocó por última vez) este equipo.
   agregarColumna(db, "equipos", "importacion_id", "INTEGER");
+  // Equipo importado: lo que costó en dólares y el pedimento con el que
+  // entró al país. Son datos de la factura, no del aparato, pero sin un lugar
+  // propio terminaban escritos a mano en las notas —o peor, los dólares
+  // capturados en la casilla de pesos—.
+  agregarColumna(db, "equipos", "costo_usd", "REAL");
+  agregarColumna(db, "equipos", "pedimento", "TEXT");
   // Al subir la plantilla de personal, quién estaba en el sistema y ya no
   // viene en el archivo: son las bajas que hay que resolver.
   agregarColumna(db, "importaciones", "ausentes", "INTEGER NOT NULL DEFAULT 0");

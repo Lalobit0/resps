@@ -1,7 +1,7 @@
 import { db } from "../../../../lib/db";
 import { construirPdf, construirXlsx, type Celda } from "../../../../lib/exportar";
 import { ETIQUETA_CLASE, ETIQUETA_ESTADO, ETIQUETA_TIPO } from "../../../../lib/constants";
-import { dinero, fechaCorta } from "../../../../lib/helpers";
+import { dinero, dolares, fechaCorta } from "../../../../lib/helpers";
 import { puedeApi } from "../../../../lib/apiGuardia";
 import { columnasDeCondiciones, condicionesASql } from "../../../../lib/filtros-empleados";
 
@@ -126,8 +126,8 @@ function reporteInventario(sp: URLSearchParams): Reporte {
     .all(...val) as Record<string, unknown>[];
   return {
     titulo: "Inventario de equipo",
-    columnas: ["Código", "Tipo", "Marca", "Modelo", "Serie", "Estado", "Asignado a", "Compra", "Costo", "Detalle"],
-    pesos: [8, 8, 9, 12, 10, 8, 15, 7, 7, 16],
+    columnas: ["Código", "Tipo", "Marca", "Modelo", "Serie", "Estado", "Asignado a", "Compra", "Costo", "USD", "Pedimento", "Detalle"],
+    pesos: [7, 7, 8, 10, 9, 7, 12, 6, 7, 7, 8, 12],
     filas: rows.map((e) => [
       e.codigo as string,
       ETIQUETA_TIPO[e.tipo as string] ?? (e.tipo as string),
@@ -138,6 +138,8 @@ function reporteInventario(sp: URLSearchParams): Reporte {
       e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : "",
       fechaCorta(e.fecha_compra as string | null),
       e.costo !== null ? dinero(e.costo as number) : "",
+      e.costo_usd !== null ? dolares(e.costo_usd as number) : "",
+      (e.pedimento as string) ?? "",
       (e.specs as string) ?? "",
     ]),
   };

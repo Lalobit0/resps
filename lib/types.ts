@@ -46,6 +46,10 @@ export interface Equipo {
   detalles: string | null; // JSON con campos por tipo
   fecha_compra: string | null;
   costo: number | null;
+  /** Lo que costó en dólares, cuando el equipo vino de importación. */
+  costo_usd: number | null;
+  /** Número del pedimento aduanal con el que entró al país. */
+  pedimento: string | null;
   estado: string;
   asignado_a: number | null;
   /** Área a la que pertenece el aparato, aunque ahora no lo tenga nadie. */

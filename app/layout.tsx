@@ -4,6 +4,7 @@ import "./globals.css";
 import Nav from "../components/Nav";
 import CampanaAvisos from "../components/CampanaAvisos";
 import CambiarClave from "../components/CambiarClave";
+import GuardiaVersion from "../components/GuardiaVersion";
 import { usuarioActual } from "../lib/auth";
 import { getConfig } from "../lib/db";
 
@@ -18,7 +19,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   const marco = (contenido: React.ReactNode) => (
     <html lang="es">
-      <body className="min-h-screen bg-paper text-ink antialiased">{contenido}</body>
+      <body className="min-h-screen bg-paper text-ink antialiased">
+        {/* Si se publica una versión nueva con la pantalla abierta, esto la
+            recarga sola en vez de dejar un error de archivo no encontrado. */}
+        <GuardiaVersion />
+        {contenido}
+      </body>
     </html>
   );
 

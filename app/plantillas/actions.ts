@@ -92,6 +92,8 @@ function equipoDemo(tipo: string, detalles: Record<string, string>): Equipo {
     detalles: JSON.stringify(detalles),
     fecha_compra: null,
     costo: null,
+    costo_usd: null,
+    pedimento: null,
     estado: "DISPONIBLE",
     asignado_a: null,
     departamento: null,

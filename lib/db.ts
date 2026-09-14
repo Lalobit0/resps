@@ -720,7 +720,7 @@ const CONCEPTOS_VALE_SEED: [string, number, string][] = [
   ["REP. CHALECO C/CINTA REFLEJANTE", 385.0, "$385.00 (TRESCIENTOS OCHENTA Y CINCO 00/100) PESOS."],
   ["REP. BOTAS DE SEGURIDAD RIVERLINE", 1200.0, "$1200.00 (MIL DOSCIENTOS 00/100) PESOS."],
   ["REP. GORRA CON LOGOS SULTANA", 100.0, "$100.00 (CIEN 00/100) PESOS."],
-  ["CAJA CHICA", 450.0, "$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS."],
+  ["CAJA CHICA", 450.0, "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS."],
   ["3 CAMISAS AZULES RED KAP", 485.0, "$485 (CUATROCIENTOS OCHENTA Y CINCO 00/100) PESOS POR PIEZA."],
   ["SUDADERA NEGRA SULTANA", 360.0, "$360 (TRESCIENTOS SESENTA 00/100) PESOS."],
   ["CHAMARRA NEGRA SULTANA", 750.0, "$750 (SETECIENTOS 00/100) PESOS POR PIEZA."],
@@ -737,10 +737,10 @@ const CONCEPTOS_VALE_SEED: [string, number, string][] = [
   ["PANTALON AZUL MARINO RED KAP", 550.0, "$550 (QUINIENTOS CINCUENTA 00/100) PESOS POR PIEZA."],
   ["3 POLOS BLANCAS", 470.0, "$470 (CUATROCIENTOS SETENTA 00/100) PESOS POR PIEZA."],
   ["2 PANTALONES AZULES", 495.0, "$495 (CUATROCIENTOS NOVENTA Y CINCO 00/100) PESOS POR PIEZA."],
-  ["2 PLAYERAS AZUL MARINO", 190.0, "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.."],
-  ["2 PLAYERAS ROJAS", 190.0, "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.."],
+  ["2 PLAYERAS AZUL MARINO", 190.0, "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA."],
+  ["2 PLAYERAS ROJAS", 190.0, "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA."],
   ["REP. RADIO PORTATIL TXPRO", 600.0, "$600 (SEISCIENTOS 00/100) PESOS."],
-  ["RADIO PORTATIL TXPRO", 450.0, "$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS."],
+  ["RADIO PORTATIL TXPRO", 450.0, "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS."],
   ["AURICULAR RADIO PORTATIL", 200.0, "$200.00 (DOSCIENTOS 00/100) PESOS."],
   ["REP AURICULAR RADIO PORTATIL", 150.0, "$150.00 (CIENTO CINCUENTA 00/100) PESOS."],
   ["REP. RADIO PORTATIL KENWOOD", 1470.0, "$1470 (MIL CUATROCIENTOS CIENCUENTA 00/100) PESOS."],
@@ -856,6 +856,44 @@ function migrar(db: Database.Database) {
 }
 
 /**
+ * Erratas del tarifario que venían desde el archivo de RH.
+ *
+ * El precio con letra sale impreso tal cual en el vale que firma el empleado,
+ * así que un dedazo ahí se va al papel. Estos son los que se detectaron al
+ * revisar un vale generado: "CINCUNTA" por CINCUENTA y un punto de más.
+ *
+ * Solo se corrige si el texto sigue siendo exactamente el que se sembró: si
+ * Recursos Humanos ya lo editó, su versión manda y no se toca.
+ */
+const ERRATAS_VALE: [string, string, string][] = [
+  [
+    "CAJA CHICA",
+    "$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS.",
+    "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS.",
+  ],
+  [
+    "RADIO PORTATIL TXPRO",
+    "$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS.",
+    "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS.",
+  ],
+  [
+    "2 PLAYERAS AZUL MARINO",
+    "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA..",
+    "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.",
+  ],
+  [
+    "2 PLAYERAS ROJAS",
+    "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA..",
+    "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.",
+  ],
+];
+
+function corregirErratasVale(db: Database.Database) {
+  const arreglar = db.prepare("UPDATE conceptos_vale SET texto = ? WHERE concepto = ? AND texto = ?");
+  for (const [concepto, viejo, nuevo] of ERRATAS_VALE) arreglar.run(nuevo, concepto, viejo);
+}
+
+/**
  * Qué cláusula le toca a cada concepto del tarifario.
  *
  * Lo que se puede devolver —un radio, una navaja, una calculadora— lleva la
@@ -967,6 +1005,7 @@ function seed(db: Database.Database) {
   const insCon = db.prepare("INSERT OR IGNORE INTO conceptos_vale (concepto, monto, texto) VALUES (?, ?, ?)");
   for (const [concepto, monto, texto] of CONCEPTOS_VALE_SEED) insCon.run(concepto, monto, texto);
 
+  corregirErratasVale(db);
   clasificarConceptosVale(db);
 
   const insConf = db.prepare("INSERT OR IGNORE INTO config (clave, valor) VALUES (?, ?)");

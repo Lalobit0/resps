@@ -8,6 +8,7 @@ import {
   ESTADOS_GAFETE,
   ETIQUETA_ESTADO_GAFETE,
   TONO_ESTADO_GAFETE,
+  detallePerfiles,
   difiereDelPerfil,
   puertasDePerfiles,
   textoPerfiles,
@@ -226,7 +227,7 @@ export default function GafetesClient({
         />
       ) : null}
 
-      {/* --- Qué es cada columna --- */}
+      {/* --- Qué es cada columna y qué es cada letra --- */}
       <Card className="mb-3 py-3">
         <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-soft">
           Las puertas, por número
@@ -235,6 +236,23 @@ export default function GafetesClient({
           {puertas.map((p) => (
             <li key={p.id} className={`text-sm ${p.activo ? "text-ink" : "text-soft line-through"}`}>
               <span className="font-bold text-kraft-dark">({p.numero})</span> {p.nombre}
+            </li>
+          ))}
+        </ul>
+
+        {/* La columna de perfil dice "D y F" y ahí se acaba: sin esto hay que
+            irse a la configuración para saber qué abre cada letra. */}
+        <p className="mb-2 mt-4 text-[11px] font-bold uppercase tracking-[0.14em] text-soft">
+          Los perfiles, por letra
+        </p>
+        <ul className="flex flex-wrap gap-x-5 gap-y-1.5">
+          {perfiles.map((p) => (
+            <li key={p.id} className={`text-sm ${p.activo ? "text-ink" : "text-soft line-through"}`}>
+              <span className="font-bold text-kraft-dark">{p.clave}</span> {p.nombre}
+              <span className="text-soft">
+                {" "}
+                · {p.puertas.length ? `abre la ${p.puertas.map((n) => `(${n})`).join(", ")}` : "sin puertas"}
+              </span>
             </li>
           ))}
         </ul>
@@ -377,7 +395,12 @@ function TablaGafetes({
                   )}
                 </td>
                 <td className={tdCls}>
-                  <span className="font-semibold text-ink">{textoPerfiles(g.perfiles)}</span>
+                  <span
+                    className="cursor-help font-semibold text-ink underline decoration-line decoration-dotted underline-offset-2"
+                    title={detallePerfiles(g.perfiles, perfiles)}
+                  >
+                    {textoPerfiles(g.perfiles)}
+                  </span>
                   {dif.demas.length || dif.faltan.length ? (
                     <div className="mt-0.5 text-xs text-amber-700" title="Lo que abre no es lo que dice su perfil">
                       {dif.demas.length ? `+${dif.demas.join(",")}` : ""}

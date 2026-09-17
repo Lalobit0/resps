@@ -110,3 +110,27 @@ export function textoPerfiles(claves: string[]): string {
   if (orden.length === 1) return orden[0];
   return `${orden.slice(0, -1).join(", ")} y ${orden[orden.length - 1]}`;
 }
+
+/** Un perfil en una línea: "D · EMBARQUES ONLY — abre la (8)". */
+export function describePerfil(p: PerfilGafete): string {
+  const puertas = p.puertas.length ? `abre la ${p.puertas.map((n) => `(${n})`).join(", ")}` : "sin puertas";
+  return `${p.clave} · ${p.nombre} — ${puertas}`;
+}
+
+/**
+ * Qué son las letras de un gafete, para leerlas al pasar el mouse.
+ *
+ * En la matriz la columna dice "D y F" y ahí se acaba: quién no se sabe el
+ * catálogo de memoria no tiene forma de saber qué abre ese gafete sin ir a
+ * buscarlo a la configuración.
+ */
+export function detallePerfiles(claves: string[], perfiles: PerfilGafete[]): string {
+  if (!claves.length) return "Este gafete no tiene perfil: sus puertas se pusieron a mano.";
+  return [...claves]
+    .sort()
+    .map((c) => {
+      const p = perfiles.find((x) => x.clave === c);
+      return p ? describePerfil(p) : `${c} · perfil que ya no está en la configuración`;
+    })
+    .join("\n");
+}

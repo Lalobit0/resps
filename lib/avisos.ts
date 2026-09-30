@@ -3,6 +3,7 @@ import { detectarDuplicados, type EquipoRevisable } from "./duplicados";
 import { revisarCelulares } from "./celulares";
 import { equiposPorLigar, paresPartidos, totalSinFirma, totalSinResponsiva } from "./pendientes";
 import { prestamosVencidos, queSePresto } from "./prestamos";
+import { gafetesQueSiguenAbriendo } from "./gafetes";
 
 /**
  * Todo lo que el sistema quiere avisar, en un solo lugar. Antes cada pantalla
@@ -128,6 +129,42 @@ export function recolectarAvisos(): Aviso[] {
         .join(", ")}${vencidos.length > 3 ? "…" : "."}`,
       href: "/prestamos",
       etiquetaAccion: "Ver los pases",
+      tono: "rojo",
+    });
+  }
+
+  // 8. Tarjetas que siguen abriendo puertas y su dueño ya no trabaja aquí.
+  //
+  // Va de último pero es el más serio: los demás avisos son papeleo, este es
+  // una puerta que se abre. El lector de tarjetas no habla con el sistema, así
+  // que dar de baja a alguien aquí no le quita el acceso allá.
+  const abriendo = gafetesQueSiguenAbriendo();
+  if (abriendo.length) {
+    const sinMarcar = abriendo.filter((g) => g.estado === "ACTIVO").length;
+    const extraviados = abriendo.filter((g) => g.estado === "EXTRAVIADO").length;
+    const detalle = [
+      `Siguen dando acceso: ${abriendo.slice(0, 4).map((g) => `${g.numero} (${g.nombre})`).join(", ")}`,
+      abriendo.length > 4 ? ` y ${abriendo.length - 4} más` : "",
+      ". ",
+      // Con un solo caso la frase tiene que ir en singular: el aviso se lee
+      // completo y un "1 están" salta a la vista.
+      sinMarcar
+        ? `${sinMarcar} ${sinMarcar === 1 ? "ni siquiera está marcado" : "ni siquiera están marcados"} como por recoger. `
+        : "",
+      extraviados ? `${extraviados} ${extraviados === 1 ? "está extraviado" : "están extraviados"}. ` : "",
+      "Hasta que se quiten del lector, la tarjeta abre.",
+    ].join("");
+
+    avisos.push({
+      clave: "gafetes-de-bajas",
+      total: abriendo.length,
+      titulo:
+        abriendo.length === 1
+          ? "1 gafete abre y su dueño ya no trabaja aquí"
+          : `${abriendo.length} gafetes abren y su dueño ya no trabaja aquí`,
+      detalle,
+      href: "/gafetes#salidos",
+      etiquetaAccion: "Ver cuáles son",
       tono: "rojo",
     });
   }

@@ -12,6 +12,7 @@ import { db } from "./db";
 export type AccionHistorial =
   | "ALTA"
   | "ASIGNADO"
+  | "REASIGNADO"
   | "LIBERADO"
   | "BAJA_EMPLEADO"
   | "AREA"
@@ -82,6 +83,7 @@ export function anotarMovimiento(datos: {
 const TITULO: Record<string, string> = {
   ALTA: "Alta en el inventario",
   ASIGNADO: "Entregado",
+  REASIGNADO: "Pasó a otra persona",
   LIBERADO: "Devuelto al inventario",
   BAJA_EMPLEADO: "Liberado por baja del empleado",
   AREA: "Cambio de área",
@@ -213,7 +215,7 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
 /** Quiénes han tenido el equipo, del más reciente al primero. */
 export function duenosDeEquipo(equipoId: number): { empleado_id: number; empleado: string; area: string | null; desde: string; hasta: string | null }[] {
   const movs = historialDeEquipo(equipoId)
-    .filter((m) => m.empleado_id && (m.accion === "ASIGNADO" || m.accion === "RESPONSIVA"))
+    .filter((m) => m.empleado_id && (m.accion === "ASIGNADO" || m.accion === "REASIGNADO" || m.accion === "RESPONSIVA"))
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
 
   const salida: { empleado_id: number; empleado: string; area: string | null; desde: string; hasta: string | null }[] = [];

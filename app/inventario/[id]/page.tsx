@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { db } from "../../../lib/db";
-import type { Equipo, MantenimientoConEquipo } from "../../../lib/types";
+import type { Empleado, Equipo, MantenimientoConEquipo } from "../../../lib/types";
 import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENIMIENTO } from "../../../lib/constants";
 import { dinero, dolares, fechaCorta } from "../../../lib/helpers";
 import { duenosDeEquipo, historialDeEquipo, type Movimiento } from "../../../lib/historial";
 import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "../../../components/ui";
+import ReasignarEquipoBtn from "../../../components/ReasignarEquipoBtn";
 import VerPdfBtn from "../../../components/VerPdfBtn";
 import GenerarValeBtn from "../../../components/GenerarValeBtn";
 import { conceptosVale } from "../../../lib/vales";
@@ -51,6 +52,10 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
     .get(equipoId) as
     | (Equipo & { asignado_nombre: string | null; asignado_numero: string | null; asignado_activo: number | null })
     | undefined;
+
+  const empleados = db
+    .prepare("SELECT * FROM empleados WHERE activo = 1 ORDER BY nombre")
+    .all() as Empleado[];
 
   if (!equipo) {
     return (
@@ -151,6 +156,16 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
         <Link href={`/inventario?q=${encodeURIComponent(equipo.codigo)}&editar=${equipo.id}`} className={btnGhost}>
           ✎ Editar
         </Link>
+        <ReasignarEquipoBtn
+          equipoId={equipo.id}
+          codigo={equipo.codigo}
+          duenoActual={
+            equipo.asignado_nombre ? `${equipo.asignado_numero} ${equipo.asignado_nombre}` : null
+          }
+          empleados={empleados}
+          className={btnGhost}
+          etiqueta="→ Reasignar"
+        />
         <Link href="/inventario" className={btnGhost}>
           ← Volver al inventario
         </Link>

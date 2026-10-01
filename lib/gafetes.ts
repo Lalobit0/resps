@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { ESTADOS_VIVOS } from "./gafetes-comun";
 import type { Gafete, PerfilGafete, Puerta } from "./gafetes-comun";
 
 /**
@@ -164,4 +165,44 @@ export function resumenGafetes(): ResumenGafetes {
     sinEmpleado: fila.sinEmpleado ?? 0,
     deBajas: fila.deBajas ?? 0,
   };
+}
+
+export type GafeteDeSalido = {
+  id: number;
+  numero: string;
+  estado: string;
+  nombre: string | null;
+  numero_empleado: string | null;
+  departamento: string | null;
+  fecha_baja: string | null;
+  perfiles: string | null;
+};
+
+/**
+ * Tarjetas que siguen abriendo puertas y cuyo dueño ya no trabaja aquí.
+ *
+ * Es el pendiente de seguridad del módulo: el control de accesos vive en la
+ * consola del lector, que no habla con nadie, así que dar de baja a alguien
+ * en el sistema no le quita el acceso. Hasta que la tarjeta se recoja y se
+ * borre del lector, sigue abriendo.
+ *
+ * Cuenta los tres estados vivos, no solo los activos: uno "por recoger" ya
+ * está detectado pero sigue abriendo igual, y uno "extraviado" es peor
+ * todavía porque nadie sabe dónde está. Primero los que nadie ha tocado, y
+ * dentro de eso los de la baja más vieja: son los que llevan más tiempo
+ * abriendo sin que nadie lo note.
+ */
+export function gafetesQueSiguenAbriendo(): GafeteDeSalido[] {
+  const marcas = ESTADOS_VIVOS.map(() => "?").join(",");
+  return db
+    .prepare(
+      `SELECT g.id, g.numero, g.estado, em.nombre, em.numero_empleado, em.departamento, em.fecha_baja,
+              (SELECT GROUP_CONCAT(p.clave, ', ') FROM gafete_perfil gp
+                JOIN gafete_perfiles p ON p.id = gp.perfil_id WHERE gp.gafete_id = g.id) AS perfiles
+       FROM gafetes g JOIN empleados em ON em.id = g.empleado_id
+       WHERE em.activo = 0 AND g.estado IN (${marcas})
+       ORDER BY CASE g.estado WHEN 'ACTIVO' THEN 0 WHEN 'EXTRAVIADO' THEN 1 ELSE 2 END,
+                COALESCE(em.fecha_baja, '') ASC, g.numero`
+    )
+    .all(...ESTADOS_VIVOS) as GafeteDeSalido[];
 }

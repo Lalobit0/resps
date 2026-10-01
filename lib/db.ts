@@ -723,7 +723,7 @@ const CONCEPTOS_VALE_SEED: [string, number, string][] = [
   ["CAJA CHICA", 450.0, "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS."],
   ["3 CAMISAS AZULES RED KAP", 485.0, "$485 (CUATROCIENTOS OCHENTA Y CINCO 00/100) PESOS POR PIEZA."],
   ["SUDADERA NEGRA SULTANA", 360.0, "$360 (TRESCIENTOS SESENTA 00/100) PESOS."],
-  ["CHAMARRA NEGRA SULTANA", 750.0, "$750 (SETECIENTOS 00/100) PESOS POR PIEZA."],
+  ["CHAMARRA NEGRA SULTANA", 700.0, "$700 (SETECIENTOS 00/100) PESOS POR PIEZA."],
   ["1 BOTAS DE SEGURIDAD PROCLIFF", 800.0, "$800 (OCHOCIENTOS 00/100) PESOS."],
   ["1 CHALECO GUINDA C/CINTA REFLEJANTE", 600.0, "$600 (SEISCIENTOS 00/100) PESOS POR PIEZA."],
   ["REP. FLEXOMETRO", 150.0, "$150.00 (CIENTO CINCUENTA 00/100) PESOS."],
@@ -743,7 +743,7 @@ const CONCEPTOS_VALE_SEED: [string, number, string][] = [
   ["RADIO PORTATIL TXPRO", 450.0, "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS."],
   ["AURICULAR RADIO PORTATIL", 200.0, "$200.00 (DOSCIENTOS 00/100) PESOS."],
   ["REP AURICULAR RADIO PORTATIL", 150.0, "$150.00 (CIENTO CINCUENTA 00/100) PESOS."],
-  ["REP. RADIO PORTATIL KENWOOD", 1470.0, "$1470 (MIL CUATROCIENTOS CIENCUENTA 00/100) PESOS."],
+  ["REP. RADIO PORTATIL KENWOOD", 1450.0, "$1450 (MIL CUATROCIENTOS CINCUENTA 00/100) PESOS."],
   ["DIADEMA PARA PC", 600.0, "$600 (SEISCIENTOS 00/100) PESOS."],
   ["CAMARA PC", 550.0, "$550.00 (QUINIENTOS CINCUENTA 00/100) PESOS PIEZA."],
 ];
@@ -865,32 +865,69 @@ function migrar(db: Database.Database) {
  * Solo se corrige si el texto sigue siendo exactamente el que se sembró: si
  * Recursos Humanos ya lo editó, su versión manda y no se toca.
  */
-const ERRATAS_VALE: [string, string, string][] = [
-  [
-    "CAJA CHICA",
-    "$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS.",
-    "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS.",
-  ],
-  [
-    "RADIO PORTATIL TXPRO",
-    "$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS.",
-    "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS.",
-  ],
-  [
-    "2 PLAYERAS AZUL MARINO",
-    "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA..",
-    "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.",
-  ],
-  [
-    "2 PLAYERAS ROJAS",
-    "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA..",
-    "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.",
-  ],
+type ErrataVale = {
+  concepto: string;
+  /** El texto como se sembró, y como debe quedar. */
+  texto: [string, string];
+  /**
+   * El monto, cuando además no cuadraba con la letra. Recursos Humanos
+   * decidió que manda la letra: es lo que el empleado lee y firma.
+   */
+  monto?: [number, number];
+};
+
+const ERRATAS_VALE: ErrataVale[] = [
+  {
+    concepto: "CAJA CHICA",
+    texto: ["$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS.", "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS."],
+  },
+  {
+    concepto: "RADIO PORTATIL TXPRO",
+    texto: ["$450 (CUATROCIENTOS CINCUNTA 00/100) PESOS.", "$450 (CUATROCIENTOS CINCUENTA 00/100) PESOS."],
+  },
+  {
+    concepto: "2 PLAYERAS AZUL MARINO",
+    texto: [
+      "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA..",
+      "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.",
+    ],
+  },
+  {
+    concepto: "2 PLAYERAS ROJAS",
+    texto: [
+      "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA..",
+      "$190.00 (CIENTO NOVENTA 00/100) PESOS POR PIEZA.",
+    ],
+  },
+  // Estos dos traían el número peleado con la letra. La letra ganó, así que
+  // el precio de reposición baja: 750 a 700 y 1470 a 1450.
+  {
+    concepto: "CHAMARRA NEGRA SULTANA",
+    texto: ["$750 (SETECIENTOS 00/100) PESOS POR PIEZA.", "$700 (SETECIENTOS 00/100) PESOS POR PIEZA."],
+    monto: [750, 700],
+  },
+  {
+    concepto: "REP. RADIO PORTATIL KENWOOD",
+    texto: [
+      "$1470 (MIL CUATROCIENTOS CIENCUENTA 00/100) PESOS.",
+      "$1450 (MIL CUATROCIENTOS CINCUENTA 00/100) PESOS.",
+    ],
+    monto: [1470, 1450],
+  },
 ];
 
 function corregirErratasVale(db: Database.Database) {
-  const arreglar = db.prepare("UPDATE conceptos_vale SET texto = ? WHERE concepto = ? AND texto = ?");
-  for (const [concepto, viejo, nuevo] of ERRATAS_VALE) arreglar.run(nuevo, concepto, viejo);
+  const soloTexto = db.prepare("UPDATE conceptos_vale SET texto = ? WHERE concepto = ? AND texto = ?");
+  // El monto solo se toca si el texto TAMBIÉN sigue siendo el sembrado: si
+  // alguien ya corrigió uno de los dos, el concepto es suyo y no se pisa.
+  const textoYMonto = db.prepare(
+    "UPDATE conceptos_vale SET texto = ?, monto = ? WHERE concepto = ? AND texto = ? AND monto = ?"
+  );
+  for (const e of ERRATAS_VALE) {
+    const [antes, despues] = e.texto;
+    if (e.monto) textoYMonto.run(despues, e.monto[1], e.concepto, antes, e.monto[0]);
+    else soloTexto.run(despues, e.concepto, antes);
+  }
 }
 
 /**

@@ -6,6 +6,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { cambiarEstadoGafete, eliminarGafete, guardarGafete, importarGafetes } from "../app/gafetes/actions";
 import {
   ESTADOS_GAFETE,
+  ESTADOS_VIVOS,
   ETIQUETA_ESTADO_GAFETE,
   TONO_ESTADO_GAFETE,
   detallePerfiles,
@@ -110,7 +111,13 @@ export default function GafetesClient({
   const totalPlantilla = useMemo(() => lista.filter((g) => !salio(g)).length, [lista]);
   const totalSalidos = lista.length - totalPlantilla;
 
-  const deBajas = useMemo(() => lista.filter((g) => g.estado === "ACTIVO" && g.empleado_activo === 0), [lista]);
+  // Lo que hay que ir a recoger no son solo los activos: uno "por recoger" ya
+  // está detectado pero sigue abriendo igual, y uno "extraviado" es peor
+  // todavía. Es el mismo criterio con el que avisa la campana.
+  const deBajas = useMemo(
+    () => lista.filter((g) => ESTADOS_VIVOS.includes(g.estado) && g.empleado_activo === 0),
+    [lista]
+  );
 
   const ejecutar = (fn: () => Promise<{ ok: boolean; mensaje?: string; error?: string }>) =>
     iniciar(async () => {
@@ -147,8 +154,8 @@ export default function GafetesClient({
       {deBajas.length > 0 ? (
         <Card className="mb-5 border-red-300 bg-red-50">
           <h2 className="font-bold text-red-900">
-            {deBajas.length} {deBajas.length === 1 ? "gafete sigue activo" : "gafetes siguen activos"} y su dueño ya no
-            trabaja aquí
+            {deBajas.length} {deBajas.length === 1 ? "gafete sigue abriendo" : "gafetes siguen abriendo"} y su dueño ya
+            no trabaja aquí
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-red-900">
             La tarjeta sigue abriendo hasta que alguien la quite del lector: {deBajas.map((g) => g.numero).join(", ")}.

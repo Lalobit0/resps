@@ -9,6 +9,7 @@ import type { Conflicto } from "../lib/duplicados";
 import { eliminarEquipo, guardarEquipo, importarEscaneoComputo, importarInventario, ligarConSuResponsiva, type ResultadoEscaneo as ResultadoEscaneoDatos } from "../app/inventario/actions";
 import ResultadoEscaneo from "./ResultadoEscaneo";
 import FusionarEquipoBtn from "./FusionarEquipoBtn";
+import ReasignarEquipoBtn from "./ReasignarEquipoBtn";
 import SelectConOtro from "./SelectConOtro";
 import BuscadorEmpleado from "./BuscadorEmpleado";
 import { Badge, Card, Empty, Label, btnGhost, btnPrimary, inputCls, tonoEstadoEquipo } from "./ui";
@@ -419,6 +420,13 @@ export default function InventarioClient({
             >
               Historial
             </Link>
+            <ReasignarEquipoBtn
+              equipoId={e.id}
+              codigo={e.codigo}
+              duenoActual={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : null}
+              empleados={empleados}
+              className={mini}
+            />
             <FusionarEquipoBtn equipoId={e.id} codigo={e.codigo} className={mini} etiqueta="Fusionar" />
             <button
               className={miniDanger}
@@ -445,7 +453,7 @@ export default function InventarioClient({
       .filter((c) => c.clave !== "tipo")
       .map((c) => (c.clave === "equipo" ? { ...c, ancho: `${10 + Number((tipo?.ancho ?? "0%").replace("%", ""))}%` } : c));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seccion, duplicados, responsivas, faltaResponsiva, porLigar, pendiente]);
+  }, [seccion, duplicados, responsivas, faltaResponsiva, porLigar, pendiente, empleados]);
 
   // Cada juego de columnas recuerda sus anchos por separado.
   const tabla = useTabla({ id: seccion ? "inventario-seccion" : "inventario", columnas, filas: equipos });

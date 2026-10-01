@@ -10,10 +10,11 @@ import { leerEscaneo } from "../../lib/escaneo";
 import { CAMPOS_BLOQUEANTES, conflictosContra, detectarDuplicados, type EquipoRevisable } from "../../lib/duplicados";
 import { fusionarInventario } from "../../lib/fusionar.mjs";
 import { equiposPorLigar, idsSinResponsiva } from "../../lib/pendientes";
-import { anotarMovimiento } from "../../lib/historial";
-import type { Equipo, ResultadoAccion } from "../../lib/types";
-import { exigir, usuarioActual } from "../../lib/auth";
+import { anotarMovimiento, textoEmpleado } from "../../lib/historial";
+import type { Empleado, Equipo, ResultadoAccion } from "../../lib/types";
+import { comprobar, exigir, usuarioActual } from "../../lib/auth";
 import { cerrarImportacion, registrarImportacion, type RenglonOmitido } from "../../lib/importaciones";
+import { hoyISO } from "../../lib/helpers";
 
 function revalidar() {
   revalidatePath("/inventario");
@@ -263,6 +264,101 @@ export async function guardarEquipo(datos: {
     console.error(e);
     return { ok: false, error: "No se pudo guardar el equipo." };
   }
+}
+
+/**
+ * Pasa un equipo de una persona a otra.
+ *
+ * Hasta ahora esto estaba prohibido: con carta vigente, cambiar de dueño
+ * devolvía "registra primero su devolución", y había que dar vuelta por tres
+ * pantallas para mover un radio de un operador a otro. Aquí se hace de un
+ * golpe: se cierra la carta del anterior, el equipo queda a nombre del nuevo
+ * y su carta queda pendiente —el aviso de "equipos sin carta responsiva" la
+ * va a reclamar—.
+ *
+ * Lo que NO hace es dar por firmado un papel que nadie firmó: la carta vieja
+ * se cierra porque el equipo ya no lo tiene esa persona, y eso queda anotado
+ * en el histórico con quién lo traía y quién lo tiene ahora.
+ */
+export async function reasignarEquipo(datos: {
+  equipoId: number;
+  nuevoEmpleadoId: number;
+  fecha: string;
+  motivo: string;
+}): Promise<ResultadoAccion> {
+  const permiso = await comprobar("ti.editar");
+  if ("error" in permiso) return { ok: false, error: permiso.error };
+
+  const eq = db.prepare("SELECT * FROM equipos WHERE id = ?").get(datos.equipoId) as Equipo | undefined;
+  if (!eq) return { ok: false, error: "Ese equipo ya no existe." };
+
+  if (eq.estado === "PRESTADO") {
+    return { ok: false, error: `${eq.codigo} está prestado. Registra primero la devolución del pase.` };
+  }
+  if (eq.estado === "BAJA") {
+    return { ok: false, error: `${eq.codigo} está dado de baja: no se puede entregar a nadie.` };
+  }
+
+  const nuevo = db.prepare("SELECT * FROM empleados WHERE id = ?").get(datos.nuevoEmpleadoId) as Empleado | undefined;
+  if (!nuevo) return { ok: false, error: "Elige a quién se le va a entregar." };
+  if (!nuevo.activo) return { ok: false, error: `${nuevo.nombre} ya no está en la plantilla.` };
+  if (eq.asignado_a === nuevo.id) {
+    return { ok: false, error: `${eq.codigo} ya está a nombre de ${nuevo.nombre}.` };
+  }
+
+  const anterior = eq.asignado_a
+    ? (db.prepare("SELECT * FROM empleados WHERE id = ?").get(eq.asignado_a) as Empleado | undefined)
+    : undefined;
+  const vigente = responsivaVigenteDe(eq.id);
+  const fecha = datos.fecha || hoyISO();
+
+  const mover = db.transaction(() => {
+    // La carta del anterior deja de estar vigente: el equipo ya no lo tiene.
+    if (vigente) {
+      db.prepare("UPDATE responsivas SET estado = 'CERRADA' WHERE folio = ?").run(vigente.folio);
+    }
+    db.prepare("UPDATE equipos SET estado = 'ASIGNADO', asignado_a = ? WHERE id = ?").run(nuevo.id, eq.id);
+  });
+  mover();
+
+  const deQuien = anterior ? textoEmpleado(anterior) : "nadie (estaba libre)";
+  anotarMovimiento({
+    equipoId: eq.id,
+    fecha,
+    accion: "REASIGNADO",
+    empleadoId: nuevo.id,
+    departamento: nuevo.departamento,
+    area: nuevo.area || nuevo.departamento,
+    detalle: [
+      `Pasó de ${deQuien} a ${textoEmpleado(nuevo)}`,
+      vigente ? `Se cerró la carta ${vigente.folio}` : "",
+      datos.motivo.trim(),
+    ]
+      .filter(Boolean)
+      .join(". "),
+  });
+
+  db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+    "REASIGNAR_EQUIPO",
+    `${eq.codigo} pasó de ${deQuien} a ${textoEmpleado(nuevo)}`,
+    JSON.stringify({
+      equipoId: eq.id,
+      codigo: eq.codigo,
+      de: eq.asignado_a,
+      a: nuevo.id,
+      cartaCerrada: vigente?.folio ?? null,
+    })
+  );
+  revalidar();
+
+  return {
+    ok: true,
+    id: eq.id,
+    mensaje:
+      `${eq.codigo} quedó a nombre de ${nuevo.nombre}.` +
+      (vigente ? ` Se cerró la carta ${vigente.folio}.` : "") +
+      " Falta generarle su carta responsiva.",
+  };
 }
 
 export async function eliminarEquipo(id: number): Promise<ResultadoAccion> {

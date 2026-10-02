@@ -11,6 +11,8 @@ import { CAMPOS_BLOQUEANTES, conflictosContra, detectarDuplicados, type EquipoRe
 import { fusionarInventario } from "../../lib/fusionar.mjs";
 import { equiposPorLigar, idsSinResponsiva } from "../../lib/pendientes";
 import { anotarMovimiento, textoEmpleado } from "../../lib/historial";
+import { deshacerMovimiento, planDeCancelacion, type SnapMovimiento } from "../../lib/movimientos";
+import { eliminarResponsiva } from "../responsivas/actions";
 import type { Empleado, Equipo, ResultadoAccion } from "../../lib/types";
 import { comprobar, exigir, usuarioActual } from "../../lib/auth";
 import { cerrarImportacion, registrarImportacion, type RenglonOmitido } from "../../lib/importaciones";
@@ -34,15 +36,15 @@ function generarCodigo(prefijo: string): string {
 }
 
 /** Carta de asignación vigente del equipo, si la tiene. */
-function responsivaVigenteDe(equipoId: number): { folio: string; empleado_id: number } | null {
+function responsivaVigenteDe(equipoId: number): { id: number; folio: string; empleado_id: number } | null {
   return (
     (db
       .prepare(
-        `SELECT r.folio, r.empleado_id FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+        `SELECT r.id, r.folio, r.empleado_id FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
          WHERE ri.equipo_id = ? AND r.tipo='ASIGNACION' AND r.estado='VIGENTE'
          ORDER BY r.id DESC LIMIT 1`
       )
-      .get(equipoId) as { folio: string; empleado_id: number } | undefined) ?? null
+      .get(equipoId) as { id: number; folio: string; empleado_id: number } | undefined) ?? null
   );
 }
 
@@ -329,6 +331,18 @@ export async function reasignarEquipo(datos: {
     empleadoId: nuevo.id,
     departamento: nuevo.departamento,
     area: nuevo.area || nuevo.departamento,
+    // Con esto el movimiento se puede cancelar después, cuando el equipo
+    // resulta que no servía.
+    snapshot: {
+      equipoId: eq.id,
+      codigo: eq.codigo,
+      estadoPrev: eq.estado,
+      asignadoPrev: eq.asignado_a,
+      departamentoPrev: eq.departamento,
+      areaPrev: eq.area,
+      recibio: nuevo.id,
+      cartaCerrada: vigente ? { id: vigente.id, folio: vigente.folio, estadoPrev: "VIGENTE" } : null,
+    } satisfies SnapMovimiento,
     detalle: [
       `Pasó de ${deQuien} a ${textoEmpleado(nuevo)}`,
       vigente ? `Se cerró la carta ${vigente.folio}` : "",
@@ -358,6 +372,93 @@ export async function reasignarEquipo(datos: {
       `${eq.codigo} quedó a nombre de ${nuevo.nombre}.` +
       (vigente ? ` Se cerró la carta ${vigente.folio}.` : "") +
       " Falta generarle su carta responsiva.",
+  };
+}
+
+/**
+ * Deshace el último movimiento del equipo: lo devuelve a quien lo traía, vuelve
+ * a abrir su carta y manda a la papelera la del que lo recibió.
+ *
+ * Es para el caso de todos los días: se reasigna un radio, se le genera la
+ * carta, y al probarlo no funciona. Registrar una devolución dejaría al
+ * histórico contando una entrega que no pasó; esto la borra.
+ */
+export async function cancelarMovimientoEquipo(datos: {
+  historialId: number;
+  motivo: string;
+}): Promise<ResultadoAccion> {
+  const permiso = await comprobar("ti.editar");
+  if ("error" in permiso) return { ok: false, error: permiso.error };
+
+  const mov = db.prepare("SELECT * FROM equipo_historial WHERE id = ?").get(datos.historialId) as
+    | { id: number; equipo_id: number; accion: string; snapshot: string | null; cancelado: string | null }
+    | undefined;
+  if (!mov) return { ok: false, error: "Ese movimiento ya no existe." };
+  if (mov.cancelado) return { ok: false, error: "Ese movimiento ya estaba cancelado." };
+  if (!mov.snapshot) return { ok: false, error: "Este movimiento no se puede cancelar." };
+
+  // El plan se vuelve a calcular aquí: lo que vio la pantalla pudo quedar
+  // viejo, y es este cálculo —no el del navegador— el que decide.
+  const plan = planDeCancelacion(mov.equipo_id);
+  if (!plan || plan.historialId !== mov.id) {
+    return { ok: false, error: "Solo se puede cancelar el último movimiento del equipo." };
+  }
+  if (plan.impedimento) return { ok: false, error: plan.impedimento };
+
+  const snap = JSON.parse(mov.snapshot) as SnapMovimiento;
+  const eq = db.prepare("SELECT codigo FROM equipos WHERE id = ?").get(mov.equipo_id) as { codigo: string } | undefined;
+  if (!eq) return { ok: false, error: "Ese equipo ya no existe." };
+
+  // La carta del que lo recibió va primero: al eliminarla el equipo queda
+  // disponible, y lo que sigue es justamente devolverlo a como estaba.
+  if (plan.cartaPapeleraId) {
+    const papelera = await eliminarResponsiva(plan.cartaPapeleraId);
+    if (!papelera.ok) {
+      return { ok: false, error: papelera.error ?? `No se pudo mandar a la papelera la carta ${plan.cartaPapelera}.` };
+    }
+  }
+
+  deshacerMovimiento({ id: mov.id, snap });
+
+  const adonde = plan.volverA ? `volvió a ${plan.volverA}` : "volvió al inventario como disponible";
+  const partes = [
+    `Se canceló "${plan.titulo}" del ${plan.fecha}`,
+    plan.loTiene ? `${eq.codigo} dejó de estar a nombre de ${plan.loTiene} y ${adonde}` : `${eq.codigo} ${adonde}`,
+    plan.cartaPapelera ? `La carta ${plan.cartaPapelera} se fue a la papelera` : "",
+    plan.cartaReabre ? `La carta ${plan.cartaReabre} está vigente otra vez` : "",
+    datos.motivo.trim() ? `Motivo: ${datos.motivo.trim()}` : "",
+  ].filter(Boolean);
+
+  anotarMovimiento({
+    equipoId: mov.equipo_id,
+    accion: "CANCELADO",
+    empleadoId: snap.asignadoPrev,
+    detalle: `${partes.join(". ")}.`,
+  });
+
+  db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
+    "CANCELAR_MOVIMIENTO",
+    `${eq.codigo}: se canceló "${plan.titulo}" del ${plan.fecha}`,
+    JSON.stringify({ movimiento: mov.id, accion: mov.accion, plan, motivo: datos.motivo.trim() || null })
+  );
+
+  revalidar();
+  revalidatePath(`/inventario/${mov.equipo_id}`);
+  revalidatePath("/responsivas");
+  revalidatePath("/bitacora");
+  // Las dos fichas cambian a la vez: a uno le vuelve el equipo y al otro se le
+  // quita de su lista.
+  revalidatePath("/empleados");
+  if (snap.recibio) revalidatePath(`/empleados/${snap.recibio}`);
+  if (snap.asignadoPrev) revalidatePath(`/empleados/${snap.asignadoPrev}`);
+
+  return {
+    ok: true,
+    id: mov.equipo_id,
+    mensaje:
+      `${eq.codigo} ${plan.volverA ? `volvió a ${plan.volverA}` : "volvió al inventario como disponible"}.` +
+      (plan.cartaPapelera ? ` La carta ${plan.cartaPapelera} se fue a la papelera.` : "") +
+      (plan.cartaReabre ? ` La carta ${plan.cartaReabre} quedó vigente otra vez.` : ""),
   };
 }
 

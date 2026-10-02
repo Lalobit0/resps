@@ -5,6 +5,7 @@ import { db } from "../../lib/db";
 import { importarDeExcel, serialExcelAISO, type Mapeo } from "../../lib/importar";
 import { guardarEquipo } from "../inventario/actions";
 import { anotarMovimiento } from "../../lib/historial";
+import type { SnapMovimiento } from "../../lib/movimientos";
 import { sincronizarRequisitos } from "../../lib/expedientes";
 import type { Equipo, ResultadoAccion } from "../../lib/types";
 import { exigir, usuarioActual } from "../../lib/auth";
@@ -283,7 +284,23 @@ export async function asignarEquipo(empleadoId: number, equipoId: number): Promi
       `${eq.codigo} (${eq.marca} ${eq.modelo}) se asignó a ${emp.numero_empleado} ${emp.nombre}`,
       JSON.stringify({ equipo: eq.codigo, empleado: emp.numero_empleado, estado_anterior: eq.estado })
     );
-    anotarMovimiento({ equipoId, accion: "ASIGNADO", empleadoId, detalle: `Entregado a ${emp.numero_empleado} ${emp.nombre}` });
+    anotarMovimiento({
+      equipoId,
+      accion: "ASIGNADO",
+      empleadoId,
+      detalle: `Entregado a ${emp.numero_empleado} ${emp.nombre}`,
+      // Para poder cancelar la entrega si resulta que el equipo no servía.
+      snapshot: {
+        equipoId,
+        codigo: eq.codigo,
+        estadoPrev: eq.estado,
+        asignadoPrev: eq.asignado_a,
+        departamentoPrev: eq.departamento,
+        areaPrev: eq.area,
+        recibio: empleadoId,
+        cartaCerrada: null,
+      } satisfies SnapMovimiento,
+    });
 
     revalidar();
     revalidatePath("/inventario");
@@ -363,6 +380,17 @@ export async function quitarEquipoAEmpleado(equipoId: number): Promise<Resultado
       accion: "LIBERADO",
       empleadoId: eq.asignado_a,
       detalle: "Volvió al inventario como disponible",
+      // Para poder cancelarlo si se le quitó al equivocado.
+      snapshot: {
+        equipoId,
+        codigo: eq.codigo,
+        estadoPrev: eq.estado,
+        asignadoPrev: eq.asignado_a,
+        departamentoPrev: eq.departamento,
+        areaPrev: eq.area,
+        recibio: null,
+        cartaCerrada: null,
+      } satisfies SnapMovimiento,
     });
 
     revalidar();

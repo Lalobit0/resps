@@ -841,6 +841,12 @@ function migrar(db: Database.Database) {
   // capturados en la casilla de pesos—.
   agregarColumna(db, "equipos", "costo_usd", "REAL");
   agregarColumna(db, "equipos", "pedimento", "TEXT");
+  // Para poder cancelar un movimiento del equipo hay que saber cómo estaba
+  // antes de hacerlo: a nombre de quién, en qué estado y con qué carta. Eso va
+  // en `snapshot`. `cancelado` marca la fecha en que se deshizo, para que el
+  // movimiento siga en el histórico —ocurrió— pero deje de contar.
+  agregarColumna(db, "equipo_historial", "snapshot", "TEXT");
+  agregarColumna(db, "equipo_historial", "cancelado", "TEXT");
   // Al subir la plantilla de personal, quién estaba en el sistema y ya no
   // viene en el archivo: son las bajas que hay que resolver.
   agregarColumna(db, "importaciones", "ausentes", "INTEGER NOT NULL DEFAULT 0");

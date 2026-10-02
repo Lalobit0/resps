@@ -20,9 +20,12 @@ export type AccionHistorial =
   | "FUSION"
   | "RESPONSIVA"
   | "DEVOLUCION"
-  | "MANTENIMIENTO";
+  | "MANTENIMIENTO"
+  | "CANCELADO";
 
 export type Movimiento = {
+  /** Renglón de `equipo_historial`, cuando el movimiento sale de ahí. */
+  id: number | null;
   fecha: string;
   accion: AccionHistorial;
   titulo: string;
@@ -34,6 +37,8 @@ export type Movimiento = {
   /** Folio de la carta, para poder abrirla. */
   folio: string | null;
   responsiva_id: number | null;
+  /** Cuándo se canceló. Sigue en la lista, pero ya no cuenta. */
+  cancelado: string | null;
 };
 
 /** Cómo se llama a alguien en el histórico: número y nombre, congelados. */
@@ -45,6 +50,9 @@ export function textoEmpleado(e: { numero_empleado?: string | null; nombre?: str
 /**
  * Anota un movimiento del equipo. Nunca tumba la operación que lo llamó: el
  * histórico es para consultar, no para bloquear una entrega.
+ *
+ * Devuelve el renglón que quedó, que es lo que necesita quien vaya a poder
+ * cancelar el movimiento después.
  */
 export function anotarMovimiento(datos: {
   equipoId: number;
@@ -55,28 +63,39 @@ export function anotarMovimiento(datos: {
   departamento?: string | null;
   area?: string | null;
   fecha?: string;
-}) {
+  /**
+   * Cómo estaba el equipo antes del movimiento. Guardarlo es lo que permite
+   * cancelarlo; sin esto el movimiento queda como dato, no como algo
+   * reversible.
+   */
+  snapshot?: unknown;
+}): number | null {
   try {
     const emp = datos.empleadoId
       ? (db.prepare("SELECT numero_empleado, nombre, departamento, area FROM empleados WHERE id = ?").get(datos.empleadoId) as
           | { numero_empleado: string; nombre: string; departamento: string | null; area: string | null }
           | undefined)
       : undefined;
-    db.prepare(
-      `INSERT INTO equipo_historial (equipo_id, fecha, accion, empleado_id, empleado_texto, departamento, area, detalle)
-       VALUES (?, COALESCE(?, datetime('now','localtime')), ?, ?, ?, ?, ?, ?)`
-    ).run(
-      datos.equipoId,
-      datos.fecha ?? null,
-      datos.accion,
-      datos.empleadoId ?? null,
-      textoEmpleado(emp) || null,
-      datos.departamento ?? emp?.departamento ?? null,
-      datos.area ?? emp?.area ?? null,
-      datos.detalle ?? null
-    );
+    const r = db
+      .prepare(
+        `INSERT INTO equipo_historial (equipo_id, fecha, accion, empleado_id, empleado_texto, departamento, area, detalle, snapshot)
+         VALUES (?, COALESCE(?, datetime('now','localtime')), ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        datos.equipoId,
+        datos.fecha ?? null,
+        datos.accion,
+        datos.empleadoId ?? null,
+        textoEmpleado(emp) || null,
+        datos.departamento ?? emp?.departamento ?? null,
+        datos.area ?? emp?.area ?? null,
+        datos.detalle ?? null,
+        datos.snapshot === undefined ? null : JSON.stringify(datos.snapshot)
+      );
+    return Number(r.lastInsertRowid);
   } catch (e) {
     console.error("No se pudo anotar el movimiento del equipo:", e);
+    return null;
   }
 }
 
@@ -92,6 +111,7 @@ const TITULO: Record<string, string> = {
   RESPONSIVA: "Carta responsiva",
   DEVOLUCION: "Carta de devolución",
   MANTENIMIENTO: "Mantenimiento",
+  CANCELADO: "Movimiento cancelado",
 };
 
 /** Toda la historia del equipo, de lo más nuevo a lo más viejo. */
@@ -107,6 +127,7 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
   const anotados = db
     .prepare("SELECT * FROM equipo_historial WHERE equipo_id = ? ORDER BY fecha DESC, id DESC")
     .all(equipoId) as {
+    id: number;
     fecha: string;
     accion: string;
     empleado_id: number | null;
@@ -114,9 +135,11 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
     departamento: string | null;
     area: string | null;
     detalle: string | null;
+    cancelado: string | null;
   }[];
   for (const a of anotados) {
     movs.push({
+      id: a.id,
       fecha: a.fecha.slice(0, 10),
       accion: a.accion as AccionHistorial,
       titulo: TITULO[a.accion] ?? a.accion,
@@ -126,6 +149,7 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
       area: a.area || a.departamento,
       folio: null,
       responsiva_id: null,
+      cancelado: a.cancelado ?? null,
     });
   }
 
@@ -158,6 +182,7 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
     const devolucion = c.tipo === "DEVOLUCION";
     const firmada = c.origen === "CARGADA" || !!c.pdf_firmado;
     movs.push({
+      id: null,
       fecha: c.fecha,
       accion: devolucion ? "DEVOLUCION" : "RESPONSIVA",
       titulo: devolucion ? "Devuelto con carta" : "Entregado con carta",
@@ -167,6 +192,7 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
       area: c.area || c.departamento,
       folio: c.folio,
       responsiva_id: c.id,
+      cancelado: null,
     });
   }
 
@@ -182,6 +208,7 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
   }[];
   for (const m of mantenimientos) {
     movs.push({
+      id: null,
       fecha: m.fecha_realizada || m.fecha_programada,
       accion: "MANTENIMIENTO",
       titulo: m.fecha_realizada ? "Mantenimiento realizado" : "Mantenimiento programado",
@@ -191,12 +218,14 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
       area: null,
       folio: null,
       responsiva_id: null,
+      cancelado: null,
     });
   }
 
   // 4. El día que entró al inventario cierra la lista por abajo.
   if (!movs.some((m) => m.accion === "ALTA")) {
     movs.push({
+      id: null,
       fecha: equipo.created_at.slice(0, 10),
       accion: "ALTA",
       titulo: "Alta en el inventario",
@@ -206,6 +235,7 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
       area: null,
       folio: null,
       responsiva_id: null,
+      cancelado: null,
     });
   }
 
@@ -215,6 +245,9 @@ export function historialDeEquipo(equipoId: number): Movimiento[] {
 /** Quiénes han tenido el equipo, del más reciente al primero. */
 export function duenosDeEquipo(equipoId: number): { empleado_id: number; empleado: string; area: string | null; desde: string; hasta: string | null }[] {
   const movs = historialDeEquipo(equipoId)
+    // Un movimiento cancelado no deja etapa: la entrega se deshizo, así que
+    // esa persona nunca tuvo el equipo.
+    .filter((m) => !m.cancelado)
     .filter((m) => m.empleado_id && (m.accion === "ASIGNADO" || m.accion === "REASIGNADO" || m.accion === "RESPONSIVA"))
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
 

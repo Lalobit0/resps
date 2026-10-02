@@ -4,8 +4,10 @@ import type { Empleado, Equipo, MantenimientoConEquipo } from "../../../lib/type
 import { CAMPOS_DETALLE, ETIQUETA_ESTADO, ETIQUETA_TIPO, ESTADOS_MANTENIMIENTO, ETIQUETA_MANTENIMIENTO } from "../../../lib/constants";
 import { dinero, dolares, fechaCorta } from "../../../lib/helpers";
 import { duenosDeEquipo, historialDeEquipo, type Movimiento } from "../../../lib/historial";
+import { planDeCancelacion } from "../../../lib/movimientos";
 import { Badge, Card, Empty, PageHeader, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "../../../components/ui";
 import ReasignarEquipoBtn from "../../../components/ReasignarEquipoBtn";
+import CancelarMovimientoBtn from "../../../components/CancelarMovimientoBtn";
 import VerPdfBtn from "../../../components/VerPdfBtn";
 import GenerarValeBtn from "../../../components/GenerarValeBtn";
 import { conceptosVale } from "../../../lib/vales";
@@ -25,6 +27,8 @@ const ICONO: Record<string, string> = {
   ESTADO: "🔁",
   FUSION: "🔗",
   MANTENIMIENTO: "🔧",
+  REASIGNADO: "⇄",
+  CANCELADO: "✕",
 };
 
 const TONO: Record<string, "verde" | "kraft" | "petrol" | "ambar" | "gris" | "rojo"> = {
@@ -38,6 +42,8 @@ const TONO: Record<string, "verde" | "kraft" | "petrol" | "ambar" | "gris" | "ro
   ESTADO: "petrol",
   FUSION: "gris",
   MANTENIMIENTO: "ambar",
+  REASIGNADO: "verde",
+  CANCELADO: "rojo",
 };
 
 export default async function PaginaEquipo({ params }: { params: Promise<{ id: string }> }) {
@@ -76,6 +82,9 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
   const movimientos = historialDeEquipo(equipoId);
   const tarifario = conceptosVale();
   const duenos = duenosDeEquipo(equipoId);
+  // El único movimiento que se puede deshacer es el último: cancelar uno de
+  // más atrás pisaría todo lo que vino después.
+  const cancelable = planDeCancelacion(equipoId);
 
   const mantenimientos = db
     .prepare(
@@ -132,15 +141,25 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
       <span className="w-5 shrink-0 pt-0.5 text-center text-sm" aria-hidden>
         {ICONO[m.accion] ?? "•"}
       </span>
-      <span className="min-w-0 flex-1">
+      <span className={`min-w-0 flex-1 ${m.cancelado ? "opacity-60" : ""}`}>
         <span className="flex flex-wrap items-center gap-2">
-          <Badge tono={TONO[m.accion] ?? "gris"}>{m.titulo}</Badge>
-          {m.empleado ? <span className="text-sm font-medium text-ink">{m.empleado}</span> : null}
+          <Badge tono={m.cancelado ? "gris" : TONO[m.accion] ?? "gris"}>{m.titulo}</Badge>
+          {m.empleado ? (
+            <span className={`text-sm font-medium text-ink ${m.cancelado ? "line-through" : ""}`}>{m.empleado}</span>
+          ) : null}
           {m.area ? <span className="text-xs text-soft">· {m.area}</span> : null}
           {m.folio ? (
             <Link href={`/api/pdf/${m.responsiva_id}`} target="_blank" className="mono text-xs text-kraft-dark hover:underline">
               {m.folio}
             </Link>
+          ) : null}
+          {m.cancelado ? <Badge tono="rojo">Cancelado</Badge> : null}
+          {cancelable && m.id === cancelable.historialId ? (
+            <CancelarMovimientoBtn
+              plan={cancelable}
+              codigo={equipo.codigo}
+              className="rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper"
+            />
           ) : null}
         </span>
         {m.detalle ? <span className="mt-0.5 block text-xs text-soft">{m.detalle}</span> : null}

@@ -15,27 +15,28 @@ echo.
 echo Sirve cuando al abrir el sistema sale un error parecido a:
 echo    ENOENT: no such file or directory, open '...\.next\server\...'
 echo.
-echo ----------------------------------------------------------
-echo   IMPORTANTE: primero CIERRA la ventana negra donde estaba
-echo   corriendo el sistema. Si sigue abierta, Windows no deja
-echo   borrar los archivos y esto no va a servir.
-echo ----------------------------------------------------------
+echo Si quedo una ventana del sistema corriendo, se cierra sola: con
+echo ella encima Windows no deja borrar los archivos.
 echo.
 pause
 
 echo.
-echo 1) Borrando la carpeta .next ...
+echo 1) Cerrando el sistema si quedo abierto...
+call "%~dp0liberar-puerto.bat"
+
+echo.
+echo 2) Borrando la carpeta .next ...
 if exist ".next" rmdir /s /q ".next"
 if exist ".next" goto :trabada
 echo    Listo.
 
 echo.
-echo 2) Borrando la cache de compilacion ...
+echo 3) Borrando la cache de compilacion ...
 if exist "node_modules\.cache" rmdir /s /q "node_modules\.cache"
 echo    Listo.
 
 echo.
-echo 3) Iniciando el sistema. La primera vez tarda mas porque se
+echo 4) Iniciando el sistema. La primera vez tarda mas porque se
 echo    tiene que volver a compilar: es normal.
 echo    Abre http://localhost:3000 cuando diga "Ready".
 echo.

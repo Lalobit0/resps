@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Equipo } from "../lib/types";
+import type { EquipoLibre } from "../lib/disponibles";
+import { fechaCorta } from "../lib/helpers";
 import {
   CAMPOS_DETALLE,
   ETIQUETA_TIPO,
@@ -70,33 +72,83 @@ function aFormulario(e: Equipo): Nuevo {
  * dos casos el equipo queda en el inventario, asignado, y de inmediato se
  * ofrece generar su carta responsiva.
  */
+/** Dos áreas son la misma aunque vengan escritas distinto. */
+const igual = (a: string | null | undefined, b: string | null | undefined) =>
+  !!a?.trim() && !!b?.trim() && a.trim().toUpperCase() === b.trim().toUpperCase();
+
+/**
+ * De dónde es el equipo, para ponerlo en el renglón.
+ *
+ * Se pone el departamento primero porque es el que distingue: Contabilidad,
+ * Compras y RH caen todas en Administración, así que con el área sola los
+ * equipos de media empresa se verían iguales.
+ */
+const deDondeEs = (e: { departamento: string | null; area: string | null }) => {
+  const partes = [e.departamento?.trim(), e.area?.trim()].filter(Boolean) as string[];
+  const unicos = partes.filter((v, i) => partes.findIndex((o) => o.toUpperCase() === v.toUpperCase()) === i);
+  return unicos.join(" · ") || null;
+};
+
 export default function AsignarEquipoBtn({
   empleadoId,
   disponibles,
+  areaEmpleado,
+  departamentoEmpleado,
+  enManosDeBajas = 0,
 }: {
   empleadoId: number;
-  disponibles: Equipo[];
+  disponibles: EquipoLibre[];
+  /** Dónde está el empleado, para separar lo suyo de lo que soltaron otras áreas. */
+  areaEmpleado?: string | null;
+  departamentoEmpleado?: string | null;
+  /** Cuántos equipos siguen a nombre de gente que ya no está. */
+  enManosDeBajas?: number;
 }) {
+  // Se compara por departamento cuando los dos lo tienen; si no, por área.
+  const esDeSuArea = (e: EquipoLibre) =>
+    e.departamento?.trim() && departamentoEmpleado?.trim()
+      ? igual(e.departamento, departamentoEmpleado)
+      : igual(e.area, areaEmpleado);
+  const suLugar = departamentoEmpleado?.trim() || areaEmpleado?.trim() || "";
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
   const [modo, setModo] = useState<"existente" | "nuevo">("existente");
   const [filtro, setFiltro] = useState("");
+  const [deDonde, setDeDonde] = useState<"todos" | "suya" | "otras">("todos");
   const [elegido, setElegido] = useState<number | null>(null);
   const [nuevo, setNuevo] = useState<Nuevo>(NUEVO_VACIO);
   const [error, setError] = useState("");
   const [listo, setListo] = useState<{ equipoId: number; mensaje: string } | null>(null);
   const [pendiente, iniciar] = useTransition();
 
+  const deSuArea = useMemo(() => disponibles.filter(esDeSuArea), [disponibles, departamentoEmpleado, areaEmpleado]);
+  const deOtrasAreas = useMemo(
+    () => disponibles.filter((e) => !esDeSuArea(e)),
+    [disponibles, departamentoEmpleado, areaEmpleado]
+  );
+
   const filtrados = useMemo(() => {
+    const lista = deDonde === "suya" ? deSuArea : deDonde === "otras" ? deOtrasAreas : disponibles;
     const q = filtro.trim().toLowerCase();
-    if (!q) return disponibles;
-    return disponibles.filter((e) =>
-      [e.codigo, ETIQUETA_TIPO[e.tipo] ?? e.tipo, e.marca, e.modelo, e.numero_serie ?? "", e.specs ?? ""]
+    if (!q) return lista;
+    // Se busca también por área y por quién lo traía: así se encuentra "la
+    // laptop que soltó Contabilidad" o "la de fulano".
+    return lista.filter((e) =>
+      [
+        e.codigo,
+        ETIQUETA_TIPO[e.tipo] ?? e.tipo,
+        e.marca,
+        e.modelo,
+        e.numero_serie ?? "",
+        e.specs ?? "",
+        deDondeEs(e) ?? "",
+        e.venia_de ?? "",
+      ]
         .join(" ")
         .toLowerCase()
         .includes(q)
     );
-  }, [disponibles, filtro]);
+  }, [disponibles, deSuArea, deOtrasAreas, deDonde, filtro]);
 
   const cerrar = () => {
     setAbierto(false);
@@ -104,6 +156,7 @@ export default function AsignarEquipoBtn({
     setListo(null);
     setElegido(null);
     setFiltro("");
+    setDeDonde("todos");
     setNuevo(NUEVO_VACIO);
     setModo("existente");
   };
@@ -213,10 +266,38 @@ export default function AsignarEquipoBtn({
                 <>
                   <input
                     className={`${inputCls} mb-2`}
-                    placeholder="Filtrar por código, marca, modelo o serie…"
+                    placeholder="Filtrar por código, marca, modelo, serie, área o de quién era…"
                     value={filtro}
                     onChange={(ev) => setFiltro(ev.target.value)}
                   />
+
+                  {/* Lo que soltó otra área es justo lo que se anda buscando
+                      cuando hace falta un equipo y no hay presupuesto. */}
+                  {suLugar && deSuArea.length > 0 && deOtrasAreas.length > 0 ? (
+                    <div className="mb-2 flex flex-wrap gap-1.5 text-xs">
+                      {(
+                        [
+                          ["todos", `Todos (${disponibles.length})`],
+                          ["suya", `De ${suLugar} (${deSuArea.length})`],
+                          ["otras", `Liberados de otras áreas (${deOtrasAreas.length})`],
+                        ] as const
+                      ).map(([valor, etiqueta]) => (
+                        <button
+                          key={valor}
+                          type="button"
+                          onClick={() => setDeDonde(valor)}
+                          className={`rounded-md border px-2.5 py-1 ${
+                            deDonde === valor
+                              ? "border-kraft bg-orange-50 font-semibold text-kraft-dark"
+                              : "border-line bg-white text-soft hover:bg-paper"
+                          }`}
+                        >
+                          {etiqueta}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
                   <div className="max-h-[45vh] space-y-1.5 overflow-y-auto pr-1">
                     {filtrados.map((e) => (
                       <div
@@ -239,6 +320,29 @@ export default function AsignarEquipoBtn({
                             {e.numero_serie ? ` · Serie ${e.numero_serie}` : ""}
                             {e.specs ? ` · ${e.specs}` : ""}
                           </div>
+                          {/* De dónde viene: sin esto todos los equipos libres
+                              se ven igual y no hay cómo saber cuál soltó qué
+                              área ni desde cuándo lleva parado. */}
+                          {deDondeEs(e) || e.libre_desde || e.venia_de ? (
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+                              {deDondeEs(e) ? (
+                                <span
+                                  className={`rounded px-1.5 py-0.5 font-semibold ${
+                                    esDeSuArea(e) ? "bg-emerald-50 text-emerald-800" : "bg-sky-50 text-sky-800"
+                                  }`}
+                                >
+                                  {deDondeEs(e)}
+                                </span>
+                              ) : null}
+                              <span className="text-soft">
+                                {e.libre_desde
+                                  ? `Libre desde ${fechaCorta(e.libre_desde)}${e.venia_de ? ` · lo traía ${e.venia_de}` : ""}`
+                                  : e.venia_de
+                                    ? `Lo traía ${e.venia_de}`
+                                    : "Sin entregas registradas"}
+                              </span>
+                            </div>
+                          ) : null}
                         </button>
                         <button
                           type="button"
@@ -257,6 +361,22 @@ export default function AsignarEquipoBtn({
                     ))}
                     {filtrados.length === 0 ? <p className="px-1 py-3 text-sm text-soft">Nada coincide con el filtro.</p> : null}
                   </div>
+
+                  {/* El equipo que quedó cuando alguien se fue no está libre
+                      mientras nadie registre que lo entregó. Más vale decirlo
+                      que dejar a la persona buscándolo en esta lista. */}
+                  {enManosDeBajas > 0 ? (
+                    <p className="mt-2 text-xs text-soft">
+                      {enManosDeBajas === 1 ? "Hay 1 equipo que sigue" : `Hay ${enManosDeBajas} equipos que siguen`} a
+                      nombre de gente que ya no está en la plantilla, así que todavía no{" "}
+                      {enManosDeBajas === 1 ? "aparece" : "aparecen"} aquí. Están en{" "}
+                      <Link href="/empleados/bajas" className="font-medium text-kraft-dark hover:underline">
+                        Bajas
+                      </Link>
+                      : desde la ficha de cada quien se registra la entrega y{" "}
+                      {enManosDeBajas === 1 ? "queda libre" : "quedan libres"}.
+                    </p>
+                  ) : null}
                 </>
               )
             ) : (

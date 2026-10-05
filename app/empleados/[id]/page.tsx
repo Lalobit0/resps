@@ -9,6 +9,7 @@ import EquiposEmpleado from "../../../components/EquiposEmpleado";
 import AsignarEquipoBtn from "../../../components/AsignarEquipoBtn";
 import type { ResponsivaDeEquipo } from "../../../components/InventarioClient";
 import { idsSinResponsiva, responsivasSinFirmaDe } from "../../../lib/pendientes";
+import { equiposDeGenteQueYaNoEsta, equiposLibres } from "../../../lib/disponibles";
 import { estaVencido, prestamosDe, queSePresto, sigueFuera, situacion } from "../../../lib/prestamos";
 import SubirFirmadaBtn from "../../../components/SubirFirmadaBtn";
 import VerPdfBtn from "../../../components/VerPdfBtn";
@@ -47,10 +48,11 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
     .prepare("SELECT * FROM equipos WHERE asignado_a = ? ORDER BY tipo ASC, codigo ASC")
     .all(empleado.id) as Equipo[];
 
-  // Equipos libres, para poder entregarle uno desde aquí mismo.
-  const disponibles = db
-    .prepare("SELECT * FROM equipos WHERE estado = 'DISPONIBLE' AND asignado_a IS NULL ORDER BY tipo ASC, codigo ASC")
-    .all() as Equipo[];
+  // Equipos libres, para poder entregarle uno desde aquí mismo. Vienen con su
+  // área y con de quién se liberaron: lo que hace falta para ver que esa PC
+  // que soltó Compras se puede aprovechar aquí.
+  const disponibles = equiposLibres();
+  const enManosDeBajas = equiposDeGenteQueYaNoEsta();
 
   const responsivas = db
     .prepare(
@@ -312,7 +314,13 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
 
       <div className="mb-2 mt-6 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-bold text-ink">Equipos asignados</h2>
-        <AsignarEquipoBtn empleadoId={empleado.id} disponibles={disponibles} />
+        <AsignarEquipoBtn
+          empleadoId={empleado.id}
+          disponibles={disponibles}
+          areaEmpleado={empleado.area}
+          departamentoEmpleado={empleado.departamento}
+          enManosDeBajas={enManosDeBajas.total}
+        />
       </div>
       {equipos.length === 0 ? (
         <Empty>Este empleado no tiene equipos asignados. Usa “Asignar equipo” para entregarle uno.</Empty>

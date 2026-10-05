@@ -5,7 +5,14 @@ echo ============================================
 echo   Actualizando Control Sultana...
 echo ============================================
 echo.
-echo 1) Descargando la ultima version...
+echo 1) Cerrando el sistema si quedo abierto...
+REM Va primero: con el sistema corriendo no se puede limpiar lo compilado
+REM (Windows no deja borrar archivos en uso) y ademas se quedaria con el
+REM puerto 3000, asi que al terminar el navegador abriria la version vieja.
+call "%~dp0liberar-puerto.bat"
+
+echo.
+echo 2) Descargando la ultima version...
 
 REM npm install reescribe package-lock.json por su cuenta, y ese cambio
 REM trababa la siguiente actualizacion. Se descarta antes de bajar nada:
@@ -35,7 +42,7 @@ exit /b 1
 
 :dependencias
 echo.
-echo 2) Revisando dependencias...
+echo 3) Revisando dependencias...
 call npm install
 
 REM Lo compilado corresponde a la version ANTERIOR. Si se deja, Next busca
@@ -43,7 +50,7 @@ REM archivos que el codigo nuevo ya no genera y truena al abrir con un
 REM "ENOENT ... .next\server\app\page.js". Se borra: se rehace solo, y no
 REM toca ni la base de datos (data\) ni los PDF (storage\).
 echo.
-echo 3) Limpiando la version anterior ya compilada...
+echo 4) Limpiando la version anterior ya compilada...
 if exist ".next" rmdir /s /q ".next"
 if exist ".next" (
   echo.
@@ -64,7 +71,7 @@ echo    contrasena:  admin
 echo El sistema te va a pedir cambiarla de inmediato. Despues das de alta
 echo a las demas personas en Configuracion - Usuarios y roles.
 echo.
-echo 4) Listo. Iniciando el sistema...
+echo 5) Listo. Iniciando el sistema...
 echo    La primera vez despues de actualizar tarda mas en abrir, porque
 echo    se tiene que compilar de nuevo. Es normal.
 echo    Abre http://localhost:3000 cuando diga "Ready".

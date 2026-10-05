@@ -2,6 +2,9 @@
 REM --- Inicia Control Sultana ---
 cd /d "%~dp0"
 echo Iniciando Control Sultana...
+echo.
+call "%~dp0liberar-puerto.bat"
+echo.
 echo Cuando diga "Ready", abre http://localhost:3000 en tu navegador.
 echo.
 echo Si al abrirlo sale un error que menciona  .next  , cierra esta ventana

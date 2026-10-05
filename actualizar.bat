@@ -37,6 +37,22 @@ exit /b 1
 echo.
 echo 2) Revisando dependencias...
 call npm install
+
+REM Lo compilado corresponde a la version ANTERIOR. Si se deja, Next busca
+REM archivos que el codigo nuevo ya no genera y truena al abrir con un
+REM "ENOENT ... .next\server\app\page.js". Se borra: se rehace solo, y no
+REM toca ni la base de datos (data\) ni los PDF (storage\).
+echo.
+echo 3) Limpiando la version anterior ya compilada...
+if exist ".next" rmdir /s /q ".next"
+if exist ".next" (
+  echo.
+  echo    AVISO: no se pudo borrar la carpeta .next, seguramente porque el
+  echo    sistema sigue abierto en otra ventana. Cierralas todas y ejecuta
+  echo    reparar.bat antes de usarlo.
+  echo.
+  pause
+)
 echo.
 echo ============================================
 echo   ATENCION: ahora el sistema pide contrasena
@@ -48,7 +64,9 @@ echo    contrasena:  admin
 echo El sistema te va a pedir cambiarla de inmediato. Despues das de alta
 echo a las demas personas en Configuracion - Usuarios y roles.
 echo.
-echo 3) Listo. Iniciando el sistema...
+echo 4) Listo. Iniciando el sistema...
+echo    La primera vez despues de actualizar tarda mas en abrir, porque
+echo    se tiene que compilar de nuevo. Es normal.
 echo    Abre http://localhost:3000 cuando diga "Ready".
 start "" http://localhost:3000
 npm run dev

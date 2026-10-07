@@ -181,9 +181,10 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
           duenoActual={
             equipo.asignado_nombre ? `${equipo.asignado_numero} ${equipo.asignado_nombre}` : null
           }
+          areaEquipo={equipo.departamento || equipo.area || null}
           empleados={empleados}
           className={btnGhost}
-          etiqueta="→ Reasignar"
+          etiqueta={equipo.asignado_nombre ? "→ Reasignar" : "→ Asignar"}
         />
         <Link href="/inventario" className={btnGhost}>
           ← Volver al inventario

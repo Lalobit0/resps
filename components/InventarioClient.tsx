@@ -424,8 +424,12 @@ export default function InventarioClient({
               equipoId={e.id}
               codigo={e.codigo}
               duenoActual={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : null}
+              areaEquipo={e.departamento || e.area || null}
               empleados={empleados}
               className={mini}
+              // Si no lo trae nadie no se está "reasignando": se entrega por
+              // primera vez, y con ese nombre no se encontraba desde el stock.
+              etiqueta={e.asignado_nombre ? "Reasignar" : "Asignar"}
             />
             <FusionarEquipoBtn equipoId={e.id} codigo={e.codigo} className={mini} etiqueta="Fusionar" />
             <button

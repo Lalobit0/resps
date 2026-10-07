@@ -20,6 +20,7 @@ export default function ReasignarEquipoBtn({
   equipoId,
   codigo,
   duenoActual,
+  areaEquipo,
   empleados,
   className,
   etiqueta = "Reasignar",
@@ -28,6 +29,8 @@ export default function ReasignarEquipoBtn({
   codigo: string;
   /** Quién lo trae hoy, para decirlo sin que haya que buscarlo. */
   duenoActual?: string | null;
+  /** De qué área es el equipo. Importa cuando está libre: se puede pasar a otra. */
+  areaEquipo?: string | null;
   empleados: Empleado[];
   className?: string;
   etiqueta?: string;
@@ -70,7 +73,9 @@ export default function ReasignarEquipoBtn({
       {abierto ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
           <Card className="my-10 w-full max-w-lg">
-            <h2 className="text-base font-bold text-ink">Reasignar {codigo}</h2>
+            <h2 className="text-base font-bold text-ink">
+              {duenoActual ? "Reasignar" : "Asignar"} {codigo}
+            </h2>
             <p className="mt-1 text-sm text-soft">
               {duenoActual ? (
                 <>
@@ -78,7 +83,15 @@ export default function ReasignarEquipoBtn({
                   responsiva se cierra y el equipo queda a nombre de quien elijas.
                 </>
               ) : (
-                <>Está libre en el inventario. Al elegir a alguien queda a su nombre.</>
+                <>
+                  Está libre en el inventario
+                  {areaEquipo ? (
+                    <>
+                      , y pertenece a <span className="font-semibold text-ink">{areaEquipo}</span>
+                    </>
+                  ) : null}
+                  . Se le puede entregar a quien sea: al elegir a alguien queda a su nombre y pasa a su área.
+                </>
               )}
             </p>
 
@@ -96,7 +109,7 @@ export default function ReasignarEquipoBtn({
                 <Label>Motivo</Label>
                 <input
                   className={inputCls}
-                  placeholder="Cambio de turno, se fue a otra área…"
+                  placeholder={duenoActual ? "Cambio de turno, se fue a otra área…" : "Se incorporó, le hacía falta…"}
                   value={motivo}
                   onChange={(e) => setMotivo(e.target.value)}
                 />
@@ -116,7 +129,11 @@ export default function ReasignarEquipoBtn({
 
             <div className="mt-4 flex gap-2">
               <button className={btnPrimary} onClick={confirmar} disabled={pendiente}>
-                {pendiente ? "Reasignando…" : "Reasignar y generar su carta"}
+                {pendiente
+                  ? duenoActual
+                    ? "Reasignando…"
+                    : "Asignando…"
+                  : `${duenoActual ? "Reasignar" : "Asignar"} y generar su carta`}
               </button>
               <button className={btnGhost} onClick={cerrar} disabled={pendiente}>
                 Cancelar

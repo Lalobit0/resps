@@ -4,6 +4,7 @@ import type { Empleado, EquipoConAsignado } from "../../lib/types";
 import { CLASIFICACIONES_EQUIPO, ETIQUETA_ESTADO } from "../../lib/constants";
 import { detectarDuplicados, CAMPOS_BLOQUEANTES, type EquipoRevisable } from "../../lib/duplicados";
 import { idsSinResponsiva, equiposPorLigar } from "../../lib/pendientes";
+import { stockPorDepartamento } from "../../lib/disponibles";
 import InventarioClient, { type ResponsivaDeEquipo } from "../../components/InventarioClient";
 import AvisoDuplicados from "../../components/AvisoDuplicados";
 import AvisoCelularesFaltantes from "../../components/AvisoCelularesFaltantes";
@@ -185,6 +186,21 @@ export default async function PaginaInventario({
     return cadena ? `/inventario?${cadena}` : "/inventario";
   };
 
+  // El equipo libre, repartido por el área a la que pertenece. Va aparte de
+  // los demás filtros: es el punto de entrada para repartir lo que ya se tiene
+  // antes de comprar, así que siempre dice la verdad de lo que hay en stock.
+  const stock = stockPorDepartamento(tipo);
+  const viendoStock = estado === "DISPONIBLE";
+
+  /** Dirección del stock de un área, conservando el tipo que se esté viendo. */
+  const hrefStock = (d: string) => {
+    const p = new URLSearchParams();
+    if (tipo) p.set("tipo", tipo);
+    p.set("estado", "DISPONIBLE");
+    if (d) p.set("depto", d);
+    return `/inventario?${p.toString()}`;
+  };
+
   const SECCIONES: { valor: string; etiqueta: string; icono: string }[] = [
     { valor: "", etiqueta: "Todo el inventario", icono: "📦" },
     { valor: "COMPUTO", etiqueta: "Equipo de cómputo", icono: "💻" },
@@ -265,6 +281,54 @@ export default async function PaginaInventario({
           );
         })}
       </nav>
+
+      {/* Lo que está libre, por el área a la que pertenece. Cuando a alguien
+          le quitan su computadora, el aparato vuelve al inventario pero sigue
+          siendo de su área: sin verlo junto, ese stock se queda parado
+          mientras otra área pide equipo nuevo. */}
+      {stock.total > 0 ? (
+        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-emerald-900">
+              En stock, listo para entregar
+            </span>
+            <span className="text-xs text-emerald-800">
+              {stock.total} {stock.total === 1 ? "equipo libre" : "equipos libres"}
+              {stock.departamentos.length > 1 ? ` en ${stock.departamentos.length} áreas` : ""}
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+            <a
+              href={hrefStock("")}
+              className={`rounded-full border px-2.5 py-0.5 font-medium ${
+                viendoStock && !depto
+                  ? "border-emerald-600 bg-emerald-600 text-white"
+                  : "border-emerald-300 bg-white text-emerald-900 hover:border-emerald-500"
+              }`}
+            >
+              Todo el stock <span className="mono">{stock.total}</span>
+            </a>
+            {stock.departamentos.map((d) => (
+              <a
+                key={d.valor}
+                href={hrefStock(d.valor)}
+                className={`rounded-full border px-2.5 py-0.5 font-medium ${
+                  viendoStock && depto === d.valor
+                    ? "border-emerald-600 bg-emerald-600 text-white"
+                    : "border-emerald-300 bg-white text-emerald-900 hover:border-emerald-500"
+                }`}
+              >
+                {d.etiqueta} <span className="mono">{d.n}</span>
+              </a>
+            ))}
+          </div>
+          {viendoStock ? (
+            <p className="mt-1.5 text-[11px] text-emerald-800">
+              Con <b>Asignar</b> se le entrega a quien sea, aunque el equipo venga de otra área.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Segunda fila: el departamento de quien tiene el equipo. Se revisa
           departamento por departamento, así que va junto a las secciones. */}

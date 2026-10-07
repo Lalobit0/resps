@@ -48,16 +48,6 @@ function responsivaVigenteDe(equipoId: number): { id: number; folio: string; emp
   );
 }
 
-function tieneResponsivaVigente(equipoId: number): boolean {
-  const r = db
-    .prepare(
-      `SELECT COUNT(*) AS c FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
-       WHERE ri.equipo_id = ? AND r.tipo='ASIGNACION' AND r.estado='VIGENTE'`
-    )
-    .get(equipoId) as { c: number };
-  return r.c > 0;
-}
-
 /** Serie comparable: sin espacios ni signos y en mayúsculas. Vacía si es relleno. */
 function normalizarSerie(v: string): string {
   const s = (v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -467,8 +457,13 @@ export async function eliminarEquipo(id: number): Promise<ResultadoAccion> {
   try {
     const equipo = db.prepare("SELECT estado FROM equipos WHERE id=?").get(id) as { estado: string } | undefined;
     if (!equipo) return { ok: false, error: "El equipo ya no existe." };
-    if (tieneResponsivaVigente(id)) {
-      return { ok: false, error: "El equipo tiene una responsiva vigente. Registra la devolución antes de eliminarlo." };
+    const vigente = responsivaVigenteDe(id);
+    if (vigente) {
+      return {
+        ok: false,
+        error: `El equipo tiene la responsiva ${vigente.folio} vigente. Hay que registrar su devolución antes de eliminarlo.`,
+        devolucionPendiente: { id: vigente.id, folio: vigente.folio },
+      };
     }
     const enResponsivas = db.prepare("SELECT COUNT(*) AS c FROM responsiva_items WHERE equipo_id=?").get(id) as { c: number };
     const enMant = db.prepare("SELECT COUNT(*) AS c FROM mantenimientos WHERE equipo_id=?").get(id) as { c: number };

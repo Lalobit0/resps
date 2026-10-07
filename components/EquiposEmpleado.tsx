@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { Equipo } from "../lib/types";
+import type { Equipo, ResultadoAccion } from "../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
 import type { ResponsivaDeEquipo } from "./InventarioClient";
@@ -50,12 +50,17 @@ export default function EquiposEmpleado({
   const [ver, setVer] = useState<ResponsivaDeEquipo | null>(null);
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+  // Cuando lo que estorba es una carta vigente, el error trae cuál: así se
+  // puede ofrecer el botón en vez de dejar a la persona buscando dónde se
+  // registra la devolución.
+  const [porDevolver, setPorDevolver] = useState<{ id: number; folio: string } | null>(null);
   const [pendiente, iniciar] = useTransition();
 
   /** Corre la acción y deja a la vista lo que pasó. */
-  const correr = (accion: () => Promise<{ ok: boolean; error?: string; mensaje?: string }>) => {
+  const correr = (accion: () => Promise<ResultadoAccion>) => {
     setError("");
     setMensaje("");
+    setPorDevolver(null);
     iniciar(async () => {
       const res = await accion();
       if (res.ok) {
@@ -63,6 +68,7 @@ export default function EquiposEmpleado({
         router.refresh();
       } else {
         setError(res.error ?? "No se pudo.");
+        setPorDevolver(res.devolucionPendiente ?? null);
       }
     });
   };
@@ -73,7 +79,17 @@ export default function EquiposEmpleado({
         <div className="mb-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">{mensaje}</div>
       ) : null}
       {error ? (
-        <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">{error}</div>
+        <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+          <p>{error}</p>
+          {porDevolver ? (
+            <Link
+              href={`/responsivas/${porDevolver.id}/devolucion`}
+              className="mt-2 inline-block rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
+            >
+              Registrar la devolución de {porDevolver.folio} →
+            </Link>
+          ) : null}
+        </div>
       ) : null}
       <Card className="overflow-x-auto p-0">
         <table className="w-full min-w-[900px] border-collapse">

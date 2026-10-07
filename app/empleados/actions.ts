@@ -404,14 +404,15 @@ export async function quitarEquipoAEmpleado(equipoId: number): Promise<Resultado
 
     const vigente = db
       .prepare(
-        `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+        `SELECT r.id, r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
          WHERE ri.equipo_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE' LIMIT 1`
       )
-      .get(equipoId) as { folio: string } | undefined;
+      .get(equipoId) as { id: number; folio: string } | undefined;
     if (vigente) {
       return {
         ok: false,
-        error: `Este equipo tiene la responsiva ${vigente.folio} vigente. Registra su devolución para poder quitárselo.`,
+        error: `Este equipo tiene la responsiva ${vigente.folio} vigente. Hay que registrar su devolución para poder quitárselo.`,
+        devolucionPendiente: { id: vigente.id, folio: vigente.folio },
       };
     }
 

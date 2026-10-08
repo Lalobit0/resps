@@ -162,6 +162,10 @@ export default function InventarioClient({
   const [verEq, setVerEq] = useState<EquipoConAsignado | null>(null);
   const [escaneo, setEscaneo] = useState<ResultadoEscaneoDatos | null>(null);
   const [error, setError] = useState("");
+  // Cuando lo que estorba es una carta vigente, el error trae cuál: así se
+  // ofrece el botón en vez de dejar a la persona buscando dónde se registra
+  // la devolución.
+  const [porDevolver, setPorDevolver] = useState<{ id: number; folio: string } | null>(null);
   const [mensaje, setMensaje] = useState("");
   const [pendiente, iniciar] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -424,8 +428,12 @@ export default function InventarioClient({
               equipoId={e.id}
               codigo={e.codigo}
               duenoActual={e.asignado_nombre ? `${e.asignado_numero} ${e.asignado_nombre}` : null}
+              areaEquipo={e.departamento || e.area || null}
               empleados={empleados}
               className={mini}
+              // Si no lo trae nadie no se está "reasignando": se entrega por
+              // primera vez, y con ese nombre no se encontraba desde el stock.
+              etiqueta={e.asignado_nombre ? "Reasignar" : "Asignar"}
             />
             <FusionarEquipoBtn equipoId={e.id} codigo={e.codigo} className={mini} etiqueta="Fusionar" />
             <button
@@ -434,9 +442,13 @@ export default function InventarioClient({
               onClick={() => {
                 if (confirm(`¿Eliminar el equipo ${e.codigo}?`)) {
                   setError("");
+                  setPorDevolver(null);
                   iniciar(async () => {
                     const res = await eliminarEquipo(e.id);
-                    if (!res.ok) setError(res.error ?? "Error desconocido.");
+                    if (!res.ok) {
+                      setError(res.error ?? "Error desconocido.");
+                      setPorDevolver(res.devolucionPendiente ?? null);
+                    }
                   });
                 }
               }}
@@ -545,7 +557,17 @@ export default function InventarioClient({
         </div>
       ) : null}
       {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p>{error}</p>
+          {porDevolver ? (
+            <Link
+              href={`/responsivas/${porDevolver.id}/devolucion`}
+              className="mt-2 inline-block rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
+            >
+              Registrar la devolución de {porDevolver.folio} →
+            </Link>
+          ) : null}
+        </div>
       ) : null}
 
       {escaneo ? <ResultadoEscaneo escaneo={escaneo} empleados={empleados} onCerrar={() => setEscaneo(null)} /> : null}

@@ -1,6 +1,7 @@
 import { db } from "./db";
 import type { EquipoConAsignado } from "./types";
 import type { Importacion, RenglonOmitido } from "./importaciones-comun";
+import type { CambioEmpleado } from "./cambios-personal";
 
 /**
  * Las consultas de las importaciones.
@@ -35,12 +36,15 @@ export function cerrarImportacion(
     omitidos: RenglonOmitido[];
     /** Solo en la plantilla de personal: los números que ya no vinieron. */
     ausentes?: string[];
+    /** Solo en la plantilla de personal: a quién le cambió qué. */
+    cambios?: CambioEmpleado[];
   }
 ) {
   const ausentes = resumen.ausentes ?? [];
+  const cambios = resumen.cambios ?? [];
   db.prepare(
     `UPDATE importaciones SET nuevos = ?, actualizados = ?, vinculados = ?, omitidos = ?, omitidos_detalle = ?,
-            ausentes = ?, ausentes_detalle = ?
+            ausentes = ?, ausentes_detalle = ?, cambios_detalle = ?
      WHERE id = ?`
   ).run(
     resumen.nuevos,
@@ -50,6 +54,7 @@ export function cerrarImportacion(
     resumen.omitidos.length ? JSON.stringify(resumen.omitidos) : null,
     ausentes.length,
     ausentes.length ? JSON.stringify(ausentes) : null,
+    cambios.length ? JSON.stringify(cambios) : null,
     id
   );
 }

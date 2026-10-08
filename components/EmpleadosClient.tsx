@@ -16,6 +16,8 @@ import {
   type Condiciones,
 } from "../lib/filtros-empleados";
 import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
+import ResumenImportacionPersonal from "./ResumenImportacionPersonal";
+import type { ResumenPersonal } from "../lib/cambios-personal";
 import { Badge, Card, Empty, btnGhost, btnPrimary, inputCls } from "./ui";
 
 const mini = "rounded border border-line bg-white px-2 py-0.5 text-xs font-medium text-ink hover:bg-paper";
@@ -63,6 +65,7 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
   const [condiciones, setCondiciones] = useState<Condiciones>({});
   const [error, setError] = useState("");
   const [mensaje, setMensaje] = useState("");
+  const [resumen, setResumen] = useState<ResumenPersonal | null>(null);
   const [pendiente, iniciar] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -295,15 +298,20 @@ export default function EmpleadosClient({ empleados }: { empleados: EmpleadoConE
     setMensaje("");
     const fd = new FormData();
     fd.append("archivo", archivo);
+    setResumen(null);
     iniciar(async () => {
       const res = await importarEmpleados(fd);
-      if (res.ok) setMensaje(res.mensaje ?? "Empleados importados.");
-      else setError(res.error ?? "No se pudo importar.");
+      if (!res.ok) return setError(res.error ?? "No se pudo importar.");
+      // El detalle manda; el renglón de texto es el respaldo por si algo
+      // falló al armarlo.
+      if (res.resumen) setResumen(res.resumen);
+      else setMensaje(res.mensaje ?? "Empleados importados.");
     });
   };
 
   return (
     <div className="space-y-4">
+      {resumen ? <ResumenImportacionPersonal resumen={resumen} onCerrar={() => setResumen(null)} /> : null}
       {mensaje ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{mensaje}</div>
       ) : null}

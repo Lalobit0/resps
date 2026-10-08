@@ -851,6 +851,9 @@ function migrar(db: Database.Database) {
   // viene en el archivo: son las bajas que hay que resolver.
   agregarColumna(db, "importaciones", "ausentes", "INTEGER NOT NULL DEFAULT 0");
   agregarColumna(db, "importaciones", "ausentes_detalle", "TEXT");
+  // A quién le cambió qué al subir la plantilla: el resumen se va de la
+  // pantalla en cuanto se recarga, y es un cambio de 140 renglones de golpe.
+  agregarColumna(db, "importaciones", "cambios_detalle", "TEXT");
   // Deriva el tipo de los equipos capturados antes de la migración
   db.exec("UPDATE equipos SET tipo='CELULAR' WHERE categoria='Celular' AND (tipo IS NULL OR tipo='COMPUTO')");
   // A los equipos que ya están entregados se les copia el área de su dueño:

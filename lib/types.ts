@@ -174,4 +174,13 @@ export type ResultadoAccion = {
   mensaje?: string;
   id?: number;
   folio?: string;
+  /**
+   * La carta cuya devolución hay que registrar para poder seguir.
+   *
+   * Varias operaciones se topan con lo mismo —quitarle el equipo a alguien,
+   * borrarlo, cambiarlo de dueño— y el recado "registra primero su devolución"
+   * dejaba a la persona buscando dónde. Con esto la pantalla puede ofrecer el
+   * botón ahí mismo.
+   */
+  devolucionPendiente?: { id: number; folio: string };
 };

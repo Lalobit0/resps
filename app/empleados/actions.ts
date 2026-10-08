@@ -12,6 +12,8 @@ import { exigir, usuarioActual } from "../../lib/auth";
 import { ausentesDe } from "../../lib/bajas";
 import { marcarGafetesPorRecoger } from "../../lib/gafetes";
 import { cerrarImportacion, registrarImportacion } from "../../lib/importaciones";
+import { compararPersonal, type CambioEmpleado, type DatosPersonal, type ResumenPersonal } from "../../lib/cambios-personal";
+import { anotar } from "../../lib/bitacora";
 
 function revalidar() {
   revalidatePath("/empleados");
@@ -100,7 +102,10 @@ const MAPEO_EMPLEADOS: Mapeo = {
   supervisor: ["nombre del supervisor", "supervisor", "jefe directo", "jefe"],
 };
 
-export async function importarEmpleados(formData: FormData): Promise<ResultadoAccion> {
+/** Lo normal es que el resumen venga; si algo falla antes, solo el error. */
+export type ResultadoImportarPersonal = ResultadoAccion & { resumen?: ResumenPersonal };
+
+export async function importarEmpleados(formData: FormData): Promise<ResultadoImportarPersonal> {
   await exigir("empleados.editar");
   try {
     const archivo = formData.get("archivo") as File | null;
@@ -113,9 +118,10 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
       return { ok: false, error: "No se encontraron empleados. Revisa que el archivo tenga los encabezados esperados." };
     }
 
-    let nuevos = 0;
-    let actualizados = 0;
     let omitidos = 0;
+    let sinCambios = 0;
+    const altas: { numero_empleado: string; nombre: string }[] = [];
+    const cambios: CambioEmpleado[] = [];
 
     // Quién estaba activo y no viene en el archivo. Se calcula ANTES de tocar
     // nada: el Excel de RH trae a los que siguen trabajando y nada más, así
@@ -125,7 +131,9 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
     const ausentes = ausentesDe(numerosDelArchivo);
 
     const proceso = db.transaction(() => {
-      const buscar = db.prepare("SELECT id FROM empleados WHERE numero_empleado = ?");
+      const buscar = db.prepare(
+        "SELECT id, nombre, puesto, departamento, area, clase, supervisor, fecha_alta FROM empleados WHERE numero_empleado = ?"
+      );
       const insertar = db.prepare(
         "INSERT INTO empleados (numero_empleado, nombre, puesto, departamento, area, clase, supervisor, fecha_alta) VALUES (?,?,?,?,?,?,?,?)"
       );
@@ -143,23 +151,47 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
         let fecha = (f.fecha_alta || "").trim();
         if (/^\d{4,6}$/.test(fecha)) fecha = serialExcelAISO(Number(fecha));
 
-        const puesto = (f.puesto || "").trim() || "No definido";
-        const departamento = (f.departamento || "").trim() || (f.area || "").trim() || "No definido";
-        const area = (f.area || "").trim() || null;
-        const clase = (f.clase || "").trim() || null;
-        const supervisor = (f.supervisor || "").trim() || null;
+        const existe = buscar.get(numero) as (DatosPersonal & { id: number }) | undefined;
 
-        const existe = buscar.get(numero) as { id: number } | undefined;
-        if (existe) {
-          actualizar.run(nombre, puesto, departamento, area, clase, supervisor, fecha || null, existe.id);
-          actualizados++;
-        } else {
+        // El Excel de RH no siempre trae todas las columnas, y la que no venga
+        // NO borra lo que ya estaba: subir un archivo sin "Fecha de alta"
+        // dejaba a los 140 sin fecha, en silencio y de un jalón. Lo mismo con
+        // el jefe o la clase. Para borrar un dato se edita la ficha.
+        const tomar = (delArchivo: string | null | undefined, guardado?: string | null) =>
+          String(delArchivo ?? "").trim() || String(guardado ?? "").trim();
+
+        const puesto = tomar(f.puesto, existe?.puesto) || "No definido";
+        const departamento =
+          tomar(f.departamento, existe?.departamento) || String(f.area ?? "").trim() || "No definido";
+        const area = tomar(f.area, existe?.area) || null;
+        const clase = tomar(f.clase, existe?.clase) || null;
+        const supervisor = tomar(f.supervisor, existe?.supervisor) || null;
+        fecha = tomar(fecha, existe?.fecha_alta);
+        const viene: DatosPersonal = { nombre, puesto, departamento, area, clase, supervisor, fecha_alta: fecha || null };
+
+        if (!existe) {
           insertar.run(numero, nombre, puesto, departamento, area, clase, supervisor, fecha || null);
-          nuevos++;
+          altas.push({ numero_empleado: numero, nombre });
+          continue;
         }
+
+        // El Excel de RH trae a toda la plantilla cada vez, así que la enorme
+        // mayoría de los renglones vienen idénticos. Se comparan antes de
+        // escribir: así "actualizados" son los que de verdad cambiaron, y no
+        // se toca la base sin necesidad.
+        const suyos = compararPersonal(existe, viene);
+        if (!suyos.length) {
+          sinCambios++;
+          continue;
+        }
+        actualizar.run(nombre, puesto, departamento, area, clase, supervisor, fecha || null, existe.id);
+        cambios.push({ numero_empleado: numero, nombre, cambios: suyos });
       }
     });
     proceso();
+
+    const nuevos = altas.length;
+    const actualizados = cambios.length;
 
     const quien = await usuarioActual();
     const importacionId = registrarImportacion({
@@ -174,25 +206,40 @@ export async function importarEmpleados(formData: FormData): Promise<ResultadoAc
       vinculados: 0,
       omitidos: [],
       ausentes: ausentes.map((a) => a.numero_empleado),
+      cambios,
+    });
+
+    // La plantilla la mueve un archivo, no una persona capturando: sin esto,
+    // 140 renglones cambian sin dejar quién ni cuándo.
+    await anotar({
+      accion: "IMPORTAR_PERSONAL",
+      descripcion:
+        `Se subió la plantilla${archivo.name ? ` (${archivo.name})` : ""}: ${nuevos} nuevos, ` +
+        `${actualizados} con cambios, ${sinCambios} sin cambios` +
+        (ausentes.length ? `, ${ausentes.length} ya no vienen en el archivo` : ""),
+      entidad: "IMPORTACION",
+      entidadId: importacionId,
+      despues: cambios,
     });
 
     revalidar();
     revalidatePath("/empleados/bajas");
 
-    const partes = [`${nuevos} nuevos`, `${actualizados} actualizados`];
+    const partes = [`${nuevos} nuevos`, `${actualizados} con cambios`, `${sinCambios} sin cambios`];
     if (omitidos) partes.push(`${omitidos} omitidos (sin número o nombre)`);
-
-    const conEquipo = ausentes.filter((a) => a.equipos.length).length;
-    const aviso = ausentes.length
-      ? ` ${ausentes.length} ${ausentes.length === 1 ? "persona que estaba en el sistema ya no viene" : "personas que estaban en el sistema ya no vienen"} en el archivo` +
-        (conEquipo ? `, y ${conEquipo} ${conEquipo === 1 ? "trae equipo" : "traen equipo"} a su nombre` : "") +
-        ". Revísalas en “Bajas” antes de darlas por idas."
-      : "";
 
     return {
       ok: true,
       id: importacionId,
-      mensaje: `Importación lista: ${partes.join(", ")}.${aviso}`,
+      mensaje: `Importación lista: ${partes.join(", ")}.`,
+      resumen: {
+        nuevos: altas,
+        cambios,
+        sinCambios,
+        omitidos,
+        ausentes: ausentes.length,
+        ausentesConEquipo: ausentes.filter((a) => a.equipos.length).length,
+      },
     };
   } catch (e) {
     console.error(e);
@@ -357,14 +404,15 @@ export async function quitarEquipoAEmpleado(equipoId: number): Promise<Resultado
 
     const vigente = db
       .prepare(
-        `SELECT r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+        `SELECT r.id, r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
          WHERE ri.equipo_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE' LIMIT 1`
       )
-      .get(equipoId) as { folio: string } | undefined;
+      .get(equipoId) as { id: number; folio: string } | undefined;
     if (vigente) {
       return {
         ok: false,
-        error: `Este equipo tiene la responsiva ${vigente.folio} vigente. Registra su devolución para poder quitárselo.`,
+        error: `Este equipo tiene la responsiva ${vigente.folio} vigente. Hay que registrar su devolución para poder quitárselo.`,
+        devolucionPendiente: { id: vigente.id, folio: vigente.folio },
       };
     }
 

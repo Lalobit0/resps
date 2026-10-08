@@ -57,6 +57,51 @@ export function equiposLibres(): EquipoLibre[] {
     .all() as EquipoLibre[];
 }
 
+export type StockDeDepartamento = {
+  /** "SIN" cuando el equipo no tiene área, para que case con el filtro. */
+  valor: string;
+  etiqueta: string;
+  n: number;
+};
+
+/**
+ * Cuánto equipo libre tiene cada departamento, para poder repartirlo.
+ *
+ * Cuando a alguien le quitan su computadora, el aparato vuelve al inventario
+ * pero conserva su área: sigue siendo de Servicio a Ventas aunque no lo tenga
+ * nadie. Sin verlo junto, ese stock se queda parado mientras otra área pide
+ * equipo nuevo.
+ *
+ * No depende de los demás filtros de la pantalla a propósito: es el punto de
+ * entrada, así que siempre dice la verdad de lo que hay libre. El tipo sí se
+ * respeta, porque buscar "un radio libre" es una pregunta distinta a buscar
+ * "una laptop libre".
+ */
+export function stockPorDepartamento(tipo?: string): { total: number; departamentos: StockDeDepartamento[] } {
+  const condiciones = ["estado = 'DISPONIBLE'", "asignado_a IS NULL"];
+  const valores: string[] = [];
+  if (tipo) {
+    condiciones.push("tipo = ?");
+    valores.push(tipo);
+  }
+  const filas = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(TRIM(departamento), ''), NULLIF(TRIM(area), ''), 'SIN') AS valor,
+              COUNT(*) AS n
+       FROM equipos WHERE ${condiciones.join(" AND ")}
+       GROUP BY valor`
+    )
+    .all(...valores) as { valor: string; n: number }[];
+
+  const departamentos = filas
+    .map((f) => ({ valor: f.valor, etiqueta: f.valor === "SIN" ? "Sin área" : f.valor, n: f.n }))
+    // El de más stock primero, que es por donde se empieza a repartir; los que
+    // no tienen área al final, porque ahí falta capturar antes de decidir.
+    .sort((a, b) => (a.valor === "SIN" ? 1 : b.valor === "SIN" ? -1 : b.n - a.n || a.etiqueta.localeCompare(b.etiqueta)));
+
+  return { total: departamentos.reduce((s, d) => s + d.n, 0), departamentos };
+}
+
 /**
  * Equipos que siguen a nombre de gente que ya no trabaja aquí.
  *

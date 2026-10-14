@@ -59,6 +59,40 @@ export const TONO_ESTADO_GAFETE: Record<string, string> = Object.fromEntries(
 /** Un gafete cuenta como vivo mientras siga abriendo puertas. */
 export const ESTADOS_VIVOS = ["ACTIVO", "POR_RECOGER", "EXTRAVIADO"];
 
+// -------------------------------------------------------------- su histórico
+
+export type AccionGafete = "ALTA" | "ASIGNADO" | "LIBERADO" | "ESTADO" | "BAJA_EMPLEADO" | "PERFILES";
+
+export const TITULO_GAFETE: Record<string, string> = {
+  ALTA: "Alta de la tarjeta",
+  ASIGNADO: "Entregada",
+  LIBERADO: "Quedó sin dueño",
+  ESTADO: "Cambio de estado",
+  BAJA_EMPLEADO: "Por recoger: su dueño dejó la empresa",
+  PERFILES: "Cambio de accesos",
+};
+
+export type MovimientoGafete = {
+  id: number;
+  fecha: string;
+  accion: AccionGafete;
+  titulo: string;
+  /** Quién la traía en ese momento. */
+  empleado_id: number | null;
+  empleado: string | null;
+  estado_antes: string | null;
+  estado_despues: string | null;
+  detalle: string;
+};
+
+/** Una etapa de la tarjeta: quién la trajo, desde cuándo y hasta cuándo. */
+export type EtapaGafete = {
+  empleado_id: number;
+  empleado: string;
+  desde: string;
+  hasta: string | null;
+};
+
 /**
  * Las letras que menciona un perfil escrito a mano.
  *

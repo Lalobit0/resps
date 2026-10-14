@@ -7,14 +7,18 @@ import { anotar, anotarDenegado } from "../../lib/bitacora";
 import { importarDeExcel, type Mapeo } from "../../lib/importar";
 import {
   ESTADOS_GAFETE,
+  anotarGafete,
   clavesDePerfil,
+  duenosDeGafete,
   fijarAccesos,
   gafete,
+  historialDeGafete,
   perfiles,
   puertas,
   puertasDePerfiles,
   textoPerfiles,
 } from "../../lib/gafetes";
+import type { EtapaGafete, MovimientoGafete } from "../../lib/gafetes-comun";
 import type { ResultadoAccion } from "../../lib/types";
 
 const VER = "gafetes.ver";
@@ -66,10 +70,56 @@ export async function guardarGafete(datos: FormData): Promise<ResultadoAccion> {
     : null;
 
   if (id) {
+    const antes = gafete(id);
     db.prepare(
       "UPDATE gafetes SET numero = ?, empleado_id = ?, estado = ?, fecha_alta = ?, notas = ? WHERE id = ?"
     ).run(numero, empleadoId, estado, fechaAlta || null, notas || null, id);
     fijarAccesos(id, claves, numerosPuerta);
+
+    // El histórico guarda los movimientos, no cada tecleada: solo se anota
+    // cuando cambia de manos, de estado o de lo que abre. Sin esto, al
+    // reasignar la tarjeta se perdía quién la traía antes.
+    if (antes) {
+      if ((antes.empleado_id ?? null) !== (empleadoId ?? null)) {
+        if (empleadoId) {
+          anotarGafete({
+            gafeteId: id,
+            accion: "ASIGNADO",
+            empleadoId,
+            estadoAntes: antes.estado,
+            estadoDespues: estado,
+            detalle: antes.nombre ? `Antes la traía ${antes.numero_empleado ?? ""} ${antes.nombre}`.trim() : "",
+          });
+        } else {
+          anotarGafete({
+            gafeteId: id,
+            accion: "LIBERADO",
+            empleadoId: antes.empleado_id,
+            estadoAntes: antes.estado,
+            estadoDespues: estado,
+            detalle: "La tarjeta quedó sin dueño.",
+          });
+        }
+      } else if (antes.estado !== estado) {
+        anotarGafete({
+          gafeteId: id,
+          accion: "ESTADO",
+          empleadoId,
+          estadoAntes: antes.estado,
+          estadoDespues: estado,
+        });
+      } else if ([...antes.perfiles].sort().join(",") !== [...claves].sort().join(",")) {
+        anotarGafete({
+          gafeteId: id,
+          accion: "PERFILES",
+          empleadoId,
+          estadoAntes: estado,
+          estadoDespues: estado,
+          detalle: `Perfiles: ${antes.perfiles.join(", ") || "ninguno"} → ${claves.join(", ") || "ninguno"}`,
+        });
+      }
+    }
+
     await anotar({
       accion: "GAFETE_EDITA",
       descripcion: `Cambió el gafete ${numero}${quien ? ` de ${quien.numero_empleado} ${quien.nombre}` : ""} (perfil ${textoPerfiles(claves)})`,
@@ -85,6 +135,14 @@ export async function guardarGafete(datos: FormData): Promise<ResultadoAccion> {
     .run(numero, empleadoId, estado, fechaAlta || null, notas || null);
   const nuevoId = Number(res.lastInsertRowid);
   fijarAccesos(nuevoId, claves, numerosPuerta);
+  anotarGafete({
+    gafeteId: nuevoId,
+    accion: "ALTA",
+    empleadoId,
+    estadoDespues: estado,
+    fecha: fechaAlta || undefined,
+    detalle: `Perfil ${textoPerfiles(claves) || "sin perfil"}`,
+  });
 
   await anotar({
     accion: "GAFETE_ALTA",
@@ -110,6 +168,13 @@ export async function cambiarEstadoGafete(id: number, estado: string): Promise<R
     cierra ? new Date().toISOString().slice(0, 10) : null,
     id
   );
+  anotarGafete({
+    gafeteId: id,
+    accion: "ESTADO",
+    empleadoId: g.empleado_id,
+    estadoAntes: g.estado,
+    estadoDespues: estado,
+  });
 
   await anotar({
     accion: "GAFETE_ESTADO",
@@ -333,4 +398,19 @@ export async function importarGafetes(formData: FormData): Promise<ResultadoAcci
     console.error(e);
     return { ok: false, error: "No se pudo leer el archivo. Asegúrate de que sea el Excel del formato FRH-14." };
   }
+}
+
+/**
+ * El histórico de una tarjeta, para la ventana que lo enseña.
+ *
+ * Se pide cuando se abre y no con la matriz entera: son cientos de gafetes y
+ * casi nunca se mira el de ninguno.
+ */
+export async function historialGafete(
+  id: number
+): Promise<ResultadoAccion & { datos?: { movimientos: MovimientoGafete[]; duenos: EtapaGafete[] } }> {
+  const permiso = await comprobar(VER);
+  if ("error" in permiso) return { ok: false, error: permiso.error };
+  if (!gafete(id)) return { ok: false, error: "Ese gafete ya no existe." };
+  return { ok: true, datos: { movimientos: historialDeGafete(id), duenos: duenosDeGafete(id) } };
 }

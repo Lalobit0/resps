@@ -18,6 +18,7 @@ import {
   type Puerta,
 } from "../lib/gafetes-comun";
 import { Badge, Card, Empty, Label, btnDanger, btnGhost, btnPrimary, inputCls, tdCls, thCls } from "./ui";
+import HistorialGafeteBtn from "./HistorialGafeteBtn";
 
 type Persona = { id: number; numero_empleado: string; nombre: string; puesto: string | null; departamento: string | null };
 
@@ -50,6 +51,14 @@ export default function GafetesClient({
   const [aviso, setAviso] = useState<{ ok: boolean; texto: string } | null>(null);
   const [pendiente, iniciar] = useTransition();
   const archivo = useRef<HTMLInputElement>(null);
+
+  // Tarjetas por recoger de gente que SIGUE trabajando aquí: la que se
+  // perdió, la que se repuso. Las de quien ya se fue tienen su propio aviso
+  // rojo más abajo, y dos alertas diciendo lo mismo no avisan de nada.
+  const porRecoger = useMemo(
+    () => lista.filter((g) => g.estado === "POR_RECOGER" && g.empleado_activo !== 0),
+    [lista]
+  );
 
   // Las áreas que de verdad aparecen, para no ofrecer un filtro vacío.
   const departamentos = useMemo(
@@ -151,6 +160,34 @@ export default function GafetesClient({
         </p>
       ) : null}
 
+      {porRecoger.length > 0 ? (
+        <Card className="mb-5 border-amber-300 bg-amber-50">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-bold text-amber-900">
+                {porRecoger.length} {porRecoger.length === 1 ? "tarjeta por recoger" : "tarjetas por recoger"}
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm text-amber-900">
+                Siguen abriendo hasta que alguien las quite del lector. Con <b>Recogido</b> se marca que ya se
+                recuperó; con <b>Dar de baja</b> se apaga la que no va a volver.
+              </p>
+            </div>
+            <button
+              className={btnGhost}
+              onClick={() => {
+                setFiltro(filtro === "por_recoger" ? "" : "por_recoger");
+                setBusqueda("");
+                setDepto("");
+                setPerfil("");
+                setPuerta("");
+              }}
+            >
+              {filtro === "por_recoger" ? "✕ Ver todas" : "Ver solo esas"}
+            </button>
+          </div>
+        </Card>
+      ) : null}
+
       {deBajas.length > 0 ? (
         <Card className="mb-5 border-red-300 bg-red-50">
           <h2 className="font-bold text-red-900">
@@ -159,6 +196,8 @@ export default function GafetesClient({
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-red-900">
             La tarjeta sigue abriendo hasta que alguien la quite del lector: {deBajas.map((g) => g.numero).join(", ")}.
+            En la lista de abajo, con <b>Recogido</b> se marca la que ya se recuperó y con <b>Dar de baja</b> se apaga
+            la que no va a volver.
           </p>
           <a href="#salidos" className={`${btnGhost} mt-3 inline-flex`}>
             Ver la lista de abajo ↓
@@ -381,8 +420,21 @@ function TablaGafetes({
             const abre = new Set(g.puertas);
             // En la lista de salidos, seguir abriendo es lo que hay que ver.
             const pendienteDeRecoger = resaltarActivos && (g.estado === "ACTIVO" || g.estado === "POR_RECOGER");
+            // Y en la matriz de siempre, una tarjeta por recoger tampoco puede
+            // pasar desapercibida: sigue abriendo puertas y alguien tiene que
+            // ir por ella.
+            const porRecoger = !pendienteDeRecoger && g.estado === "POR_RECOGER";
             return (
-              <tr key={g.id} className={pendienteDeRecoger ? "bg-red-50 hover:bg-red-100/60" : "hover:bg-paper/40"}>
+              <tr
+                key={g.id}
+                className={
+                  pendienteDeRecoger
+                    ? "bg-red-50 hover:bg-red-100/60"
+                    : porRecoger
+                      ? "bg-amber-50 hover:bg-amber-100/60"
+                      : "hover:bg-paper/40"
+                }
+              >
                 <td className={`${tdCls} whitespace-nowrap font-mono text-xs`}>{g.numero}</td>
                 <td className={tdCls}>
                   {g.nombre ? (
@@ -439,15 +491,32 @@ function TablaGafetes({
                     <button className={btnGhost} onClick={() => onEditar(g)}>
                       Editar
                     </button>
+                    <HistorialGafeteBtn id={g.id} numero={g.numero} className={btnGhost} />
                     {g.estado === "ACTIVO" || g.estado === "POR_RECOGER" ? (
-                      <button
-                        className={btnGhost}
-                        disabled={pendiente}
-                        title="Marcar que la tarjeta ya se recuperó"
-                        onClick={() => onEstado(g.id, "RECOGIDO")}
-                      >
-                        Recogido
-                      </button>
+                      <>
+                        <button
+                          className={btnGhost}
+                          disabled={pendiente}
+                          title="Marcar que la tarjeta ya se recuperó"
+                          onClick={() => onEstado(g.id, "RECOGIDO")}
+                        >
+                          Recogido
+                        </button>
+                        {/* La tarjeta de quien se fue casi nunca vuelve: lo que
+                            hay que poder hacer es apagarla en el lector, y eso
+                            estaba escondido dentro de Editar. */}
+                        <button
+                          className={btnGhost}
+                          disabled={pendiente}
+                          title="La tarjeta no va a volver: se da de baja para que deje de abrir"
+                          onClick={() => {
+                            if (!confirm(`El gafete ${g.numero} se va a dar de baja y dejará de abrir.\n\n¿Continuar?`)) return;
+                            onEstado(g.id, "CANCELADO");
+                          }}
+                        >
+                          Dar de baja
+                        </button>
+                      </>
                     ) : null}
                     <button
                       className={btnDanger}

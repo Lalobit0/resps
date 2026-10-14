@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { ESTADOS_VIVOS } from "./gafetes-comun";
-import type { Gafete, PerfilGafete, Puerta } from "./gafetes-comun";
+import { ESTADOS_VIVOS, TITULO_GAFETE } from "./gafetes-comun";
+import type { AccionGafete, EtapaGafete, Gafete, MovimientoGafete, PerfilGafete, Puerta } from "./gafetes-comun";
 
 /**
  * Las consultas de la matriz de gafetes.
@@ -126,14 +126,128 @@ export function fijarAccesos(gafeteId: number, claves: string[], numerosPuerta: 
  * real —la tarjeta sigue existiendo y sigue abriendo hasta que alguien la
  * quite del lector—. Devuelve cuántos se marcaron.
  */
-export function marcarGafetesPorRecoger(empleadoId: number, fecha: string): number {
-  const res = db
-    .prepare(
-      `UPDATE gafetes SET estado = 'POR_RECOGER', fecha_baja = COALESCE(fecha_baja, ?)
-       WHERE empleado_id = ? AND estado = 'ACTIVO'`
-    )
-    .run(fecha, empleadoId);
-  return res.changes;
+export function marcarGafetesPorRecoger(empleadoId: number, fecha: string): { id: number; numero: string }[] {
+  const suyos = db
+    .prepare("SELECT id, numero FROM gafetes WHERE empleado_id = ? AND estado = 'ACTIVO'")
+    .all(empleadoId) as { id: number; numero: string }[];
+  if (!suyos.length) return [];
+
+  db.prepare(
+    `UPDATE gafetes SET estado = 'POR_RECOGER', fecha_baja = COALESCE(fecha_baja, ?)
+     WHERE empleado_id = ? AND estado = 'ACTIVO'`
+  ).run(fecha, empleadoId);
+
+  for (const g of suyos) {
+    anotarGafete({
+      gafeteId: g.id,
+      accion: "BAJA_EMPLEADO",
+      empleadoId,
+      estadoAntes: "ACTIVO",
+      estadoDespues: "POR_RECOGER",
+      fecha,
+      detalle: "Su dueño dejó la empresa. La tarjeta sigue abriendo hasta que alguien la quite del lector.",
+    });
+  }
+  return suyos;
+}
+
+// ------------------------------------------------------------- su histórico
+
+/**
+ * Anota un movimiento de la tarjeta. Nunca tumba la operación que lo llamó:
+ * el histórico es para consultar, no para impedir que se entregue un gafete.
+ */
+export function anotarGafete(datos: {
+  gafeteId: number;
+  accion: AccionGafete;
+  empleadoId?: number | null;
+  estadoAntes?: string | null;
+  estadoDespues?: string | null;
+  detalle?: string;
+  fecha?: string;
+}) {
+  try {
+    const emp = datos.empleadoId
+      ? (db.prepare("SELECT numero_empleado, nombre FROM empleados WHERE id = ?").get(datos.empleadoId) as
+          | { numero_empleado: string; nombre: string }
+          | undefined)
+      : undefined;
+    db.prepare(
+      `INSERT INTO gafete_historial (gafete_id, fecha, accion, empleado_id, empleado_texto, estado_antes, estado_despues, detalle)
+       VALUES (?, COALESCE(?, datetime('now','localtime')), ?, ?, ?, ?, ?, ?)`
+    ).run(
+      datos.gafeteId,
+      datos.fecha ?? null,
+      datos.accion,
+      datos.empleadoId ?? null,
+      emp ? [emp.numero_empleado, emp.nombre].filter(Boolean).join(" ") : null,
+      datos.estadoAntes ?? null,
+      datos.estadoDespues ?? null,
+      datos.detalle ?? null
+    );
+  } catch (e) {
+    console.error("No se pudo anotar el movimiento del gafete:", e);
+  }
+}
+
+/** Todo lo que le ha pasado a la tarjeta, de lo más nuevo a lo más viejo. */
+export function historialDeGafete(gafeteId: number): MovimientoGafete[] {
+  const filas = db
+    .prepare("SELECT * FROM gafete_historial WHERE gafete_id = ? ORDER BY id DESC")
+    .all(gafeteId) as {
+    id: number;
+    fecha: string;
+    accion: string;
+    empleado_id: number | null;
+    empleado_texto: string | null;
+    estado_antes: string | null;
+    estado_despues: string | null;
+    detalle: string | null;
+  }[];
+  return filas.map((f) => ({
+    id: f.id,
+    fecha: f.fecha.slice(0, 10),
+    accion: f.accion as AccionGafete,
+    titulo: TITULO_GAFETE[f.accion] ?? f.accion,
+    empleado_id: f.empleado_id,
+    empleado: f.empleado_texto,
+    estado_antes: f.estado_antes,
+    estado_despues: f.estado_despues,
+    detalle: f.detalle ?? "",
+  }));
+}
+
+/**
+ * Quiénes han traído la tarjeta, del más reciente al primero.
+ *
+ * Es la respuesta a "¿quién abrió esa puerta en marzo?": sin esto solo se
+ * sabe quién la trae hoy, porque al reasignarla se pisa el renglón.
+ */
+export function duenosDeGafete(gafeteId: number): EtapaGafete[] {
+  const movs = historialDeGafete(gafeteId)
+    .filter((m) => m.empleado_id)
+    .sort((a, b) => a.id - b.id);
+
+  const salida: EtapaGafete[] = [];
+  for (const m of movs) {
+    const ultimo = salida[salida.length - 1];
+    // Dos movimientos seguidos de la misma persona son la misma etapa.
+    if (ultimo && ultimo.empleado_id === m.empleado_id) continue;
+    if (ultimo) ultimo.hasta = m.fecha;
+    salida.push({ empleado_id: m.empleado_id as number, empleado: m.empleado ?? "", desde: m.fecha, hasta: null });
+  }
+
+  // Si ya no la trae nadie, la última etapa se cierra con la salida.
+  const hoy = db.prepare("SELECT empleado_id FROM gafetes WHERE id = ?").get(gafeteId) as
+    | { empleado_id: number | null }
+    | undefined;
+  const ultimo = salida[salida.length - 1];
+  if (ultimo && hoy && hoy.empleado_id !== ultimo.empleado_id) {
+    const cierre = historialDeGafete(gafeteId).find((m) => m.accion === "LIBERADO" && m.fecha >= ultimo.desde);
+    ultimo.hasta = cierre?.fecha ?? ultimo.hasta;
+  }
+
+  return salida.reverse();
 }
 
 // ------------------------------------------------------------------ resumen

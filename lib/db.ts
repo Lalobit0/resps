@@ -238,6 +238,28 @@ CREATE TABLE IF NOT EXISTS gafetes (
 
 CREATE INDEX IF NOT EXISTS idx_gafetes_empleado ON gafetes (empleado_id);
 
+-- Por dónde ha pasado cada tarjeta.
+--
+-- El gafete solo guarda a quién lo trae HOY. Cuando una tarjeta se recoge y
+-- se le da a alguien más, ese renglón se pisa y se pierde quién la traía: la
+-- pregunta "¿quién abrió esa puerta en marzo?" se queda sin respuesta. Aquí
+-- se anota cada movimiento, y el nombre se congela por si el empleado se
+-- borra después.
+CREATE TABLE IF NOT EXISTS gafete_historial (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gafete_id INTEGER NOT NULL REFERENCES gafetes(id) ON DELETE CASCADE,
+  fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  -- ALTA | ASIGNADO | LIBERADO | ESTADO | BAJA_EMPLEADO | PERFILES
+  accion TEXT NOT NULL,
+  empleado_id INTEGER,
+  empleado_texto TEXT,
+  estado_antes TEXT,
+  estado_despues TEXT,
+  detalle TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_gafete_historial ON gafete_historial (gafete_id, id);
+
 -- Los perfiles que se le dieron. Son varios: en el formato aparecen como
 -- "C y D" o "C,D y F", que es la misma idea escrita de seis maneras.
 CREATE TABLE IF NOT EXISTS gafete_perfil (
@@ -847,6 +869,21 @@ function migrar(db: Database.Database) {
   // movimiento siga en el histórico —ocurrió— pero deje de contar.
   agregarColumna(db, "equipo_historial", "snapshot", "TEXT");
   agregarColumna(db, "equipo_historial", "cancelado", "TEXT");
+  // Las tarjetas que ya existían arrancan su histórico con cómo están hoy.
+  // No es un movimiento que alguien haya visto ocurrir, y el renglón lo dice:
+  // es el punto de partida, para que la lista no nazca vacía y se entienda
+  // por qué no hay nada anterior.
+  db.exec(`INSERT INTO gafete_historial (gafete_id, fecha, accion, empleado_id, empleado_texto, estado_despues, detalle)
+           SELECT g.id,
+                  COALESCE(g.fecha_alta, g.created_at, datetime('now','localtime')),
+                  'ALTA',
+                  g.empleado_id,
+                  CASE WHEN em.id IS NULL THEN NULL
+                       ELSE TRIM(COALESCE(em.numero_empleado,'') || ' ' || em.nombre) END,
+                  g.estado,
+                  'Así estaba la tarjeta cuando se empezó a llevar su histórico.'
+           FROM gafetes g LEFT JOIN empleados em ON em.id = g.empleado_id
+           WHERE NOT EXISTS (SELECT 1 FROM gafete_historial h WHERE h.gafete_id = g.id)`);
   // Al subir la plantilla de personal, quién estaba en el sistema y ya no
   // viene en el archivo: son las bajas que hay que resolver.
   agregarColumna(db, "importaciones", "ausentes", "INTEGER NOT NULL DEFAULT 0");

@@ -587,13 +587,19 @@ export async function darDeBajaEmpleado(datos: {
     db.prepare("INSERT INTO bitacora (accion, descripcion, snapshot, revertible) VALUES (?,?,?,0)").run(
       "BAJA_EMPLEADO",
       `${quien} se dio de baja el ${fecha}${datos.motivo.trim() ? ` (${datos.motivo.trim()})` : ""}. ` +
-        `Devolvió ${devueltos.length} equipo(s)${pendientes.length ? `; quedan ${pendientes.length} a su nombre` : ""}.`,
+        `Devolvió ${devueltos.length} equipo(s)${pendientes.length ? `; quedan ${pendientes.length} a su nombre` : ""}.` +
+        // La baja mueve tarjetas que siguen abriendo puertas: eso tiene que
+        // quedar escrito aquí, no solo en el recado que se va de la pantalla.
+        (gafetesMarcados.length
+          ? ` Quedaron por recoger ${gafetesMarcados.length} gafete(s): ${gafetesMarcados.map((g) => g.numero).join(", ")}.`
+          : ""),
       JSON.stringify({
         empleado: quien,
         fecha,
         motivo: datos.motivo,
         devueltos: devueltos.map((e) => e.codigo),
         pendientes: pendientes.map((e) => e.codigo),
+        gafetesPorRecoger: gafetesMarcados.map((g) => g.numero),
       })
     );
 
@@ -614,8 +620,8 @@ export async function darDeBajaEmpleado(datos: {
         (pendientes.length
           ? `⚠️ Siguen a su nombre ${pendientes.length}: ${pendientes.map((e) => e.codigo).join(", ")}. `
           : "") +
-        (gafetesMarcados
-          ? `⚠️ ${gafetesMarcados} gafete(s) quedaron por recoger: la tarjeta sigue abriendo hasta que se quite del lector.`
+        (gafetesMarcados.length
+          ? `⚠️ ${gafetesMarcados.length} gafete(s) quedaron por recoger: la tarjeta sigue abriendo hasta que se quite del lector.`
           : ""),
     };
   } catch (e) {

@@ -11,6 +11,7 @@ import type { Equipo, ResultadoAccion } from "../../lib/types";
 import { exigir, usuarioActual } from "../../lib/auth";
 import { ausentesDe } from "../../lib/bajas";
 import { marcarGafetesPorRecoger } from "../../lib/gafetes";
+import { cartasSinRespaldo, cerrarCartasSinFirma } from "../../lib/cartas";
 import { cerrarImportacion, registrarImportacion } from "../../lib/importaciones";
 import { compararPersonal, type CambioEmpleado, type DatosPersonal, type ResumenPersonal } from "../../lib/cambios-personal";
 import { anotar } from "../../lib/bitacora";
@@ -570,6 +571,16 @@ export async function darDeBajaEmpleado(datos: {
     // lector—, y así no se pierde de vista que falta recuperarla.
     const gafetesMarcados = marcarGafetesPorRecoger(datos.id, fecha);
 
+    // Las cartas que ya no respaldan nada suyo se cierran aquí. La de Wi-Fi
+    // es el caso de todos los días: no tiene equipo colgando, así que el
+    // cierre por equipos nunca la alcanzaba y se quedaba vigente para
+    // siempre. Queda escrito que se cerró sin firma, porque ya no hay a
+    // quién pedírsela.
+    const cerradas = cerrarCartasSinFirma(
+      datos.id,
+      `Cerrada por la baja de ${quien} el ${fecha}. No hubo carta de devolución firmada.`
+    );
+
     // El histórico se anota fuera de la transacción: que falle una nota no
     // debe deshacer la baja.
     for (const eq of devueltos) {
@@ -592,7 +603,8 @@ export async function darDeBajaEmpleado(datos: {
         // quedar escrito aquí, no solo en el recado que se va de la pantalla.
         (gafetesMarcados.length
           ? ` Quedaron por recoger ${gafetesMarcados.length} gafete(s): ${gafetesMarcados.map((g) => g.numero).join(", ")}.`
-          : ""),
+          : "") +
+        (cerradas.length ? ` Se cerraron sin firma ${cerradas.length} carta(s): ${cerradas.join(", ")}.` : ""),
       JSON.stringify({
         empleado: quien,
         fecha,
@@ -600,6 +612,7 @@ export async function darDeBajaEmpleado(datos: {
         devueltos: devueltos.map((e) => e.codigo),
         pendientes: pendientes.map((e) => e.codigo),
         gafetesPorRecoger: gafetesMarcados.map((g) => g.numero),
+        cartasCerradasSinFirma: cerradas,
       })
     );
 
@@ -621,7 +634,10 @@ export async function darDeBajaEmpleado(datos: {
           ? `⚠️ Siguen a su nombre ${pendientes.length}: ${pendientes.map((e) => e.codigo).join(", ")}. `
           : "") +
         (gafetesMarcados.length
-          ? `⚠️ ${gafetesMarcados.length} gafete(s) quedaron por recoger: la tarjeta sigue abriendo hasta que se quite del lector.`
+          ? `⚠️ ${gafetesMarcados.length} gafete(s) quedaron por recoger: la tarjeta sigue abriendo hasta que se quite del lector. `
+          : "") +
+        (cerradas.length
+          ? `Se cerraron sin firma ${cerradas.length} carta(s): ${cerradas.join(", ")}. Ya no hay a quién pedirle la devolución, así que quedan marcadas como cerradas así.`
           : ""),
     };
   } catch (e) {
@@ -728,5 +744,62 @@ export async function reactivarEmpleado(id: number): Promise<ResultadoAccion> {
   } catch (e) {
     console.error(e);
     return { ok: false, error: "No se pudo reactivar." };
+  }
+}
+
+/**
+ * Cierra las cartas que quedaron vigentes de alguien que ya se fue.
+ *
+ * Es la salida para las bajas que ya pasaron: la persona no viene, no hay a
+ * quién pedirle la firma de devolución, y la carta se quedaría vigente para
+ * siempre. Queda escrito que se cerró así, porque "Cerrada" a secas se lee
+ * como "devolvió y firmó".
+ *
+ * Solo alcanza a las cartas que ya no respaldan nada suyo. Si todavía le
+ * queda un equipo de esa carta, la carta es justamente la prueba de que lo
+ * tiene: lo que hay que resolver antes es el equipo, no el papel.
+ */
+export async function cerrarCartasDeBaja(empleadoId: number): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
+  try {
+    const emp = db.prepare("SELECT numero_empleado, nombre, activo, fecha_baja FROM empleados WHERE id = ?").get(empleadoId) as
+      | { numero_empleado: string; nombre: string; activo: number; fecha_baja: string | null }
+      | undefined;
+    if (!emp) return { ok: false, error: "Esa persona ya no existe." };
+    if (emp.activo) {
+      return { ok: false, error: `${emp.nombre} sigue en la plantilla. Esto es solo para quien ya se fue.` };
+    }
+
+    const quien = `${emp.numero_empleado} ${emp.nombre}`;
+    const pendientes = cartasSinRespaldo(empleadoId);
+    if (!pendientes.length) {
+      return { ok: false, error: `${emp.nombre} no tiene cartas que se puedan cerrar así.` };
+    }
+
+    const folios = cerrarCartasSinFirma(
+      empleadoId,
+      `Cerrada sin firma: ${quien} se dio de baja${emp.fecha_baja ? ` el ${emp.fecha_baja}` : ""} y ya no hay a quién pedirle la devolución.`
+    );
+
+    await anotar({
+      accion: "CERRAR_CARTAS_SIN_FIRMA",
+      descripcion: `Se cerraron sin firma ${folios.length} carta(s) de ${quien}: ${folios.join(", ")}`,
+      entidad: "EMPLEADO",
+      entidadId: empleadoId,
+      despues: folios,
+    });
+
+    revalidar();
+    revalidatePath("/empleados/bajas");
+    revalidatePath("/responsivas");
+    revalidatePath(`/empleados/${empleadoId}`);
+
+    return {
+      ok: true,
+      mensaje: `Se cerraron ${folios.length} carta(s) de ${emp.nombre}: ${folios.join(", ")}. Quedan marcadas como cerradas sin firma.`,
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudieron cerrar las cartas: ${e instanceof Error ? e.message : String(e)}` };
   }
 }

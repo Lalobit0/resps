@@ -77,6 +77,11 @@ export interface Responsiva {
   empleado_id: number;
   fecha: string;
   estado: string; // VIGENTE | CERRADA
+  /**
+   * Por qué se cerró sin firma de devolución. Vacío cuando se cerró como
+   * debe ser: la persona devolvió el equipo y firmó.
+   */
+  cierre_motivo?: string | null;
   responsiva_origen_id: number | null;
   entregado_por: string | null;
   observaciones: string | null;

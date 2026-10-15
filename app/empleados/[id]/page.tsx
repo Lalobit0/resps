@@ -141,7 +141,10 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
         <Link href={`/vales?empleado=${empleado.id}`} className={btnGhost} title="Vale de descuento de nómina de esta persona">
           🧾 Generar vale
         </Link>
-        {empleado.activo ? <DarDeBajaBtn empleadoId={empleado.id} nombre={empleado.nombre} /> : null}
+        {/* Se pinta siempre, aunque ya esté inactivo: la acción refresca la
+            ficha sola, y si el botón desapareciera en ese momento se iría
+            con él la ventana que dice qué quedó pendiente. */}
+        <DarDeBajaBtn empleadoId={empleado.id} nombre={empleado.nombre} activo={!!empleado.activo} />
         <Link href="/empleados" className={btnGhost}>
           ← Volver
         </Link>
@@ -346,6 +349,7 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           estado: r.estado,
           pdf_path: r.pdf_path,
           pdf_firmado: r.pdf_firmado ?? null,
+          cierre_motivo: r.cierre_motivo ?? null,
         }))}
       />
 

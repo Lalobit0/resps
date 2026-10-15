@@ -27,6 +27,8 @@ export type FilaResponsiva = {
   pdf_path: string | null;
   /** Escaneo de la carta firmada en papel; sin él la responsiva está pendiente de firma. */
   pdf_firmado?: string | null;
+  /** Por qué se cerró sin firma de devolución, cuando fue el caso. */
+  cierre_motivo?: string | null;
 };
 
 /** Una responsiva cuenta como firmada si hay documento firmado o llegó ya firmada. */
@@ -74,7 +76,13 @@ export default function ResponsivasEmpleado({ responsivas }: { responsivas: Fila
                 ) : r.estado === "VIGENTE" ? (
                   <Badge tono="verde">Vigente</Badge>
                 ) : (
-                  <Badge tono="gris">Cerrada</Badge>
+                  r.cierre_motivo ? (
+                    <span title={r.cierre_motivo}>
+                      <Badge tono="ambar">Cerrada sin firma</Badge>
+                    </span>
+                  ) : (
+                    <Badge tono="gris">Cerrada</Badge>
+                  )
                 )}
               </td>
               <td className={tdCls}>

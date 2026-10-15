@@ -18,10 +18,13 @@ const hoyISO = () => new Date().toISOString().slice(0, 10);
 export default function DarDeBajaBtn({
   empleadoId,
   nombre,
+  activo = true,
   className,
 }: {
   empleadoId: number;
   nombre: string;
+  /** Al quedar inactivo el botón desaparece, pero la ventana sigue viva. */
+  activo?: boolean;
   className?: string;
 }) {
   const router = useRouter();
@@ -31,11 +34,16 @@ export default function DarDeBajaBtn({
   const [fecha, setFecha] = useState(hoyISO());
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState("");
+  // Qué quedó pendiente al dar la baja. Antes se tiraba: el modal se cerraba
+  // y nunca te enterabas de que un gafete sigue abriendo o de qué cartas se
+  // cerraron sin firma.
+  const [listo, setListo] = useState("");
   const [pendiente, iniciar] = useTransition();
 
   const abrir = () => {
     setAbierto(true);
     setError("");
+    setListo("");
     setResumen(null);
     setFecha(hoyISO());
     setMotivo("");
@@ -75,23 +83,26 @@ export default function DarDeBajaBtn({
     setError("");
     iniciar(async () => {
       const res = await darDeBajaEmpleado({ id: empleadoId, fecha, motivo, recibidos: [...recibidos] });
-      if (res.ok) {
-        setAbierto(false);
-        router.refresh();
-      } else setError(res.error ?? "No se pudo dar de baja.");
+      // Ojo con refrescar aquí: al quedar inactivo, la ficha deja de pintar
+      // este botón y la ventana se desmonta con el recado dentro. Se refresca
+      // al cerrarla, ya que se leyó.
+      if (res.ok) setListo(res.mensaje ?? "Dado de baja.");
+      else setError(res.error ?? "No se pudo dar de baja.");
     });
   };
 
   return (
     <>
-      <button
-        type="button"
-        className={className ?? btnGhost}
-        onClick={abrir}
-        title="El empleado deja la empresa: recibir sus equipos y desactivarlo"
-      >
-        ⛔ Dar de baja
-      </button>
+      {activo ? (
+        <button
+          type="button"
+          className={className ?? btnGhost}
+          onClick={abrir}
+          title="El empleado deja la empresa: recibir sus equipos y desactivarlo"
+        >
+          ⛔ Dar de baja
+        </button>
+      ) : null}
 
       {abierto ? (
         <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
@@ -113,7 +124,20 @@ export default function DarDeBajaBtn({
               <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>
             ) : null}
 
-            {!resumen ? (
+            {listo ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                <p>{listo}</p>
+                <button
+                  className={`${btnGhost} mt-3`}
+                  onClick={() => {
+                    setAbierto(false);
+                    router.refresh();
+                  }}
+                >
+                  Entendido
+                </button>
+              </div>
+            ) : !resumen ? (
               <p className="text-sm text-soft">Revisando qué tiene a su nombre…</p>
             ) : (
               <>

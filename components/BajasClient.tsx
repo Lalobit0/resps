@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { darDeBajaEnLote, reactivarEmpleado } from "../app/empleados/actions";
+import { cerrarCartasDeBaja, darDeBajaEnLote, reactivarEmpleado } from "../app/empleados/actions";
 import type { Ausente, EmpleadoDeBaja } from "../lib/bajas";
 import { ETIQUETA_TIPO } from "../lib/constants";
 import { dinero, fechaCorta, hoyISO } from "../lib/helpers";
@@ -117,6 +117,15 @@ export default function BajasClient({
     });
   };
 
+  /** Corre una acción sobre una baja y deja a la vista lo que pasó. */
+  const ejecutar = (accion: () => Promise<{ ok: boolean; error?: string; mensaje?: string }>) => {
+    iniciar(async () => {
+      const res = await accion();
+      setAviso({ ok: res.ok, texto: res.ok ? (res.mensaje ?? "Listo.") : (res.error ?? "No se pudo.") });
+      if (res.ok) router.refresh();
+    });
+  };
+
   const revivir = (b: EmpleadoDeBaja) => {
     if (!confirm(`${b.nombre} vuelve a la plantilla.\n\nLos equipos que ya se liberaron no se le devuelven solos.\n\n¿Continuar?`))
       return;
@@ -180,7 +189,31 @@ export default function BajasClient({
         celda: (b) => (
           <div className="flex flex-wrap gap-1.5">
             {b.pendientes ? <Badge tono="rojo">Sigue con {b.pendientes}</Badge> : <Badge tono="verde">Entregó todo</Badge>}
-            {b.cartas_vigentes ? <Badge tono="ambar">{b.cartas_vigentes} carta(s) sin cerrar</Badge> : null}
+            {b.cartas_vigentes ? (
+              <span className="inline-flex items-center gap-1">
+                <Badge tono="ambar">{b.cartas_vigentes} carta(s) sin cerrar</Badge>
+                {/* Ya no viene: no hay a quién pedirle la firma de devolución,
+                    así que la salida es cerrarlas dejando escrito que se
+                    cerraron así. */}
+                <button
+                  className="rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-50"
+                  disabled={pendiente}
+                  title="Cerrarlas sin firma de devolución, porque la persona ya no viene"
+                  onClick={() => {
+                    if (
+                      !confirm(
+                        `Se van a cerrar las cartas de ${b.nombre} sin firma de devolución.\n\n` +
+                          `Quedan marcadas como cerradas así, no como devueltas.\n\n¿Continuar?`
+                      )
+                    )
+                      return;
+                    ejecutar(() => cerrarCartasDeBaja(b.id));
+                  }}
+                >
+                  Cerrar
+                </button>
+              </span>
+            ) : null}
             {b.vales_vigentes ? <Badge tono="ambar">{b.vales_vigentes} vale(s) vigente(s)</Badge> : null}
             {b.gafetes_sin_recoger ? <Badge tono="rojo">Gafete sin recoger: {b.gafetes_sin_recoger}</Badge> : null}
             {b.prestamos_sin_devolver ? <Badge tono="rojo">No devolvió: {b.prestamos_sin_devolver}</Badge> : null}

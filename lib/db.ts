@@ -869,6 +869,10 @@ function migrar(db: Database.Database) {
   // movimiento siga en el histórico —ocurrió— pero deje de contar.
   agregarColumna(db, "equipo_historial", "snapshot", "TEXT");
   agregarColumna(db, "equipo_historial", "cancelado", "TEXT");
+  // Por qué se cerró una carta sin firma de devolución. Una "Cerrada" a
+  // secas se lee como "devolvió y firmó": si se cerró porque la persona ya
+  // no viene, eso tiene que estar escrito en la carta misma.
+  agregarColumna(db, "responsivas", "cierre_motivo", "TEXT");
   // Las tarjetas que ya existían arrancan su histórico con cómo están hoy.
   // No es un movimiento que alguien haya visto ocurrir, y el renglón lo dice:
   // es el punto de partida, para que la lista no nazca vacía y se entienda

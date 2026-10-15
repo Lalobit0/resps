@@ -28,7 +28,7 @@ const tdc = "text-sm text-ink align-top py-2";
 const faltaFirma = (r: ResponsivaLista) => r.origen !== "CARGADA" && !r.pdf_firmado;
 
 const textoEstado = (r: ResponsivaLista) =>
-  r.tipo === "DEVOLUCION" ? "" : r.estado === "VIGENTE" ? "Vigente" : "Cerrada";
+  r.tipo === "DEVOLUCION" ? "" : r.estado === "VIGENTE" ? "Vigente" : r.cierre_motivo ? "Cerrada sin firma" : "Cerrada";
 
 export default function ResponsivasClient({ responsivas }: { responsivas: ResponsivaLista[] }) {
   const columnas = useMemo<Columna<ResponsivaLista>[]>(
@@ -103,6 +103,12 @@ export default function ResponsivasClient({ responsivas }: { responsivas: Respon
             <span className="text-soft">—</span>
           ) : r.estado === "VIGENTE" ? (
             <Badge tono="verde">Vigente</Badge>
+          ) : r.cierre_motivo ? (
+            // Una "Cerrada" a secas se lee como "devolvió y firmó". Si se
+            // cerró porque la persona ya no viene, eso tiene que verse.
+            <span title={r.cierre_motivo}>
+              <Badge tono="ambar">Cerrada sin firma</Badge>
+            </span>
           ) : (
             <Badge tono="gris">Cerrada</Badge>
           ),

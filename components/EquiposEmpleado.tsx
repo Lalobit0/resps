@@ -7,7 +7,7 @@ import type { Equipo, ResultadoAccion } from "../lib/types";
 import { ETIQUETA_ESTADO, ETIQUETA_TIPO } from "../lib/constants";
 import { fechaCorta } from "../lib/helpers";
 import type { ResponsivaDeEquipo } from "./InventarioClient";
-import { quitarEquipoAEmpleado } from "../app/empleados/actions";
+import { marcarEquiposNoRecuperados, quitarEquipoAEmpleado } from "../app/empleados/actions";
 import { eliminarEquipo } from "../app/inventario/actions";
 import FusionarEquipoBtn from "./FusionarEquipoBtn";
 import { Badge, Card, btnGhost, tdCls, thCls, tonoEstadoEquipo } from "./ui";
@@ -39,11 +39,14 @@ export default function EquiposEmpleado({
   equipos,
   responsivas,
   sinResponsiva,
+  empleadoActivo = true,
 }: {
   empleadoId: number;
   equipos: Equipo[];
   responsivas: Record<number, ResponsivaDeEquipo[]>;
   sinResponsiva: number[];
+  /** Si ya no trabaja aquí, se puede dar un equipo por no recuperado. */
+  empleadoActivo?: boolean;
 }) {
   const falta = new Set(sinResponsiva);
   const router = useRouter();
@@ -181,6 +184,29 @@ export default function EquiposEmpleado({
                         className={mini}
                         etiqueta="Fusionar"
                       />
+                      {/* Solo para quien ya se fue: a alguien que sigue
+                          trabajando aquí se le pide el equipo, no se le da
+                          por perdido. */}
+                      {!empleadoActivo ? (
+                        <button
+                          className={miniRojo}
+                          disabled={pendiente}
+                          title="Se fue con este equipo y no lo va a devolver"
+                          onClick={() => {
+                            if (
+                              !confirm(
+                                `${e.codigo} queda marcado como NO RECUPERADO.\n\n` +
+                                  `Sale del nombre de esta persona y NO vuelve al stock: no está para entregarse.\n` +
+                                  `Su carta se cierra diciendo que no se devolvió.\n\n¿Continuar?`
+                              )
+                            )
+                              return;
+                            correr(() => marcarEquiposNoRecuperados({ empleadoId, equipoIds: [e.id] }));
+                          }}
+                        >
+                          No se recuperó
+                        </button>
+                      ) : null}
                       <button
                         className={mini}
                         disabled={pendiente}

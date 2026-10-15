@@ -149,7 +149,11 @@ export async function guardarEquipo(datos: {
     const specs = componerSpecs(tipo, detalles);
     const detallesJson = Object.keys(detalles).length ? JSON.stringify(detalles) : null;
     let codigo = datos.codigo.trim().toUpperCase();
-    const estadoLibre = ["DISPONIBLE", "MANTENIMIENTO", "BAJA"].includes(datos.estado) ? datos.estado : "DISPONIBLE";
+    // NO_RECUPERADO va en la lista: si no, editar cualquier dato del equipo lo
+  // devolvería a "disponible" sin querer, y volvería a ofrecerse en el stock.
+  const estadoLibre = ["DISPONIBLE", "MANTENIMIENTO", "BAJA", "NO_RECUPERADO"].includes(datos.estado)
+    ? datos.estado
+    : "DISPONIBLE";
 
     if (datos.id) {
       const actual = db.prepare("SELECT * FROM equipos WHERE id = ?").get(datos.id) as Equipo | undefined;

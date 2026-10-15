@@ -33,6 +33,10 @@ export const ETIQUETA_ESTADO: Record<string, string> = {
   // está ahí. Por eso es su propio estado y no un empleado en `asignado_a`.
   PRESTADO: "Prestado",
   MANTENIMIENTO: "En mantenimiento",
+  // Se fue con alguien y no volvió. No es "disponible" —físicamente no está,
+  // y ofrecerlo en el stock haría que alguien lo intentara entregar— ni
+  // "baja", que es el aparato que sí se tiene y se retiró.
+  NO_RECUPERADO: "No recuperado",
   BAJA: "Baja",
 };
 

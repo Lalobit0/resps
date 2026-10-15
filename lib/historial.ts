@@ -21,6 +21,7 @@ export type AccionHistorial =
   | "RESPONSIVA"
   | "DEVOLUCION"
   | "MANTENIMIENTO"
+  | "NO_RECUPERADO"
   | "CANCELADO";
 
 export type Movimiento = {
@@ -111,6 +112,7 @@ const TITULO: Record<string, string> = {
   RESPONSIVA: "Carta responsiva",
   DEVOLUCION: "Carta de devolución",
   MANTENIMIENTO: "Mantenimiento",
+  NO_RECUPERADO: "No se recuperó",
   CANCELADO: "Movimiento cancelado",
 };
 
@@ -272,7 +274,12 @@ export function duenosDeEquipo(equipoId: number): { empleado_id: number; emplead
   const ultimo = salida[salida.length - 1];
   if (ultimo && actual && actual.asignado_a !== ultimo.empleado_id) {
     const salida_ = historialDeEquipo(equipoId).find(
-      (m) => (m.accion === "LIBERADO" || m.accion === "DEVOLUCION" || m.accion === "BAJA_EMPLEADO") && m.fecha >= ultimo.desde
+      (m) =>
+        (m.accion === "LIBERADO" ||
+          m.accion === "DEVOLUCION" ||
+          m.accion === "BAJA_EMPLEADO" ||
+          m.accion === "NO_RECUPERADO") &&
+        m.fecha >= ultimo.desde
     );
     ultimo.hasta = salida_?.fecha ?? ultimo.hasta;
   }

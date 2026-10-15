@@ -28,6 +28,7 @@ const ICONO: Record<string, string> = {
   FUSION: "🔗",
   MANTENIMIENTO: "🔧",
   REASIGNADO: "⇄",
+  NO_RECUPERADO: "⚠",
   CANCELADO: "✕",
 };
 
@@ -43,6 +44,7 @@ const TONO: Record<string, "verde" | "kraft" | "petrol" | "ambar" | "gris" | "ro
   FUSION: "gris",
   MANTENIMIENTO: "ambar",
   REASIGNADO: "verde",
+  NO_RECUPERADO: "rojo",
   CANCELADO: "rojo",
 };
 
@@ -175,6 +177,9 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
         <Link href={`/inventario?q=${encodeURIComponent(equipo.codigo)}&editar=${equipo.id}`} className={btnGhost}>
           ✎ Editar
         </Link>
+        {/* No se ofrece entregar lo que no está: el equipo que no se
+            recuperó primero tiene que aparecer. */}
+        {equipo.estado === "NO_RECUPERADO" ? null : (
         <ReasignarEquipoBtn
           equipoId={equipo.id}
           codigo={equipo.codigo}
@@ -186,6 +191,7 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
           className={btnGhost}
           etiqueta={equipo.asignado_nombre ? "→ Reasignar" : "→ Asignar"}
         />
+        )}
         <Link href="/inventario" className={btnGhost}>
           ← Volver al inventario
         </Link>
@@ -201,7 +207,9 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
             equipo.area || equipo.departamento ? (
               <>
                 {equipo.area || equipo.departamento}
-                {!equipo.asignado_a ? <span className="ml-1 text-xs text-soft">(disponible aquí)</span> : null}
+                {!equipo.asignado_a && equipo.estado === "DISPONIBLE" ? (
+                  <span className="ml-1 text-xs text-soft">(disponible aquí)</span>
+                ) : null}
               </>
             ) : null
           )}
@@ -213,7 +221,16 @@ export default async function PaginaEquipo({ params }: { params: Promise<{ id: s
                 {equipo.asignado_activo === 0 ? <span className="ml-1 text-xs text-amber-700">(dado de baja)</span> : null}
               </Link>
             ) : (
-              <span className="text-soft">Nadie: está disponible</span>
+              // Sin dueño no siempre quiere decir que esté en el anaquel:
+              // el que no se recuperó tampoco lo tiene nadie, y decir que
+              // está disponible haría que alguien lo buscara.
+              equipo.estado === "NO_RECUPERADO" ? (
+                <span className="text-red-700">Nadie: se fue con quien lo traía y no se recuperó</span>
+              ) : equipo.estado === "DISPONIBLE" ? (
+                <span className="text-soft">Nadie: está disponible</span>
+              ) : (
+                <span className="text-soft">Nadie</span>
+              )
             )
           )}
           {dato("Fecha de compra", fechaCorta(equipo.fecha_compra))}

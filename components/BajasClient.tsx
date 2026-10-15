@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { cerrarCartasDeBaja, darDeBajaEnLote, reactivarEmpleado } from "../app/empleados/actions";
+import { cerrarCartasDeBaja, darDeBajaEnLote, marcarEquiposNoRecuperados, reactivarEmpleado } from "../app/empleados/actions";
 import type { Ausente, EmpleadoDeBaja } from "../lib/bajas";
 import { ETIQUETA_TIPO } from "../lib/constants";
 import { dinero, fechaCorta, hoyISO } from "../lib/helpers";
@@ -188,7 +188,34 @@ export default function BajasClient({
         claseCelda: tdCls,
         celda: (b) => (
           <div className="flex flex-wrap gap-1.5">
-            {b.pendientes ? <Badge tono="rojo">Sigue con {b.pendientes}</Badge> : <Badge tono="verde">Entregó todo</Badge>}
+            {b.pendientes ? (
+              <span className="inline-flex items-center gap-1">
+                <Badge tono="rojo">Sigue con {b.pendientes}</Badge>
+                {/* Ya no viene y el equipo se fue con ella. Dejarlo a su
+                    nombre para siempre tapa el inventario, y ponerlo
+                    disponible sería peor: no está para entregarse. */}
+                <button
+                  className="rounded border border-red-200 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-red-700 hover:bg-red-50"
+                  disabled={pendiente}
+                  title="Se fue con el equipo y no lo va a devolver"
+                  onClick={() => {
+                    if (
+                      !confirm(
+                        `${b.pendientes} queda(n) marcado(s) como NO RECUPERADO(S).\n\n` +
+                          `Sale(n) del nombre de ${b.nombre} y NO vuelve(n) al stock: no están para entregarse.\n` +
+                          `Su carta se cierra diciendo que no se devolvió.\n\n¿Continuar?`
+                      )
+                    )
+                      return;
+                    ejecutar(() => marcarEquiposNoRecuperados({ empleadoId: b.id }));
+                  }}
+                >
+                  No se recuperó
+                </button>
+              </span>
+            ) : (
+              <Badge tono="verde">Entregó todo</Badge>
+            )}
             {b.cartas_vigentes ? (
               <span className="inline-flex items-center gap-1">
                 <Badge tono="ambar">{b.cartas_vigentes} carta(s) sin cerrar</Badge>

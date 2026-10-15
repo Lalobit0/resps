@@ -15,6 +15,7 @@ import { cartasSinRespaldo, cerrarCartasSinFirma } from "../../lib/cartas";
 import { cerrarImportacion, registrarImportacion } from "../../lib/importaciones";
 import { compararPersonal, type CambioEmpleado, type DatosPersonal, type ResumenPersonal } from "../../lib/cambios-personal";
 import { anotar } from "../../lib/bitacora";
+import { hoyISO } from "../../lib/helpers";
 
 function revalidar() {
   revalidatePath("/empleados");
@@ -801,5 +802,103 @@ export async function cerrarCartasDeBaja(empleadoId: number): Promise<ResultadoA
   } catch (e) {
     console.error(e);
     return { ok: false, error: `No se pudieron cerrar las cartas: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/**
+ * Marca como NO RECUPERADO el equipo con el que alguien se fue.
+ *
+ * Es la salida para lo que no se puede resolver bien: la persona ya no viene,
+ * el aparato se fue con ella y nadie lo va a devolver. Dejarlo a su nombre
+ * para siempre tapa el inventario; ponerlo "disponible" sería peor, porque
+ * alguien intentaría entregar una laptop que físicamente no está.
+ *
+ * Así que sale de su nombre, pero queda marcado como no recuperado y con
+ * quién se lo llevó escrito en su histórico.
+ */
+export async function marcarEquiposNoRecuperados(datos: {
+  empleadoId: number;
+  /** Vacío = todos los que sigan a su nombre. */
+  equipoIds?: number[];
+  motivo?: string;
+}): Promise<ResultadoAccion> {
+  await exigir("ti.editar");
+  try {
+    const emp = db.prepare("SELECT numero_empleado, nombre, activo, fecha_baja FROM empleados WHERE id = ?").get(datos.empleadoId) as
+      | { numero_empleado: string; nombre: string; activo: number; fecha_baja: string | null }
+      | undefined;
+    if (!emp) return { ok: false, error: "Esa persona ya no existe." };
+
+    const quien = `${emp.numero_empleado} ${emp.nombre}`;
+    const pedidos = new Set(datos.equipoIds ?? []);
+    const suyos = (db.prepare("SELECT * FROM equipos WHERE asignado_a = ?").all(datos.empleadoId) as Equipo[]).filter(
+      (e) => !pedidos.size || pedidos.has(e.id)
+    );
+    if (!suyos.length) return { ok: false, error: `${emp.nombre} ya no tiene equipos a su nombre.` };
+
+    const cuando = emp.fecha_baja || hoyISO();
+    const razon = datos.motivo?.trim();
+
+    for (const eq of suyos) {
+      // Su carta deja de estar vigente, pero diciendo por qué: no se devolvió.
+      const vigente = db
+        .prepare(
+          `SELECT r.id, r.folio FROM responsiva_items ri JOIN responsivas r ON r.id = ri.responsiva_id
+           WHERE ri.equipo_id = ? AND r.empleado_id = ? AND r.tipo = 'ASIGNACION' AND r.estado = 'VIGENTE'
+           ORDER BY r.id DESC LIMIT 1`
+        )
+        .get(eq.id, datos.empleadoId) as { id: number; folio: string } | undefined;
+
+      const mover = db.transaction(() => {
+        if (vigente) {
+          db.prepare("UPDATE responsivas SET estado = 'CERRADA', cierre_motivo = ? WHERE id = ?").run(
+            `No se recuperó: ${quien} se fue con ${eq.codigo} y no lo devolvió.`,
+            vigente.id
+          );
+        }
+        db.prepare("UPDATE equipos SET estado = 'NO_RECUPERADO', asignado_a = NULL WHERE id = ?").run(eq.id);
+      });
+      mover();
+
+      anotarMovimiento({
+        equipoId: eq.id,
+        accion: "NO_RECUPERADO",
+        empleadoId: datos.empleadoId,
+        fecha: cuando,
+        detalle: [
+          `${quien} se fue con el equipo y no lo devolvió`,
+          vigente ? `Se cerró su carta ${vigente.folio}` : "",
+          razon,
+        ]
+          .filter(Boolean)
+          .join(". "),
+      });
+    }
+
+    const codigos = suyos.map((e) => e.codigo);
+    await anotar({
+      accion: "EQUIPO_NO_RECUPERADO",
+      descripcion:
+        `${codigos.length} equipo(s) quedaron como no recuperados de ${quien}: ${codigos.join(", ")}` +
+        (razon ? ` (${razon})` : ""),
+      entidad: "EMPLEADO",
+      entidadId: datos.empleadoId,
+      despues: codigos,
+    });
+
+    revalidar();
+    revalidatePath("/inventario");
+    revalidatePath("/empleados/bajas");
+    revalidatePath(`/empleados/${datos.empleadoId}`);
+
+    return {
+      ok: true,
+      mensaje:
+        `${codigos.length} equipo(s) de ${emp.nombre} quedaron como NO RECUPERADOS: ${codigos.join(", ")}. ` +
+        "Salen de su nombre y del stock, porque no están para entregarse. Si aparecen, se cambia su estado desde el inventario.",
+    };
+  } catch (e) {
+    console.error(e);
+    return { ok: false, error: `No se pudo marcar: ${e instanceof Error ? e.message : String(e)}` };
   }
 }

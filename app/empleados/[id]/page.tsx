@@ -333,6 +333,7 @@ export default async function PaginaEmpleado({ params }: { params: Promise<{ id:
           equipos={equipos}
           responsivas={responsivasPorEquipo}
           sinResponsiva={equipos.filter((e) => sinResp.has(e.id)).map((e) => e.id)}
+          empleadoActivo={!!empleado.activo}
         />
       )}
 

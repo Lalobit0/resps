@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ETIQUETA_ESTADO } from "../lib/constants";
 import { Badge, Card, Empty, tdCls, tonoEstadoEquipo } from "./ui";
 import { AvisoTabla, Tabla, useTabla, type Columna } from "./Tabla";
@@ -16,6 +16,11 @@ export type Linea = {
   precio: string | null;
   imei: string | null;
   condicion: string | null;
+  /** Cuenta de la tienda del teléfono (iCloud / Google). */
+  cuenta: string | null;
+  /** Su contraseña. Se tapa en la tabla: no tiene que leerse al pasar. */
+  cuenta_password: string | null;
+  pin: string | null;
   marca: string;
   modelo: string;
   numero_serie: string | null;
@@ -28,6 +33,18 @@ export type Linea = {
 
 /** La tabla de líneas, con sus columnas ajustables y su menú por columna. */
 export default function LineasClient({ lineas }: { lineas: Linea[] }) {
+  // Las contraseñas se tapan por omisión y se destapan de una en una. Están
+  // en la misma pantalla que todo lo demás, pero no a la vista de quien pase
+  // por detrás ni en una captura de pantalla hecha sin pensar.
+  const [destapadas, setDestapadas] = useState<Set<number>>(new Set());
+  const alternar = (id: number) =>
+    setDestapadas((previo) => {
+      const copia = new Set(previo);
+      if (copia.has(id)) copia.delete(id);
+      else copia.add(id);
+      return copia;
+    });
+
   const columnas = useMemo<Columna<Linea>[]>(
     () => [
       { clave: "codigo", titulo: "Código", ancho: "8%", valor: (l) => l.codigo, claseCelda: `${tdCls} mono text-xs font-semibold` },
@@ -115,6 +132,46 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
         celda: (l) => l.imei ?? "—",
       },
       {
+        clave: "cuenta",
+        titulo: "Cuenta",
+        ancho: "11%",
+        valor: (l) => l.cuenta ?? "",
+        claseCelda: `${tdCls} text-xs`,
+        ayuda: "La cuenta de iCloud o Google con la que está dado de alta el teléfono",
+        celda: (l) => (l.cuenta ? <span className="break-all">{l.cuenta}</span> : <span className="text-soft">—</span>),
+      },
+      {
+        clave: "password",
+        titulo: "Contraseña",
+        ancho: "10%",
+        // Para ordenar y filtrar basta con saber si tiene o no: el menú de la
+        // columna no es lugar para una lista de contraseñas.
+        valor: (l) => (l.cuenta_password ? "Tiene" : "Sin contraseña"),
+        claseCelda: `${tdCls} text-xs`,
+        ayuda: "Oculta. Se destapa una por una con el botón",
+        celda: (l) =>
+          !l.cuenta_password ? (
+            <span className="text-soft">—</span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => alternar(l.id)}
+              className="mono rounded border border-line bg-white px-1.5 py-0.5 text-xs text-ink hover:bg-paper"
+              title={destapadas.has(l.id) ? "Volver a taparla" : "Mostrar la contraseña"}
+            >
+              {destapadas.has(l.id) ? l.cuenta_password : "••••••••"}
+            </button>
+          ),
+      },
+      {
+        clave: "pin",
+        titulo: "PIN",
+        ancho: "5%",
+        valor: (l) => l.pin ?? "",
+        claseCelda: `${tdCls} mono text-xs`,
+        celda: (l) => l.pin ?? "—",
+      },
+      {
         clave: "estado",
         titulo: "Estado",
         ancho: "7%",
@@ -138,7 +195,10 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
         ),
       },
     ],
-    []
+    // `destapadas` va en las dependencias: sin ella las columnas se arman una
+    // sola vez y el botón de la contraseña se queda mirando el estado del
+    // primer render, así que el clic no destapaba nada.
+    [destapadas]
   );
 
   const tabla = useTabla({ id: "lineas", columnas, filas: lineas });

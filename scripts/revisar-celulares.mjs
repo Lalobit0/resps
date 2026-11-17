@@ -9,13 +9,19 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import { rutaListadoCelulares } from "../lib/listado-celulares.mjs";
 
 const RAIZ = process.cwd();
 const DB_PATH = path.join(RAIZ, "data", "app.db");
 const dig = (v) => (v ?? "").toString().replace(/\D/g, "");
 
 if (!fs.existsSync(DB_PATH)) { console.error(`No encuentro ${DB_PATH}. Corre el script desde la carpeta del proyecto.`); process.exit(1); }
-const { celulares } = JSON.parse(fs.readFileSync(path.join(RAIZ, "scripts", "celulares-oficial.json"), "utf8"));
+const { ruta: RUTA_LISTADO } = rutaListadoCelulares(RAIZ);
+if (!RUTA_LISTADO) {
+  console.error("No se encontró el listado de telefonía. Debe estar en data/celulares-oficial.json");
+  process.exit(1);
+}
+const { celulares } = JSON.parse(fs.readFileSync(RUTA_LISTADO, "utf8"));
 
 const db = new Database(DB_PATH);
 const enSistema = db

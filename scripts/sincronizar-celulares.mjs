@@ -1,6 +1,6 @@
 /**
  * Deja el inventario de celulares EXACTAMENTE como el listado vigente de
- * telefonía (scripts/celulares-oficial.json), que es la fuente de verdad.
+ * telefonía (data/celulares-oficial.json), que es la fuente de verdad.
  *
  *   node scripts/sincronizar-celulares.mjs            # simulación
  *   node scripts/sincronizar-celulares.mjs --aplicar  # ejecuta
@@ -23,6 +23,8 @@ import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
 import { fusionarInventario, leerDetalles } from "../lib/fusionar.mjs";
+import { partirCuenta } from "../lib/credenciales.mjs";
+import { rutaListadoCelulares } from "../lib/listado-celulares.mjs";
 
 const APLICAR = process.argv.includes("--aplicar");
 const RAIZ = process.cwd();
@@ -34,7 +36,16 @@ const limpio = (v) => (v ?? "").toString().trim();
 const vacio = (v) => !limpio(v) || /^(na|n\/a|#n\/a|-|0)$/i.test(limpio(v));
 
 if (!fs.existsSync(DB_PATH)) { console.error(`No encuentro ${DB_PATH}. Corre el script desde la carpeta del proyecto.`); process.exit(1); }
-const { celulares } = JSON.parse(fs.readFileSync(path.join(RAIZ, "scripts", "celulares-oficial.json"), "utf8"));
+const { ruta: RUTA_LISTADO, enRepositorio } = rutaListadoCelulares(RAIZ);
+if (!RUTA_LISTADO) {
+  console.error("No se encontró el listado de telefonía. Debe estar en data/celulares-oficial.json");
+  process.exit(1);
+}
+if (enRepositorio) {
+  console.log("AVISO: el listado sigue en scripts/, que se sube al repositorio con todo y contraseñas.");
+  console.log("       Muévelo a data/celulares-oficial.json en cuanto puedas.\n");
+}
+const { celulares } = JSON.parse(fs.readFileSync(RUTA_LISTADO, "utf8"));
 
 /**
  * Una línea telefónica solo puede estar activa en un equipo. Cuando el listado
@@ -214,7 +225,15 @@ function detallesDe(c) {
   if (!vacio(c.plan)) d.plan = `TELCEL PLUS EMPRESARIAL ${c.plan}${vacio(c.gb) ? "" : ` - ${limpio(c.gb)}`}`;
   if (!vacio(c.precio)) d.plan_precio = `$${limpio(c.precio)}.00`;
   if (!vacio(c.pin)) d.pin = limpio(c.pin);
-  if (!vacio(c.icloud)) d.icloud = limpio(c.icloud);
+  // La columna "icloud" del listado trae la contraseña, a veces con el correo
+  // pegado. Se separan: la cuenta a su campo y la clave al suyo. Se escriben
+  // aunque queden vacías, para limpiar lo que una corrida anterior dejó mal
+  // metido en el casillero del correo.
+  {
+    const { cuenta, password } = partirCuenta(c.icloud);
+    d.icloud = cuenta;
+    d.icloud_password = password;
+  }
   if (!vacio(c.mac)) d.mac = limpio(c.mac);
   if (!vacio(c.cond)) d.condicion = limpio(c.cond);
   return d;

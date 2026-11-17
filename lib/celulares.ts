@@ -1,11 +1,14 @@
 import fs from "fs";
-import path from "path";
 import { db } from "./db";
+import { rutaListadoCelulares } from "./listado-celulares.mjs";
 
 /**
- * El listado de telefonía (scripts/celulares-oficial.json) manda sobre el
- * inventario: si un teléfono está ahí, tiene que existir en el sistema.
- * Aquí se compara lo uno contra lo otro para poder avisar en pantalla.
+ * El listado de telefonía manda sobre el inventario: si un teléfono está ahí,
+ * tiene que existir en el sistema. Aquí se compara lo uno contra lo otro para
+ * poder avisar en pantalla.
+ *
+ * El archivo vive en `data/`, que no se sube al repositorio, porque trae las
+ * contraseñas de las cuentas de los teléfonos.
  */
 
 export type CelularOficial = {
@@ -37,7 +40,8 @@ const soloDigitos = (v: unknown) => String(v ?? "").replace(/\D/g, "");
 /** Listado oficial de telefonía. Si el archivo no existe, no hay nada que revisar. */
 export function listaOficial(): CelularOficial[] {
   try {
-    const ruta = path.join(process.cwd(), "scripts", "celulares-oficial.json");
+    const { ruta } = rutaListadoCelulares();
+    if (!ruta) return [];
     const { celulares } = JSON.parse(fs.readFileSync(ruta, "utf8")) as { celulares: CelularOficial[] };
     return (celulares ?? []).filter((c) => soloDigitos(c.imei).length >= 10);
   } catch {

@@ -47,11 +47,11 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
 
   const columnas = useMemo<Columna<Linea>[]>(
     () => [
-      { clave: "codigo", titulo: "Código", ancho: "8%", valor: (l) => l.codigo, claseCelda: `${tdCls} mono text-xs font-semibold` },
+      { clave: "codigo", titulo: "Código", ancho: "6%", valor: (l) => l.codigo, claseCelda: `${tdCls} mono text-xs font-semibold` },
       {
         clave: "numero_empleado",
         titulo: "No. empleado",
-        ancho: "7%",
+        ancho: "5%",
         valor: (l) => l.asignado_numero ?? "",
         claseCelda: `${tdCls} mono text-xs`,
         celda: (l) => l.asignado_numero ?? "—",
@@ -59,7 +59,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "nombre",
         titulo: "Nombre",
-        ancho: "14%",
+        ancho: "11%",
         valor: (l) => l.asignado_nombre ?? "",
         claseCelda: `${tdCls} text-xs`,
         celda: (l) =>
@@ -79,7 +79,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "departamento",
         titulo: "Departamento",
-        ancho: "11%",
+        ancho: "8%",
         valor: (l) => [l.asignado_departamento, l.asignado_area].filter(Boolean).join(" · "),
         claseCelda: `${tdCls} text-xs text-soft`,
         celda: (l) => [l.asignado_departamento, l.asignado_area].filter(Boolean).join(" · ") || "—",
@@ -87,7 +87,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "numero",
         titulo: "Número",
-        ancho: "9%",
+        ancho: "7%",
         valor: (l) => l.numero ?? "",
         claseCelda: `${tdCls} mono text-xs`,
         celda: (l) => l.numero ?? "—",
@@ -95,7 +95,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "plan",
         titulo: "Plan",
-        ancho: "11%",
+        ancho: "8%",
         valor: (l) => l.plan ?? "",
         claseCelda: `${tdCls} text-xs`,
         celda: (l) => l.plan ?? "—",
@@ -103,7 +103,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "renta",
         titulo: "Renta",
-        ancho: "6%",
+        ancho: "5%",
         valor: (l) => l.precio ?? "",
         claseCelda: `${tdCls} text-xs`,
         celda: (l) => l.precio ?? "—",
@@ -111,7 +111,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "telefono",
         titulo: "Teléfono",
-        ancho: "13%",
+        ancho: "10%",
         valor: (l) => `${l.marca} ${l.modelo}`,
         claseCelda: `${tdCls} text-xs`,
         celda: (l) => (
@@ -126,7 +126,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "imei",
         titulo: "IMEI",
-        ancho: "9%",
+        ancho: "8%",
         valor: (l) => l.imei ?? "",
         claseCelda: `${tdCls} mono text-xs`,
         celda: (l) => l.imei ?? "—",
@@ -134,7 +134,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "cuenta",
         titulo: "Cuenta",
-        ancho: "11%",
+        ancho: "10%",
         valor: (l) => l.cuenta ?? "",
         claseCelda: `${tdCls} text-xs`,
         ayuda: "La cuenta de iCloud o Google con la que está dado de alta el teléfono",
@@ -143,7 +143,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "password",
         titulo: "Contraseña",
-        ancho: "10%",
+        ancho: "8%",
         // Para ordenar y filtrar basta con saber si tiene o no: el menú de la
         // columna no es lugar para una lista de contraseñas.
         valor: (l) => (l.cuenta_password ? "Tiene" : "Sin contraseña"),
@@ -166,7 +166,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "pin",
         titulo: "PIN",
-        ancho: "5%",
+        ancho: "4%",
         valor: (l) => l.pin ?? "",
         claseCelda: `${tdCls} mono text-xs`,
         celda: (l) => l.pin ?? "—",
@@ -174,7 +174,7 @@ export default function LineasClient({ lineas }: { lineas: Linea[] }) {
       {
         clave: "estado",
         titulo: "Estado",
-        ancho: "7%",
+        ancho: "5%",
         valor: (l) => ETIQUETA_ESTADO[l.estado] ?? l.estado,
         claseCelda: tdCls,
         celda: (l) => <Badge tono={tonoEstadoEquipo(l.estado)}>{ETIQUETA_ESTADO[l.estado] ?? l.estado}</Badge>,

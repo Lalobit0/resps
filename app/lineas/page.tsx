@@ -30,12 +30,15 @@ export default async function PaginaLineas({
   const val: string[] = [];
   if (q) {
     cond.push(
+      // Por la cuenta sí se busca; por la contraseña nunca, para que no se
+      // pueda averiguar a tientas desde la caja de búsqueda.
       `(json_extract(e.detalles,'$.numero') LIKE ? OR json_extract(e.detalles,'$.imei') LIKE ?
         OR em.nombre LIKE ? OR em.numero_empleado LIKE ? OR e.codigo LIKE ?
         OR COALESCE(em.departamento,'') LIKE ? OR e.marca LIKE ? OR e.modelo LIKE ?
-        OR COALESCE(e.numero_serie,'') LIKE ?)`
+        OR COALESCE(e.numero_serie,'') LIKE ?
+        OR COALESCE(json_extract(e.detalles,'$.icloud'),'') LIKE ?)`
     );
-    for (let i = 0; i < 9; i++) val.push(`%${q}%`);
+    for (let i = 0; i < 10; i++) val.push(`%${q}%`);
   }
 
   const lineas = db
@@ -46,6 +49,9 @@ export default async function PaginaLineas({
         json_extract(e.detalles,'$.plan_precio') AS precio,
         json_extract(e.detalles,'$.imei') AS imei,
         json_extract(e.detalles,'$.condicion') AS condicion,
+        json_extract(e.detalles,'$.icloud') AS cuenta,
+        json_extract(e.detalles,'$.icloud_password') AS cuenta_password,
+        json_extract(e.detalles,'$.pin') AS pin,
         em.id AS asignado_id, em.nombre AS asignado_nombre, em.numero_empleado AS asignado_numero,
         em.departamento AS asignado_departamento, em.area AS asignado_area
        FROM equipos e LEFT JOIN empleados em ON em.id = e.asignado_a
